@@ -146,14 +146,14 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="56,44,56,36">
+        <Grid x:Name="WelcomePage" Grid.Row="1" Margin="56,44,56,36">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.08*" />
                 <ColumnDefinition Width="32" />
                 <ColumnDefinition Width="0.92*" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel VerticalAlignment="Center">
+            <StackPanel VerticalAlignment="Top">
                 <TextBlock Text="Добро пожаловать"
                            Foreground="{DynamicResource TextPrimaryBrush}"
                            FontSize="34"
@@ -171,11 +171,15 @@
                            Margin="0,12,18,0" />
 
                 <StackPanel Orientation="Horizontal" Margin="0,34,0,0">
-                    <Button Content="Начать настройку"
-                            Style="{StaticResource PrimaryButtonStyle}" />
-                    <Button Content="Позже"
+                    <Button x:Name="PrimaryActionButton"
+                            Content="Начать настройку"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Click="PrimaryActionButton_Click" />
+                    <Button x:Name="ReconfigureButton"
+                            Content="Перенастроить"
                             Style="{StaticResource SecondaryButtonStyle}"
-                            Margin="12,0,0,0" />
+                            Margin="12,0,0,0"
+                            Click="ReconfigureButton_Click" />
                 </StackPanel>
             </StackPanel>
 
@@ -294,12 +298,82 @@
             </Border>
         </Grid>
 
+        <Grid x:Name="SetupPage"
+              Grid.Row="1"
+              Margin="56,44,56,36"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Text="Настройка AI HUB"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="32"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="Это подготовительная страница будущего мастера настройки. Сейчас программа только создаёт паспорт компьютера и не меняет системные настройки."
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="15"
+                           LineHeight="24"
+                           TextWrapping="Wrap"
+                           Margin="0,12,0,0" />
+            </StackPanel>
+
+            <Border Grid.Row="2"
+                    Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="28">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="14" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="18" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Text="Паспорт компьютера"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="20"
+                               FontWeight="SemiBold" />
+
+                    <TextBlock x:Name="PassportSummaryText"
+                               Grid.Row="2"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="15"
+                               LineHeight="26"
+                               TextWrapping="Wrap" />
+
+                    <TextBlock x:Name="PassportPathText"
+                               Grid.Row="4"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Content="Назад"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Click="BackToStartButton_Click" />
+            </StackPanel>
+        </Grid>
+
         <Border Grid.Row="2"
                 Background="{DynamicResource HeaderBackgroundBrush}"
                 BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,1,0,0">
             <Grid Margin="28,0">
-                <TextBlock Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
+                <TextBlock x:Name="StatusText"
+                           Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="12"
                            VerticalAlignment="Center" />
