@@ -16,5 +16,7 @@ public sealed class ComputerPassport
 
     public double RamTotalGb { get; set; }
 
+    public List<GpuPassport> Gpus { get; set; } = [];
+
     public List<DrivePassport> Drives { get; set; } = [];
 }

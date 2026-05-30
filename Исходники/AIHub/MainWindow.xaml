@@ -287,7 +287,8 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="15"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="Посмотрим RAM, GPU, VRAM и свободное место."
+                            <TextBlock x:Name="ComputerPassportStepText"
+                                       Text="Посмотрим RAM, GPU, VRAM и свободное место."
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        TextWrapping="Wrap"

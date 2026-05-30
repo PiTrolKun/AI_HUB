@@ -82,8 +82,9 @@ public partial class MainWindow : Window
         try
         {
             _appState = _appStateStore.LoadOrCreate();
-            var passport = _computerPassportService.EnsurePassport();
+            var passport = _computerPassportService.RegeneratePassport();
             SavePassportState(passport);
+            UpdateComputerPassportStep(passport);
             StatusText.Text = "Статус: паспорт компьютера готов. Настройка пока не завершена.";
         }
         catch
@@ -101,6 +102,7 @@ public partial class MainWindow : Window
                 : _computerPassportService.EnsurePassport();
 
             SavePassportState(passport);
+            UpdateComputerPassportStep(passport);
             ShowSetupPage(passport);
 
             StatusText.Text = regeneratePassport
@@ -155,7 +157,44 @@ public partial class MainWindow : Window
             $"Windows: {passport.WindowsVersion}",
             $"CPU: {passport.CpuName}",
             $"RAM: {passport.RamTotalGb:0.##} ГБ",
+            BuildGpuSummary(passport),
             drives);
+    }
+
+    private void UpdateComputerPassportStep(ComputerPassport passport)
+    {
+        ComputerPassportStepText.Text = string.Join(
+            Environment.NewLine,
+            "Сканирование ПК завершено. Найдено:",
+            $"CPU: {passport.CpuName}",
+            $"RAM: {passport.RamTotalGb:0.##} ГБ",
+            BuildGpuSummary(passport),
+            BuildDriveSummary(passport));
+    }
+
+    private static string BuildGpuSummary(ComputerPassport passport)
+    {
+        if (passport.Gpus.Count == 0)
+        {
+            return "GPU: не найдено; VRAM: unknown";
+        }
+
+        var gpuNames = string.Join(", ", passport.Gpus.Select(gpu => gpu.Name));
+        var vramTotal = passport.Gpus.Sum(gpu => gpu.VramGb);
+        var vramText = vramTotal > 0 ? $"{vramTotal:0.##} ГБ" : "unknown";
+
+        return $"GPU: {gpuNames}; VRAM: {vramText}";
+    }
+
+    private static string BuildDriveSummary(ComputerPassport passport)
+    {
+        if (passport.Drives.Count == 0)
+        {
+            return "Диски: не найдены";
+        }
+
+        var totalFree = passport.Drives.Sum(drive => drive.FreeGb);
+        return $"Диски: {passport.Drives.Count}, свободно {totalFree:0.##} ГБ";
     }
 
     private void ApplySystemTitleBarTheme()

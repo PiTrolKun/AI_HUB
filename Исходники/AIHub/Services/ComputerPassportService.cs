@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using AIHub.Models;
 using Microsoft.Win32;
@@ -49,6 +50,7 @@ public sealed class ComputerPassportService
             UserName = Environment.UserName,
             CpuName = GetCpuName(),
             RamTotalGb = GetTotalMemoryGb(),
+            Gpus = GetGpus(),
             Drives = GetDrives()
         };
 
@@ -108,6 +110,96 @@ public sealed class ComputerPassportService
         }
 
         return drives;
+    }
+
+    private static List<GpuPassport> GetGpus()
+    {
+        const string videoKey = @"SYSTEM\CurrentControlSet\Control\Video";
+
+        var gpus = new Dictionary<string, GpuPassport>(StringComparer.OrdinalIgnoreCase);
+        using var rootKey = Registry.LocalMachine.OpenSubKey(videoKey);
+
+        if (rootKey is null)
+        {
+            return [];
+        }
+
+        foreach (var adapterKeyName in rootKey.GetSubKeyNames())
+        {
+            using var adapterKey = rootKey.OpenSubKey(adapterKeyName);
+            if (adapterKey is null)
+            {
+                continue;
+            }
+
+            foreach (var childKeyName in adapterKey.GetSubKeyNames())
+            {
+                using var childKey = adapterKey.OpenSubKey(childKeyName);
+                if (childKey is null)
+                {
+                    continue;
+                }
+
+                var name = ReadRegistryString(
+                    childKey.GetValue("HardwareInformation.AdapterString"))
+                    ?? ReadRegistryString(childKey.GetValue("DriverDesc"));
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                var vramGb = GetGpuMemoryGb(childKey);
+                if (gpus.TryGetValue(name, out var existingGpu))
+                {
+                    existingGpu.VramGb = Math.Max(existingGpu.VramGb, vramGb);
+                    continue;
+                }
+
+                gpus[name] = new GpuPassport
+                {
+                    Name = name,
+                    VramGb = vramGb
+                };
+            }
+        }
+
+        return gpus.Values.ToList();
+    }
+
+    private static double GetGpuMemoryGb(RegistryKey registryKey)
+    {
+        var memoryValue =
+            registryKey.GetValue("HardwareInformation.qwMemorySize")
+            ?? registryKey.GetValue("HardwareInformation.MemorySize")
+            ?? registryKey.GetValue("MemorySize");
+
+        var bytes = ReadRegistryUInt64(memoryValue);
+        return bytes == 0 ? 0 : RoundGb(bytes);
+    }
+
+    private static string? ReadRegistryString(object? value)
+    {
+        return value switch
+        {
+            string text when !string.IsNullOrWhiteSpace(text) => text.Trim(),
+            byte[] bytes when bytes.Length > 0 => Encoding.Unicode.GetString(bytes).TrimEnd('\0').Trim(),
+            _ => null
+        };
+    }
+
+    private static ulong ReadRegistryUInt64(object? value)
+    {
+        return value switch
+        {
+            int number when number > 0 => (ulong)number,
+            uint number => number,
+            long number when number > 0 => (ulong)number,
+            ulong number => number,
+            byte[] bytes when bytes.Length >= 8 => BitConverter.ToUInt64(bytes, 0),
+            byte[] bytes when bytes.Length >= 4 => BitConverter.ToUInt32(bytes, 0),
+            _ => 0
+        };
     }
 
     private static double RoundGb(ulong bytes)
