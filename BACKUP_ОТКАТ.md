@@ -737,6 +737,32 @@
 - Проверено, что ключи `ru.json` и `en.json` совпадают.
 - Проверено, что активных ТЗ вне архива нет.
 - `build-installer.ps1 -SkipPublish` успешно пересобрал тестовый Inno Setup установщик `Тесты/Установщики/AI_HUB_Setup_0.0.14-dev.exe`.
+- Commit/push выполнены: `b28fcd2 Archive localization settings task` отправлен в `origin/main`.
+
+## 2026-05-31 — запись о публикации ТЗ локализации
+
+Задача: зафиксировать в истории факт успешной публикации закрытого ТЗ локализации и общих настроек.
+
+### Изменения
+
+- В `CONTEXTHUB.md`, `Диалог_сжато.md` и этом журнале записан успешный push коммита `b28fcd2`.
+- Код приложения и версия не менялись.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260531_015900_record_localization_publish/CONTEXTHUB.md`
+- `Backups/20260531_015900_record_localization_publish/Диалог_сжато.md`
+- `Backups/20260531_015900_record_localization_publish/BACKUP_ОТКАТ.md`
+
+### Откат
+
+Для отката восстановить документы истории из backup-папки `Backups/20260531_015900_record_localization_publish`.
+
+### Проверки
+
+- Scanner кириллицы прошёл без ошибок.
 
 ## 2026-05-31 — архивация закрытых ТЗ
 
