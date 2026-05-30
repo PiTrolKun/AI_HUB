@@ -384,3 +384,28 @@
 ### Откат
 
 Для отката восстановить `start-aihub.ps1` и документы истории из backup-папки `Backups/20260530_205402_fix_launcher_project_path`.
+
+## 2026-05-30 — автоматическая версия в строке окна
+
+Задача: добавить отображение версии в нижнюю строку стартового окна без второй ручной копии версии.
+
+### Изменения
+
+- В `MainWindow.xaml` нижний статусный `TextBlock` получил имя `StatusTextBlock`.
+- В `MainWindow.xaml.cs` добавлено чтение версии из `AssemblyInformationalVersion`.
+- Статусная строка окна теперь показывает `Версия 0.0.1-dev` автоматически из свойств сборки.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_205631_show_version_in_status_line/MainWindow.xaml`
+- `Backups/20260530_205631_show_version_in_status_line/MainWindow.xaml.cs`
+- `Backups/20260530_205631_show_version_in_status_line/CONTEXTHUB.md`
+- `Backups/20260530_205631_show_version_in_status_line/Dialog_szhato.md`
+- `Backups/20260530_205631_show_version_in_status_line/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить XAML, code-behind и документы истории из backup-папки `Backups/20260530_205631_show_version_in_status_line`.

@@ -302,7 +302,8 @@
                 BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,1,0,0">
             <Grid Margin="28,0">
-                <TextBlock Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
+                <TextBlock x:Name="StatusTextBlock"
+                           Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="12"
                            VerticalAlignment="Center" />

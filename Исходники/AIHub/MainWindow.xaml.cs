@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using System.Windows.Media;
 
@@ -10,6 +11,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        StatusTextBlock.Text = $"Версия {GetAppVersion()} · Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются.";
     }
 
     private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)
@@ -36,5 +38,12 @@ public partial class MainWindow : Window
     private void SetBrush(string resourceKey, string color)
     {
         Resources[resourceKey] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+    }
+
+    private static string GetAppVersion()
+    {
+        return typeof(MainWindow).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "unknown";
     }
 }
