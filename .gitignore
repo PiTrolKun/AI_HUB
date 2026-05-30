@@ -1,0 +1,50 @@
+# Build output
+bin/
+obj/
+out/
+publish/
+
+# Visual Studio / Rider / VS Code local state
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET local artifacts
+TestResults/
+*.nupkg
+*.snupkg
+project.assets.json
+*.binlog
+
+# AI_HUB local-only data
+Backups/*
+!Backups/README.md
+
+Runtime/**
+!Runtime/
+!Runtime/README.md
+!Runtime/*/
+!Runtime/*/README.md
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Secrets and local machine config
+.env
+.env.*
+*.pfx
+*.key
+*.pem
+secrets.json
+
+# OS metadata
+Thumbs.db
+Desktop.ini
