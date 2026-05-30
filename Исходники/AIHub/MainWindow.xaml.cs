@@ -33,6 +33,9 @@ public partial class MainWindow : Window
 
         RootWindow.Background = (Brush)Resources["WindowBackgroundBrush"];
         ThemeToggleButton.Content = _isDarkTheme ? "☀" : "☾";
+        ThemeToggleButton.Foreground = _isDarkTheme
+            ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"))
+            : (Brush)Resources["TextPrimaryBrush"];
         ThemeToggleButton.ToolTip = _isDarkTheme
             ? "Переключить на светлую тему"
             : "Переключить на тёмную тему";
