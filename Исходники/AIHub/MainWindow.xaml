@@ -178,6 +178,7 @@
                     <Button x:Name="ReconfigureButton"
                             Content="Перенастроить"
                             Style="{StaticResource SecondaryButtonStyle}"
+                            MinWidth="124"
                             Margin="12,0,0,0"
                             Click="ReconfigureButton_Click" />
                 </StackPanel>
