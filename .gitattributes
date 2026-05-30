@@ -12,5 +12,8 @@
 *.xaml text eol=lf
 *.csproj text eol=lf
 *.sln text eol=crlf
+*.png binary
+*.ico binary
 
 LICENSE text eol=lf
+VERSION text eol=lf

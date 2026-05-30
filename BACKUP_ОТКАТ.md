@@ -493,3 +493,48 @@
 - Проверки перед push: `dotnet build`, `Запустить_AI_HUB.cmd`, scanner кириллицы.
 - Коммит перед push: `0281b34 Record project state before GitHub publish`.
 - Push выполнен успешно: `origin/main` обновлён с `f54bef1` до `0281b34`.
+
+## 2026-05-30 — добавление логотипа приложения
+
+Задача: добавить логотип, который отображается в заголовке окна, диспетчере задач, exe и будет использоваться будущим установщиком для ярлыков.
+
+### Изменения
+
+- Исходный PNG пользователя из `Данные_для_внедрения/Фото/logo_crt_black_hole_matrix_tight_transparent_1x1.png` скопирован в `Исходники/AIHub/Assets`.
+- Создан `Исходники/AIHub/Assets/AppIcon.ico` с несколькими размерами значка.
+- В `AIHub.csproj` добавлено свойство `ApplicationIcon`.
+- В `MainWindow.xaml` добавлен `Icon="Assets/AppIcon.ico"`.
+- В `.gitattributes` добавлены правила `*.png binary` и `*.ico binary`.
+- Обновлены `BRANDING.md`, `NOTICE.md`, `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_224246_add_application_logo/AIHub.csproj`
+- `Backups/20260530_224246_add_application_logo/MainWindow.xaml`
+- `Backups/20260530_224246_add_application_logo/gitattributes`
+- `Backups/20260530_224246_add_application_logo/BRANDING.md`
+- `Backups/20260530_224246_add_application_logo/NOTICE.md`
+- `Backups/20260530_224246_add_application_logo/VERSION`
+- `Backups/20260530_224246_add_application_logo/CONTEXTHUB.md`
+- `Backups/20260530_224246_add_application_logo/Dialog_szhato.md`
+- `Backups/20260530_224246_add_application_logo/BACKUP_OTKAT.md`
+
+### Откат
+
+### Версия
+
+Версия повышена с `0.0.1-dev` до `0.0.2-dev`, потому что добавление логотипа меняет приложение и exe.
+
+### Проверки
+
+- `dotnet build` прошёл без ошибок и предупреждений.
+- `Запустить_AI_HUB.cmd` успешно собрал и запустил приложение.
+- UI Automation подтвердил заголовок окна `AI HUB 0.0.2-dev`.
+- Из `AIHub.exe` успешно извлечён связанный значок 64x64.
+- Scanner кириллицы прошёл без ошибок.
+
+### Откат
+
+Для отката восстановить изменённые текстовые файлы из backup-папки `Backups/20260530_224246_add_application_logo`, удалить `Исходники/AIHub/Assets/AppIcon.ico` и удалить скопированный PNG из `Исходники/AIHub/Assets`, если он больше не нужен.

@@ -12,6 +12,7 @@ AI_HUB — русскоязычный локальный AI-хаб для Window
 
 - Концепция проекта: `local_ai_hub_final_summary_ru.md`.
 - Рабочие инструкции: `Инструкции/AGENTS.md`, `Инструкции/CODEX.md`.
+- Первый рабочий логотип предоставлен пользователем в `Данные_для_внедрения/Фото/logo_crt_black_hole_matrix_tight_transparent_1x1.png` и внедрён в приложение как `Исходники/AIHub/Assets/AppIcon.ico`.
 
 ## Сторонние материалы
 
