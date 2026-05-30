@@ -737,7 +737,34 @@
 - Scanner кириллицы прошёл без ошибок.
 - Проверено, что в папке `ТЗ` нет активных ТЗ, кроме `README.md`.
 - `build-installer.ps1 -SkipPublish` успешно пересобрал `Тесты/Установщики/AI_HUB_Setup_0.0.13-dev.exe`.
-- Ожидаются commit и push в GitHub.
+- Создан коммит `b19c002 Archive tasks and add installer tooling`.
+- `main` успешно отправлен в `origin/main`.
+
+## 2026-05-31 — запись о публикации архивированных ТЗ
+
+Задача: зафиксировать в истории факт успешной публикации после архивации ТЗ.
+
+### Изменения
+
+- В `CONTEXTHUB.md`, `Диалог_сжато.md` и этом журнале записан коммит `b19c002 Archive tasks and add installer tooling`.
+- Зафиксировано, что `main` успешно отправлен в `origin/main`.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260531_011438_record_archive_publish/CONTEXTHUB.md`
+- `Backups/20260531_011438_record_archive_publish/Диалог_сжато.md`
+- `Backups/20260531_011438_record_archive_publish/BACKUP_ОТКАТ.md`
+
+### Откат
+
+Для отката восстановить документы истории из backup-папки `Backups/20260531_011438_record_archive_publish`.
+
+### Проверки
+
+- Scanner кириллицы прошёл без ошибок.
+- Ожидается финальный commit/push записи.
 
 ## 2026-05-30 — реализация логики стартового окна и паспорта ПК
 
