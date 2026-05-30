@@ -11,12 +11,17 @@ namespace AIHub;
 
 public partial class MainWindow : Window
 {
+    private readonly AppSettingsStore _appSettingsStore = new();
     private readonly AppStateStore _appStateStore = new();
     private readonly ComputerPassportService _computerPassportService = new();
+    private readonly LocalizationService _localizationService = new();
     private readonly StorageSettingsStore _storageSettingsStore = new();
 
+    private AppSettings _appSettings = new();
     private AppState _appState = new();
+    private ComputerPassport? _lastPassport;
     private StorageSettings _storageSettings = new();
+    private bool _isApplyingLanguageSelection;
     private bool _isDarkTheme;
 
     public MainWindow()
@@ -25,7 +30,9 @@ public partial class MainWindow : Window
         Title = $"AI HUB {GetAppVersion()}";
         _isDarkTheme = IsWindowsAppThemeDark();
         SourceInitialized += (_, _) => ApplySystemTitleBarTheme();
+        InitializeLocalization();
         ApplyTheme();
+        ApplyLocalization();
         InitializeAppData();
         UpdatePrimaryActionButton();
     }
@@ -40,7 +47,7 @@ public partial class MainWindow : Window
     {
         if (_appState.HasCompletedSetup)
         {
-            StatusText.Text = "Статус: рабочий режим пока не реализован. Для изменения параметров нажмите Перенастроить.";
+            StatusText.Text = L("Status.WorkModeNotReady");
             return;
         }
 
@@ -69,10 +76,16 @@ public partial class MainWindow : Window
             ? new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString("#FBBF24"))
             : (Media.Brush)Resources["TextPrimaryBrush"];
         ThemeToggleButton.ToolTip = _isDarkTheme
-            ? "Переключить на светлую тему"
-            : "Переключить на тёмную тему";
+            ? L("Theme.SwitchToLight")
+            : L("Theme.SwitchToDark");
 
         ApplySystemTitleBarTheme();
+    }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowSettingsPage();
+        StatusText.Text = L("Status.SettingsOpened");
     }
 
     private void SetBrush(string resourceKey, string color)
@@ -87,6 +100,146 @@ public partial class MainWindow : Window
             ?.InformationalVersion ?? "unknown";
     }
 
+    private void InitializeLocalization()
+    {
+        _appSettings = _appSettingsStore.LoadOrCreate();
+        if (!_appSettings.LanguageWasChosen)
+        {
+            var windowsLanguage = LocalizationService.GetWindowsLanguageCode();
+            if (windowsLanguage == "ru")
+            {
+                _appSettings.LanguageCode = "ru";
+            }
+            else if (_localizationService.HasLanguage(windowsLanguage))
+            {
+                _localizationService.Load(windowsLanguage);
+                var useWindowsLanguage = System.Windows.MessageBox.Show(
+                    L("Dialog.UseWindowsLanguage"),
+                    L("Dialog.LanguageTitle"),
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question) == MessageBoxResult.Yes;
+
+                _appSettings.LanguageCode = useWindowsLanguage ? windowsLanguage : "ru";
+            }
+            else
+            {
+                _appSettings.LanguageCode = "ru";
+            }
+
+            _appSettings.LanguageWasChosen = true;
+            _appSettingsStore.Save(_appSettings);
+        }
+
+        _localizationService.Load(_appSettings.LanguageCode);
+        PopulateLanguageComboBox();
+    }
+
+    private string L(string key) => _localizationService.T(key);
+
+    private string LF(string key, params object[] args) =>
+        string.Format(System.Globalization.CultureInfo.InvariantCulture, L(key), args);
+
+    private void ApplyLocalization()
+    {
+        HeaderProductNameText.Text = L("App.ProductName");
+        HeaderSubtitleText.Text = L("App.Subtitle");
+        SettingsButton.ToolTip = L("Header.SettingsTooltip");
+
+        HomeWelcomeTitleText.Text = L("Home.Welcome");
+        HomeHeadlineText.Text = L("Home.Headline");
+        HomeDescriptionText.Text = L("Home.Description");
+        WhatWillBeConfiguredTitleText.Text = L("Home.WhatWillBeConfigured");
+        ModelsStorageTitleText.Text = L("Home.ModelsStorage");
+        ResultsStorageTitleText.Text = L("Home.ResultsStorage");
+        ComputerPassportTitleText.Text = L("Home.ComputerPassport");
+
+        SetupTitleText.Text = L("Setup.Title");
+        SetupDescriptionText.Text = L("Setup.Description");
+        SetupPriorityHintText.Text = L("Setup.PriorityHint");
+        SetupModelsTitleText.Text = L("Home.ModelsStorage");
+        SetupModelsHelpText.Text = L("Setup.StorageHelp");
+        SetupResultsTitleText.Text = L("Home.ResultsStorage");
+        SetupResultsHelpText.Text = L("Setup.StorageHelp");
+        SetupPassportTitleText.Text = L("Home.ComputerPassport");
+
+        ModelsAddressLabelText.Text = L("Setup.AddressLabel");
+        ResultsAddressLabelText.Text = L("Setup.AddressLabel");
+        ModelsLimitLabelText.Text = L("Setup.LocationLimitLabel");
+        ResultsLimitLabelText.Text = L("Setup.LocationLimitLabel");
+        ModelsPathInput.ToolTip = L("Setup.AddressTooltip");
+        ResultsPathInput.ToolTip = L("Setup.AddressTooltip");
+        ModelsLocationLimitInput.ToolTip = L("Setup.LocationLimitTooltip");
+        ResultsLocationLimitInput.ToolTip = L("Setup.LocationLimitTooltip");
+
+        BrowseModelsLocationButton.Content = L("Setup.Browse");
+        BrowseResultsLocationButton.Content = L("Setup.Browse");
+        AddModelsLocationButton.Content = L("Setup.Add");
+        AddResultsLocationButton.Content = L("Setup.Add");
+        MoveModelsLocationUpButton.Content = L("Setup.MoveUp");
+        MoveResultsLocationUpButton.Content = L("Setup.MoveUp");
+        MoveModelsLocationDownButton.Content = L("Setup.MoveDown");
+        MoveResultsLocationDownButton.Content = L("Setup.MoveDown");
+        RemoveModelsLocationButton.Content = L("Setup.Delete");
+        RemoveResultsLocationButton.Content = L("Setup.Delete");
+        ModelsTotalLimitLabelText.Text = L("Setup.TotalLimitGb");
+        ResultsTotalLimitLabelText.Text = L("Setup.TotalLimitGb");
+        ModelsAllowOverflowCheckBox.Content = L("Setup.AllowTemporaryOverflow");
+        ResultsAllowOverflowCheckBox.Content = L("Setup.AllowTemporaryOverflow");
+        ModelsPlusGbText.Text = L("Setup.PlusGb");
+        ResultsPlusGbText.Text = L("Setup.PlusGb");
+        BackToStartButton.Content = L("Setup.Back");
+        SaveStorageSettingsButton.Content = L("Setup.Save");
+
+        SettingsTitleText.Text = L("Settings.Title");
+        SettingsDescriptionText.Text = L("Settings.Description");
+        SettingsLanguageTitleText.Text = L("Settings.LanguageTitle");
+        SettingsLanguageHelpText.Text = L("Settings.LanguageHelp");
+        SettingsLanguageLabelText.Text = L("Settings.LanguageLabel");
+        SettingsLocalizationFolderText.Text = LF("Settings.LocalizationFolder", AppDataPaths.LocalizationDirectory);
+        BackFromSettingsButton.Content = L("Settings.Back");
+
+        ApplyTheme();
+        UpdatePrimaryActionButton();
+        UpdateStorageSteps();
+        if (_lastPassport is not null)
+        {
+            UpdateComputerPassportStep(_lastPassport);
+            PassportSummaryText.Text = BuildPassportSummary(_lastPassport);
+            PassportPathText.Text = LF("Setup.PassportPath", AppDataPaths.ComputerPassportPath);
+        }
+
+        if (WelcomePage.Visibility == Visibility.Visible)
+        {
+            UpdateWelcomeStatus();
+        }
+    }
+
+    private void PopulateLanguageComboBox()
+    {
+        _isApplyingLanguageSelection = true;
+        var languages = _localizationService.GetAvailableLanguages();
+        LanguageComboBox.ItemsSource = languages;
+        LanguageComboBox.SelectedItem = languages.FirstOrDefault(language =>
+            string.Equals(language.Code, _localizationService.CurrentLanguageCode, StringComparison.OrdinalIgnoreCase));
+        _isApplyingLanguageSelection = false;
+    }
+
+    private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingLanguageSelection || LanguageComboBox.SelectedItem is not LanguageOption language)
+        {
+            return;
+        }
+
+        _appSettings.LanguageCode = language.Code;
+        _appSettings.LanguageWasChosen = true;
+        _appSettingsStore.Save(_appSettings);
+        _localizationService.Load(language.Code);
+        PopulateLanguageComboBox();
+        ApplyLocalization();
+        StatusText.Text = L("Status.LanguageSaved");
+    }
+
     private void InitializeAppData()
     {
         try
@@ -94,6 +247,7 @@ public partial class MainWindow : Window
             _appState = _appStateStore.LoadOrCreate();
             _storageSettings = _storageSettingsStore.LoadOrCreate();
             var passport = _computerPassportService.RegeneratePassport();
+            _lastPassport = passport;
             SavePassportState(passport);
             UpdateComputerPassportStep(passport);
             LoadStorageSettingsIntoControls();
@@ -102,7 +256,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            StatusText.Text = "Статус: паспорт компьютера пока не создан. Можно открыть настройку и повторить анализ.";
+            StatusText.Text = L("Status.PassportMissing");
         }
     }
 
@@ -114,18 +268,19 @@ public partial class MainWindow : Window
                 ? _computerPassportService.RegeneratePassport()
                 : _computerPassportService.EnsurePassport();
 
+            _lastPassport = passport;
             SavePassportState(passport);
             UpdateComputerPassportStep(passport);
             LoadStorageSettingsIntoControls();
             ShowSetupPage(passport);
 
             StatusText.Text = regeneratePassport
-                ? "Статус: паспорт компьютера пересоздан. Настройка пока в режиме заготовки."
-                : "Статус: открыта страница настройки. Реальное изменение параметров пока не выполняется.";
+                ? L("Status.PassportRegenerated")
+                : L("Status.SetupOpened");
         }
         catch
         {
-            StatusText.Text = "Статус: не удалось открыть настройку или обновить паспорт компьютера.";
+            StatusText.Text = L("Status.SetupOpenFailed");
         }
     }
 
@@ -206,12 +361,21 @@ public partial class MainWindow : Window
         UpdatePrimaryActionButton();
         UpdateStorageSteps();
         StatusText.Text = _appState.HasCompletedSetup
-            ? $"Статус: настройка завершена. Настройки хранения сохранены в {AppDataPaths.StorageSettingsPath}."
-            : "Статус: настройки сохранены, но для завершения нужно добавить хотя бы один адрес для моделей и один адрес для результатов.";
+            ? LF("Status.StorageSavedComplete", AppDataPaths.StorageSettingsPath)
+            : L("Status.StorageSavedIncomplete");
     }
 
     private void BackToStartButton_Click(object sender, RoutedEventArgs e)
     {
+        SetupPage.Visibility = Visibility.Collapsed;
+        WelcomePage.Visibility = Visibility.Visible;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        UpdateWelcomeStatus();
+    }
+
+    private void BackFromSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         UpdateWelcomeStatus();
@@ -227,15 +391,16 @@ public partial class MainWindow : Window
     private void UpdatePrimaryActionButton()
     {
         PrimaryActionButton.Content = _appState.HasCompletedSetup
-            ? "Начать работу"
-            : "Начать настройку";
+            ? L("Home.StartWork")
+            : L("Home.StartSetup");
+        ReconfigureButton.Content = L("Home.Reconfigure");
     }
 
     private void UpdateWelcomeStatus()
     {
         StatusText.Text = _appState.HasCompletedSetup
-            ? "Статус: настройка завершена. Можно начать работу или изменить параметры через Перенастроить."
-            : "Статус: паспорт компьютера готов. Настройка пока не завершена.";
+            ? L("Status.PassportReadySetupComplete")
+            : L("Status.PassportReadySetupIncomplete");
     }
 
     private bool HasRequiredStorageSettings()
@@ -247,9 +412,18 @@ public partial class MainWindow : Window
     private void ShowSetupPage(ComputerPassport passport)
     {
         PassportSummaryText.Text = BuildPassportSummary(passport);
-        PassportPathText.Text = $"Файл паспорта: {AppDataPaths.ComputerPassportPath}";
+        PassportPathText.Text = LF("Setup.PassportPath", AppDataPaths.ComputerPassportPath);
         WelcomePage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Visible;
+    }
+
+    private void ShowSettingsPage()
+    {
+        WelcomePage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Visible;
+        PopulateLanguageComboBox();
     }
 
     private void LoadStorageSettingsIntoControls()
@@ -282,11 +456,11 @@ public partial class MainWindow : Window
         RefreshLocationList(ResultsLocationList, _storageSettings.Results);
     }
 
-    private static void RefreshLocationList(System.Windows.Controls.ListBox listBox, StorageCategorySettings category)
+    private void RefreshLocationList(System.Windows.Controls.ListBox listBox, StorageCategorySettings category)
     {
         var selectedIndex = listBox.SelectedIndex;
         listBox.ItemsSource = category.Locations
-            .Select((location, index) => $"{index + 1}. {location.Path} — лимит {location.LimitGb:0.##} ГБ")
+            .Select((location, index) => LF("Storage.ListItem", index + 1, location.Path, FormatGbForText(location.LimitGb)))
             .ToList();
 
         if (selectedIndex >= 0 && selectedIndex < category.Locations.Count)
@@ -299,7 +473,7 @@ public partial class MainWindow : Window
     {
         using var dialog = new Forms.FolderBrowserDialog
         {
-            Description = "Выберите папку хранения AI HUB",
+            Description = L("FolderDialog.Description"),
             UseDescriptionForTitle = true
         };
 
@@ -323,7 +497,7 @@ public partial class MainWindow : Window
         var path = pathInput.Text.Trim();
         if (string.IsNullOrWhiteSpace(path))
         {
-            StatusText.Text = "Статус: сначала укажите путь хранения.";
+            StatusText.Text = L("Status.PathRequired");
             return;
         }
 
@@ -402,11 +576,11 @@ public partial class MainWindow : Window
 
     private void UpdateStorageSteps()
     {
-        ModelsStorageStepText.Text = BuildStorageSummary(_storageSettings.Models, "Выберем диск и лимит для будущих скачиваний.");
-        ResultsStorageStepText.Text = BuildStorageSummary(_storageSettings.Results, "Отделим созданные файлы от моделей и кэша.");
+        ModelsStorageStepText.Text = BuildStorageSummary(_storageSettings.Models, L("Home.ModelsStorageEmpty"));
+        ResultsStorageStepText.Text = BuildStorageSummary(_storageSettings.Results, L("Home.ResultsStorageEmpty"));
     }
 
-    private static string BuildStorageSummary(StorageCategorySettings category, string emptyText)
+    private string BuildStorageSummary(StorageCategorySettings category, string emptyText)
     {
         if (category.Locations.Count == 0)
         {
@@ -418,18 +592,24 @@ public partial class MainWindow : Window
         var hiddenCount = Math.Max(0, category.Locations.Count - 1 - additional.Count);
         var additionalText = additional.Count == 0
             ? string.Empty
-            : $" Дополнительно: {string.Join("; ", additional)}.";
+            : LF("Storage.SummaryAdditional", string.Join("; ", additional));
 
         if (hiddenCount > 0)
         {
-            additionalText += $" Ещё: {hiddenCount}.";
+            additionalText += LF("Storage.SummaryHidden", hiddenCount);
         }
 
         var overflowText = category.AllowTemporaryOverflow
-            ? $"+{category.TemporaryOverflowGb:0.##} ГБ"
-            : "выключено";
+            ? $"+{FormatGbForText(category.TemporaryOverflowGb)} {L("Units.Gb")}"
+            : L("Storage.OverflowOff");
 
-        return $"Настроено: {category.Locations.Count}. По умолчанию: {defaultPath}.{additionalText} Общий лимит: {category.TotalLimitGb:0.##} ГБ. Временное превышение: {overflowText}.";
+        return LF(
+            "Storage.SummaryConfigured",
+            category.Locations.Count,
+            defaultPath,
+            additionalText,
+            FormatGbForText(category.TotalLimitGb),
+            overflowText);
     }
 
     private static double ParseGb(string text)
@@ -445,19 +625,24 @@ public partial class MainWindow : Window
         return value <= 0 ? string.Empty : value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    private static string BuildPassportSummary(ComputerPassport passport)
+    private static string FormatGbForText(double value)
+    {
+        return Math.Max(0, value).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private string BuildPassportSummary(ComputerPassport passport)
     {
         var drives = passport.Drives.Count == 0
-            ? "Диски: данные пока не получены."
-            : $"Диски: найдено {passport.Drives.Count}.";
+            ? L("Passport.DrivesUnknown")
+            : LF("Passport.DrivesFound", passport.Drives.Count);
 
         return string.Join(
             Environment.NewLine,
-            $"Анализ: {passport.CreatedAt:dd.MM.yyyy HH:mm:ss}",
-            $"Компьютер: {passport.MachineName}",
-            $"Windows: {passport.WindowsVersion}",
-            $"CPU: {passport.CpuName}",
-            $"RAM: {passport.RamTotalGb:0.##} ГБ",
+            LF("Passport.Analysis", passport.CreatedAt.ToString("dd.MM.yyyy HH:mm:ss")),
+            LF("Passport.Computer", passport.MachineName),
+            LF("Passport.Windows", passport.WindowsVersion),
+            LF("Passport.Cpu", passport.CpuName),
+            LF("Passport.Ram", FormatGbForText(passport.RamTotalGb)),
             BuildGpuSummary(passport),
             drives);
     }
@@ -466,36 +651,36 @@ public partial class MainWindow : Window
     {
         ComputerPassportStepText.Text = string.Join(
             Environment.NewLine,
-            "Сканирование ПК завершено. Найдено:",
-            $"CPU: {passport.CpuName}",
-            $"RAM: {passport.RamTotalGb:0.##} ГБ",
+            L("Passport.ScanComplete"),
+            LF("Passport.Cpu", passport.CpuName),
+            LF("Passport.Ram", FormatGbForText(passport.RamTotalGb)),
             BuildGpuSummary(passport),
             BuildDriveSummary(passport));
     }
 
-    private static string BuildGpuSummary(ComputerPassport passport)
+    private string BuildGpuSummary(ComputerPassport passport)
     {
         if (passport.Gpus.Count == 0)
         {
-            return "GPU: не найдено; VRAM: unknown";
+            return L("Passport.GpuMissing");
         }
 
         var gpuNames = string.Join(", ", passport.Gpus.Select(gpu => gpu.Name));
         var vramTotal = passport.Gpus.Sum(gpu => gpu.VramGb);
-        var vramText = vramTotal > 0 ? $"{vramTotal:0.##} ГБ" : "unknown";
+        var vramText = vramTotal > 0 ? $"{FormatGbForText(vramTotal)} {L("Units.Gb")}" : "unknown";
 
-        return $"GPU: {gpuNames}; VRAM: {vramText}";
+        return LF("Passport.GpuFound", gpuNames, vramText);
     }
 
-    private static string BuildDriveSummary(ComputerPassport passport)
+    private string BuildDriveSummary(ComputerPassport passport)
     {
         if (passport.Drives.Count == 0)
         {
-            return "Диски: не найдены";
+            return L("Passport.DrivesMissing");
         }
 
         var totalFree = passport.Drives.Sum(drive => drive.FreeGb);
-        return $"Диски: {passport.Drives.Count}, свободно {totalFree:0.##} ГБ";
+        return LF("Passport.DrivesFree", passport.Drives.Count, FormatGbForText(totalFree));
     }
 
     private void ApplySystemTitleBarTheme()
