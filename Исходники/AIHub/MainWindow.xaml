@@ -228,7 +228,8 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="15"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="Выберем диск и лимит для будущих скачиваний."
+                            <TextBlock x:Name="ModelsStorageStepText"
+                                       Text="Выберем диск и лимит для будущих скачиваний."
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        TextWrapping="Wrap"
@@ -258,7 +259,8 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="15"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="Отделим созданные файлы от моделей и кэша."
+                            <TextBlock x:Name="ResultsStorageStepText"
+                                       Text="Отделим созданные файлы от моделей и кэша."
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        TextWrapping="Wrap"
@@ -325,40 +327,237 @@
                            Margin="0,12,0,0" />
             </StackPanel>
 
-            <Border Grid.Row="2"
-                    Background="{DynamicResource PanelBrush}"
-                    BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Padding="28">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="14" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="18" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock Text="Паспорт компьютера"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
-                               FontSize="20"
-                               FontWeight="SemiBold" />
-
-                    <TextBlock x:Name="PassportSummaryText"
-                               Grid.Row="2"
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="Первый адрес используется по умолчанию. Остальные можно будет выбрать вручную там, где это потребуется."
                                Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="15"
-                               LineHeight="26"
-                               TextWrapping="Wrap" />
+                               FontSize="13"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,14" />
 
-                    <TextBlock x:Name="PassportPathText"
-                               Grid.Row="4"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="12"
-                               TextWrapping="Wrap" />
-                </Grid>
-            </Border>
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="Хранилище моделей"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Добавьте путь вручную или выберите папку Windows. Поле рядом — лимит этого адреса в ГБ."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ModelsPathInput"
+                                         Height="34"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Можно вставить или написать путь вручную" />
+                                <TextBox x:Name="ModelsLocationLimitInput"
+                                         Grid.Column="1"
+                                         Height="34"
+                                         Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Лимит этого адреса в ГБ" />
+                                <Button Grid.Column="2"
+                                        Content="Выбрать"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        MinWidth="92"
+                                        Margin="8,0,0,0"
+                                        Click="BrowseModelsLocationButton_Click" />
+                                <Button Grid.Column="3"
+                                        Content="Добавить"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        MinWidth="94"
+                                        Margin="8,0,0,0"
+                                        Click="AddModelsLocationButton_Click" />
+                            </Grid>
+                            <ListBox x:Name="ModelsLocationList"
+                                     Height="82"
+                                     Margin="0,10,0,0"
+                                     SelectionChanged="ModelsLocationList_SelectionChanged" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="Вверх"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Click="MoveModelsLocationUpButton_Click" />
+                                <Button Content="Вниз"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Margin="8,0,0,0"
+                                        Click="MoveModelsLocationDownButton_Click" />
+                                <Button Content="Удалить"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Margin="8,0,0,0"
+                                        Click="RemoveModelsLocationButton_Click" />
+                            </StackPanel>
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="100" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Общий лимит, ГБ"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <TextBox x:Name="ModelsTotalLimitInput"
+                                         Grid.Column="1"
+                                         Height="34"
+                                         Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center" />
+                                <CheckBox x:Name="ModelsAllowOverflowCheckBox"
+                                          Grid.Column="2"
+                                          Content="Временное превышение"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          VerticalAlignment="Center"
+                                          Margin="16,0,0,0" />
+                                <TextBlock Grid.Column="3"
+                                           Text="+ ГБ"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,0,0" />
+                                <TextBox x:Name="ModelsTemporaryOverflowInput"
+                                         Grid.Column="4"
+                                         Height="34"
+                                         Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="Папка результатов"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Добавьте путь вручную или выберите папку Windows. Поле рядом — лимит этого адреса в ГБ."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ResultsPathInput"
+                                         Height="34"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Можно вставить или написать путь вручную" />
+                                <TextBox x:Name="ResultsLocationLimitInput"
+                                         Grid.Column="1"
+                                         Height="34"
+                                         Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Лимит этого адреса в ГБ" />
+                                <Button Grid.Column="2"
+                                        Content="Выбрать"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        MinWidth="92"
+                                        Margin="8,0,0,0"
+                                        Click="BrowseResultsLocationButton_Click" />
+                                <Button Grid.Column="3"
+                                        Content="Добавить"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        MinWidth="94"
+                                        Margin="8,0,0,0"
+                                        Click="AddResultsLocationButton_Click" />
+                            </Grid>
+                            <ListBox x:Name="ResultsLocationList"
+                                     Height="82"
+                                     Margin="0,10,0,0"
+                                     SelectionChanged="ResultsLocationList_SelectionChanged" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="Вверх"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Click="MoveResultsLocationUpButton_Click" />
+                                <Button Content="Вниз"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Margin="8,0,0,0"
+                                        Click="MoveResultsLocationDownButton_Click" />
+                                <Button Content="Удалить"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Margin="8,0,0,0"
+                                        Click="RemoveResultsLocationButton_Click" />
+                            </StackPanel>
+                            <Grid Margin="0,14,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="100" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Общий лимит, ГБ"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <TextBox x:Name="ResultsTotalLimitInput"
+                                         Grid.Column="1"
+                                         Height="34"
+                                         Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center" />
+                                <CheckBox x:Name="ResultsAllowOverflowCheckBox"
+                                          Grid.Column="2"
+                                          Content="Временное превышение"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          VerticalAlignment="Center"
+                                          Margin="16,0,0,0" />
+                                <TextBlock Grid.Column="3"
+                                           Text="+ ГБ"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,0,0" />
+                                <TextBox x:Name="ResultsTemporaryOverflowInput"
+                                         Grid.Column="4"
+                                         Height="34"
+                                         Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20">
+                        <StackPanel>
+                            <TextBlock Text="Паспорт компьютера"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="PassportSummaryText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="14"
+                                       LineHeight="24"
+                                       TextWrapping="Wrap"
+                                       Margin="0,12,0,0" />
+                            <TextBlock x:Name="PassportPathText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Margin="0,14,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
 
             <StackPanel Grid.Row="4"
                         Orientation="Horizontal"
@@ -366,6 +565,10 @@
                 <Button Content="Назад"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Click="BackToStartButton_Click" />
+                <Button Content="Сохранить"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Margin="10,0,0,0"
+                        Click="SaveStorageSettingsButton_Click" />
             </StackPanel>
         </Grid>
 

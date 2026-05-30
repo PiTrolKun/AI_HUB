@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Windows;
-using System.Windows.Media;
+using System.Windows.Controls;
 using AIHub.Models;
 using AIHub.Services;
 using Microsoft.Win32;
+using Forms = System.Windows.Forms;
+using Media = System.Windows.Media;
 
 namespace AIHub;
 
@@ -11,8 +13,10 @@ public partial class MainWindow : Window
 {
     private readonly AppStateStore _appStateStore = new();
     private readonly ComputerPassportService _computerPassportService = new();
+    private readonly StorageSettingsStore _storageSettingsStore = new();
 
     private AppState _appState = new();
+    private StorageSettings _storageSettings = new();
     private bool _isDarkTheme;
 
     public MainWindow()
@@ -53,11 +57,11 @@ public partial class MainWindow : Window
         SetBrush("StepBadgeBrush", _isDarkTheme ? "#1E3A5F" : "#EAF1FF");
         SetBrush("SecondaryButtonBackgroundBrush", _isDarkTheme ? "#111827" : "#F8F8F8");
 
-        RootWindow.Background = (Brush)Resources["WindowBackgroundBrush"];
+        RootWindow.Background = (Media.Brush)Resources["WindowBackgroundBrush"];
         ThemeToggleButton.Content = _isDarkTheme ? "☀" : "☾";
         ThemeToggleButton.Foreground = _isDarkTheme
-            ? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBBF24"))
-            : (Brush)Resources["TextPrimaryBrush"];
+            ? new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString("#FBBF24"))
+            : (Media.Brush)Resources["TextPrimaryBrush"];
         ThemeToggleButton.ToolTip = _isDarkTheme
             ? "Переключить на светлую тему"
             : "Переключить на тёмную тему";
@@ -67,7 +71,7 @@ public partial class MainWindow : Window
 
     private void SetBrush(string resourceKey, string color)
     {
-        Resources[resourceKey] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+        Resources[resourceKey] = new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString(color));
     }
 
     private static string GetAppVersion()
@@ -82,9 +86,12 @@ public partial class MainWindow : Window
         try
         {
             _appState = _appStateStore.LoadOrCreate();
+            _storageSettings = _storageSettingsStore.LoadOrCreate();
             var passport = _computerPassportService.RegeneratePassport();
             SavePassportState(passport);
             UpdateComputerPassportStep(passport);
+            LoadStorageSettingsIntoControls();
+            UpdateStorageSteps();
             StatusText.Text = "Статус: паспорт компьютера готов. Настройка пока не завершена.";
         }
         catch
@@ -103,6 +110,7 @@ public partial class MainWindow : Window
 
             SavePassportState(passport);
             UpdateComputerPassportStep(passport);
+            LoadStorageSettingsIntoControls();
             ShowSetupPage(passport);
 
             StatusText.Text = regeneratePassport
@@ -113,6 +121,82 @@ public partial class MainWindow : Window
         {
             StatusText.Text = "Статус: не удалось открыть настройку или обновить паспорт компьютера.";
         }
+    }
+
+    private void BrowseModelsLocationButton_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseFolderInto(ModelsPathInput);
+    }
+
+    private void BrowseResultsLocationButton_Click(object sender, RoutedEventArgs e)
+    {
+        BrowseFolderInto(ResultsPathInput);
+    }
+
+    private void AddModelsLocationButton_Click(object sender, RoutedEventArgs e)
+    {
+        AddOrUpdateLocation(_storageSettings.Models, ModelsLocationList, ModelsPathInput, ModelsLocationLimitInput);
+        RefreshStorageLists();
+    }
+
+    private void AddResultsLocationButton_Click(object sender, RoutedEventArgs e)
+    {
+        AddOrUpdateLocation(_storageSettings.Results, ResultsLocationList, ResultsPathInput, ResultsLocationLimitInput);
+        RefreshStorageLists();
+    }
+
+    private void RemoveModelsLocationButton_Click(object sender, RoutedEventArgs e)
+    {
+        RemoveSelectedLocation(_storageSettings.Models, ModelsLocationList, ModelsPathInput, ModelsLocationLimitInput);
+        RefreshStorageLists();
+    }
+
+    private void RemoveResultsLocationButton_Click(object sender, RoutedEventArgs e)
+    {
+        RemoveSelectedLocation(_storageSettings.Results, ResultsLocationList, ResultsPathInput, ResultsLocationLimitInput);
+        RefreshStorageLists();
+    }
+
+    private void MoveModelsLocationUpButton_Click(object sender, RoutedEventArgs e)
+    {
+        MoveSelectedLocation(_storageSettings.Models, ModelsLocationList, direction: -1);
+        RefreshStorageLists();
+    }
+
+    private void MoveModelsLocationDownButton_Click(object sender, RoutedEventArgs e)
+    {
+        MoveSelectedLocation(_storageSettings.Models, ModelsLocationList, direction: 1);
+        RefreshStorageLists();
+    }
+
+    private void MoveResultsLocationUpButton_Click(object sender, RoutedEventArgs e)
+    {
+        MoveSelectedLocation(_storageSettings.Results, ResultsLocationList, direction: -1);
+        RefreshStorageLists();
+    }
+
+    private void MoveResultsLocationDownButton_Click(object sender, RoutedEventArgs e)
+    {
+        MoveSelectedLocation(_storageSettings.Results, ResultsLocationList, direction: 1);
+        RefreshStorageLists();
+    }
+
+    private void ModelsLocationList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        FillLocationInputs(_storageSettings.Models, ModelsLocationList, ModelsPathInput, ModelsLocationLimitInput);
+    }
+
+    private void ResultsLocationList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        FillLocationInputs(_storageSettings.Results, ResultsLocationList, ResultsPathInput, ResultsLocationLimitInput);
+    }
+
+    private void SaveStorageSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveStorageSettingsFromControls();
+        _storageSettingsStore.Save(_storageSettings);
+        UpdateStorageSteps();
+        StatusText.Text = $"Статус: настройки хранения сохранены в {AppDataPaths.StorageSettingsPath}.";
     }
 
     private void BackToStartButton_Click(object sender, RoutedEventArgs e)
@@ -142,6 +226,199 @@ public partial class MainWindow : Window
         PassportPathText.Text = $"Файл паспорта: {AppDataPaths.ComputerPassportPath}";
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Visible;
+    }
+
+    private void LoadStorageSettingsIntoControls()
+    {
+        ModelsTotalLimitInput.Text = FormatGb(_storageSettings.Models.TotalLimitGb);
+        ModelsAllowOverflowCheckBox.IsChecked = _storageSettings.Models.AllowTemporaryOverflow;
+        ModelsTemporaryOverflowInput.Text = FormatGb(_storageSettings.Models.TemporaryOverflowGb);
+
+        ResultsTotalLimitInput.Text = FormatGb(_storageSettings.Results.TotalLimitGb);
+        ResultsAllowOverflowCheckBox.IsChecked = _storageSettings.Results.AllowTemporaryOverflow;
+        ResultsTemporaryOverflowInput.Text = FormatGb(_storageSettings.Results.TemporaryOverflowGb);
+
+        RefreshStorageLists();
+    }
+
+    private void SaveStorageSettingsFromControls()
+    {
+        _storageSettings.Models.TotalLimitGb = ParseGb(ModelsTotalLimitInput.Text);
+        _storageSettings.Models.AllowTemporaryOverflow = ModelsAllowOverflowCheckBox.IsChecked == true;
+        _storageSettings.Models.TemporaryOverflowGb = ParseGb(ModelsTemporaryOverflowInput.Text);
+
+        _storageSettings.Results.TotalLimitGb = ParseGb(ResultsTotalLimitInput.Text);
+        _storageSettings.Results.AllowTemporaryOverflow = ResultsAllowOverflowCheckBox.IsChecked == true;
+        _storageSettings.Results.TemporaryOverflowGb = ParseGb(ResultsTemporaryOverflowInput.Text);
+    }
+
+    private void RefreshStorageLists()
+    {
+        RefreshLocationList(ModelsLocationList, _storageSettings.Models);
+        RefreshLocationList(ResultsLocationList, _storageSettings.Results);
+    }
+
+    private static void RefreshLocationList(System.Windows.Controls.ListBox listBox, StorageCategorySettings category)
+    {
+        var selectedIndex = listBox.SelectedIndex;
+        listBox.ItemsSource = category.Locations
+            .Select((location, index) => $"{index + 1}. {location.Path} — лимит {location.LimitGb:0.##} ГБ")
+            .ToList();
+
+        if (selectedIndex >= 0 && selectedIndex < category.Locations.Count)
+        {
+            listBox.SelectedIndex = selectedIndex;
+        }
+    }
+
+    private void BrowseFolderInto(System.Windows.Controls.TextBox pathInput)
+    {
+        using var dialog = new Forms.FolderBrowserDialog
+        {
+            Description = "Выберите папку хранения AI HUB",
+            UseDescriptionForTitle = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(pathInput.Text))
+        {
+            dialog.SelectedPath = pathInput.Text.Trim();
+        }
+
+        if (dialog.ShowDialog() == Forms.DialogResult.OK)
+        {
+            pathInput.Text = dialog.SelectedPath;
+        }
+    }
+
+    private void AddOrUpdateLocation(
+        StorageCategorySettings category,
+        System.Windows.Controls.ListBox listBox,
+        System.Windows.Controls.TextBox pathInput,
+        System.Windows.Controls.TextBox limitInput)
+    {
+        var path = pathInput.Text.Trim();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            StatusText.Text = "Статус: сначала укажите путь хранения.";
+            return;
+        }
+
+        var limitGb = ParseGb(limitInput.Text);
+        var selectedIndex = listBox.SelectedIndex;
+        if (selectedIndex >= 0 && selectedIndex < category.Locations.Count)
+        {
+            category.Locations[selectedIndex].Path = path;
+            category.Locations[selectedIndex].LimitGb = limitGb;
+            return;
+        }
+
+        var existing = category.Locations.FirstOrDefault(location =>
+            string.Equals(location.Path, path, StringComparison.OrdinalIgnoreCase));
+
+        if (existing is not null)
+        {
+            existing.LimitGb = limitGb;
+            return;
+        }
+
+        category.Locations.Add(new StorageLocationSettings
+        {
+            Path = path,
+            LimitGb = limitGb
+        });
+    }
+
+    private static void RemoveSelectedLocation(
+        StorageCategorySettings category,
+        System.Windows.Controls.ListBox listBox,
+        System.Windows.Controls.TextBox pathInput,
+        System.Windows.Controls.TextBox limitInput)
+    {
+        var selectedIndex = listBox.SelectedIndex;
+        if (selectedIndex < 0 || selectedIndex >= category.Locations.Count)
+        {
+            return;
+        }
+
+        category.Locations.RemoveAt(selectedIndex);
+        pathInput.Clear();
+        limitInput.Clear();
+    }
+
+    private static void MoveSelectedLocation(StorageCategorySettings category, System.Windows.Controls.ListBox listBox, int direction)
+    {
+        var selectedIndex = listBox.SelectedIndex;
+        var newIndex = selectedIndex + direction;
+        if (selectedIndex < 0 || newIndex < 0 || newIndex >= category.Locations.Count)
+        {
+            return;
+        }
+
+        (category.Locations[selectedIndex], category.Locations[newIndex]) =
+            (category.Locations[newIndex], category.Locations[selectedIndex]);
+        listBox.SelectedIndex = newIndex;
+    }
+
+    private static void FillLocationInputs(
+        StorageCategorySettings category,
+        System.Windows.Controls.ListBox listBox,
+        System.Windows.Controls.TextBox pathInput,
+        System.Windows.Controls.TextBox limitInput)
+    {
+        var selectedIndex = listBox.SelectedIndex;
+        if (selectedIndex < 0 || selectedIndex >= category.Locations.Count)
+        {
+            return;
+        }
+
+        var location = category.Locations[selectedIndex];
+        pathInput.Text = location.Path;
+        limitInput.Text = FormatGb(location.LimitGb);
+    }
+
+    private void UpdateStorageSteps()
+    {
+        ModelsStorageStepText.Text = BuildStorageSummary(_storageSettings.Models, "Выберем диск и лимит для будущих скачиваний.");
+        ResultsStorageStepText.Text = BuildStorageSummary(_storageSettings.Results, "Отделим созданные файлы от моделей и кэша.");
+    }
+
+    private static string BuildStorageSummary(StorageCategorySettings category, string emptyText)
+    {
+        if (category.Locations.Count == 0)
+        {
+            return emptyText;
+        }
+
+        var defaultPath = category.Locations[0].Path;
+        var additional = category.Locations.Skip(1).Take(2).Select(location => location.Path).ToList();
+        var hiddenCount = Math.Max(0, category.Locations.Count - 1 - additional.Count);
+        var additionalText = additional.Count == 0
+            ? string.Empty
+            : $" Дополнительно: {string.Join("; ", additional)}.";
+
+        if (hiddenCount > 0)
+        {
+            additionalText += $" Ещё: {hiddenCount}.";
+        }
+
+        var overflowText = category.AllowTemporaryOverflow
+            ? $"+{category.TemporaryOverflowGb:0.##} ГБ"
+            : "выключено";
+
+        return $"Настроено: {category.Locations.Count}. По умолчанию: {defaultPath}.{additionalText} Общий лимит: {category.TotalLimitGb:0.##} ГБ. Временное превышение: {overflowText}.";
+    }
+
+    private static double ParseGb(string text)
+    {
+        var normalized = text.Trim().Replace(',', '.');
+        return double.TryParse(normalized, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value)
+            ? Math.Max(0, Math.Round(value, 2))
+            : 0;
+    }
+
+    private static string FormatGb(double value)
+    {
+        return value <= 0 ? string.Empty : value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static string BuildPassportSummary(ComputerPassport passport)

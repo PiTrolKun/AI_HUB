@@ -14,6 +14,8 @@ public static class AppDataPaths
 
     public static string ComputerPassportPath { get; } = Path.Combine(BaseDirectory, "computer-passport.json");
 
+    public static string StorageSettingsPath { get; } = Path.Combine(BaseDirectory, "storage-settings.json");
+
     public static void EnsureBaseDirectory()
     {
         Directory.CreateDirectory(BaseDirectory);
