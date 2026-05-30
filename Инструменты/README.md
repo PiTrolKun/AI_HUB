@@ -23,3 +23,27 @@ powershell -ExecutionPolicy Bypass -File .\Инструменты\check-cyrillic
 ```
 
 По умолчанию папка `Backups` не проверяется, чтобы старые копии не мешали текущему результату.
+
+### `build-installer.ps1`
+
+Собирает тестовый установщик AI_HUB через Inno Setup.
+
+Обычный запуск лучше делать двойным кликом по файлу в корне проекта:
+
+```text
+Собрать_установщик_AI_HUB.cmd
+```
+
+Что делает скрипт:
+
+- читает версию из `VERSION`;
+- выполняет `dotnet publish` для `win-x64`;
+- собирает self-contained приложение;
+- запускает Inno Setup Compiler;
+- складывает готовый `.exe` в `Тесты/Установщики`.
+
+Если Inno Setup не установлен, скрипт покажет команду:
+
+```powershell
+winget install --id JRSoftware.InnoSetup -e
+```

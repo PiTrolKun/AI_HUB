@@ -38,6 +38,12 @@ public partial class MainWindow : Window
 
     private void PrimaryActionButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_appState.HasCompletedSetup)
+        {
+            StatusText.Text = "Статус: рабочий режим пока не реализован. Для изменения параметров нажмите Перенастроить.";
+            return;
+        }
+
         OpenSetupWindow(regeneratePassport: false);
     }
 
@@ -92,7 +98,7 @@ public partial class MainWindow : Window
             UpdateComputerPassportStep(passport);
             LoadStorageSettingsIntoControls();
             UpdateStorageSteps();
-            StatusText.Text = "Статус: паспорт компьютера готов. Настройка пока не завершена.";
+            UpdateWelcomeStatus();
         }
         catch
         {
@@ -195,15 +201,20 @@ public partial class MainWindow : Window
     {
         SaveStorageSettingsFromControls();
         _storageSettingsStore.Save(_storageSettings);
+        _appState.HasCompletedSetup = HasRequiredStorageSettings();
+        _appStateStore.Save(_appState);
+        UpdatePrimaryActionButton();
         UpdateStorageSteps();
-        StatusText.Text = $"Статус: настройки хранения сохранены в {AppDataPaths.StorageSettingsPath}.";
+        StatusText.Text = _appState.HasCompletedSetup
+            ? $"Статус: настройка завершена. Настройки хранения сохранены в {AppDataPaths.StorageSettingsPath}."
+            : "Статус: настройки сохранены, но для завершения нужно добавить хотя бы один адрес для моделей и один адрес для результатов.";
     }
 
     private void BackToStartButton_Click(object sender, RoutedEventArgs e)
     {
         SetupPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
-        StatusText.Text = "Статус: паспорт компьютера готов. Настройка пока не завершена.";
+        UpdateWelcomeStatus();
     }
 
     private void SavePassportState(ComputerPassport passport)
@@ -218,6 +229,19 @@ public partial class MainWindow : Window
         PrimaryActionButton.Content = _appState.HasCompletedSetup
             ? "Начать работу"
             : "Начать настройку";
+    }
+
+    private void UpdateWelcomeStatus()
+    {
+        StatusText.Text = _appState.HasCompletedSetup
+            ? "Статус: настройка завершена. Можно начать работу или изменить параметры через Перенастроить."
+            : "Статус: паспорт компьютера готов. Настройка пока не завершена.";
+    }
+
+    private bool HasRequiredStorageSettings()
+    {
+        return _storageSettings.Models.Locations.Count > 0
+            && _storageSettings.Results.Locations.Count > 0;
     }
 
     private void ShowSetupPage(ComputerPassport passport)

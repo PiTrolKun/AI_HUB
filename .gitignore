@@ -30,6 +30,11 @@ Runtime/**
 !Runtime/*/
 !Runtime/*/README.md
 
+# Generated test installers stay local
+Тесты/Установщики/*.exe
+Тесты/Установщики/*.msi
+Тесты/Установщики/*.zip
+
 # Local logs and temporary files
 *.log
 *.tmp

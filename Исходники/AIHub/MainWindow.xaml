@@ -352,29 +352,46 @@
                                        TextWrapping="Wrap"
                                        Margin="0,6,0,0" />
                             <Grid Margin="0,14,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="100" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <TextBlock Text="Адрес хранения"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12" />
+                                <TextBlock Grid.Column="1"
+                                           Text="Лимит адреса, ГБ"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12"
+                                           Margin="8,0,0,0" />
                                 <TextBox x:Name="ModelsPathInput"
+                                         Grid.Row="2"
                                          Height="34"
                                          VerticalContentAlignment="Center"
                                          ToolTip="Можно вставить или написать путь вручную" />
                                 <TextBox x:Name="ModelsLocationLimitInput"
+                                         Grid.Row="2"
                                          Grid.Column="1"
                                          Height="34"
                                          Margin="8,0,0,0"
                                          VerticalContentAlignment="Center"
                                          ToolTip="Лимит этого адреса в ГБ" />
-                                <Button Grid.Column="2"
+                                <Button Grid.Row="2"
+                                        Grid.Column="2"
                                         Content="Выбрать"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         MinWidth="92"
                                         Margin="8,0,0,0"
                                         Click="BrowseModelsLocationButton_Click" />
-                                <Button Grid.Column="3"
+                                <Button Grid.Row="2"
+                                        Grid.Column="3"
                                         Content="Добавить"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         MinWidth="94"
@@ -451,29 +468,46 @@
                                        TextWrapping="Wrap"
                                        Margin="0,6,0,0" />
                             <Grid Margin="0,14,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="100" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <TextBlock Text="Адрес хранения"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12" />
+                                <TextBlock Grid.Column="1"
+                                           Text="Лимит адреса, ГБ"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12"
+                                           Margin="8,0,0,0" />
                                 <TextBox x:Name="ResultsPathInput"
+                                         Grid.Row="2"
                                          Height="34"
                                          VerticalContentAlignment="Center"
                                          ToolTip="Можно вставить или написать путь вручную" />
                                 <TextBox x:Name="ResultsLocationLimitInput"
+                                         Grid.Row="2"
                                          Grid.Column="1"
                                          Height="34"
                                          Margin="8,0,0,0"
                                          VerticalContentAlignment="Center"
                                          ToolTip="Лимит этого адреса в ГБ" />
-                                <Button Grid.Column="2"
+                                <Button Grid.Row="2"
+                                        Grid.Column="2"
                                         Content="Выбрать"
                                         Style="{StaticResource SecondaryButtonStyle}"
                                         MinWidth="92"
                                         Margin="8,0,0,0"
                                         Click="BrowseResultsLocationButton_Click" />
-                                <Button Grid.Column="3"
+                                <Button Grid.Row="2"
+                                        Grid.Column="3"
                                         Content="Добавить"
                                         Style="{StaticResource PrimaryButtonStyle}"
                                         MinWidth="94"
