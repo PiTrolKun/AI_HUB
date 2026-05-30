@@ -356,3 +356,31 @@
 ### Откат
 
 Для отката восстановить `AIHub.csproj` и документы истории из backup-папки `Backups/20260530_205215_set_version_0_0_1_dev`, затем удалить файл `VERSION`.
+
+## 2026-05-30 — исправление выбора проекта в запускаторе
+
+Задача: исправить ошибку `CS5001` при запуске через `Запустить_AI_HUB.cmd`.
+
+### Причина
+
+`start-aihub.ps1` искал `AIHub.csproj` рекурсивно по всему `H:\AI_HUB` и мог выбрать backup-копию проекта из `Backups`. Backup-копия `.csproj` лежит без `App.xaml`, поэтому WPF-точка входа `Main` не генерировалась.
+
+### Изменения
+
+- `start-aihub.ps1` больше не ищет проект рекурсивно.
+- Скрипт использует точный путь `Исходники/AIHub/AIHub.csproj`.
+- Путь к `AIHub.exe` также строится от настоящей папки проекта.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_205402_fix_launcher_project_path/start-aihub.ps1`
+- `Backups/20260530_205402_fix_launcher_project_path/CONTEXTHUB.md`
+- `Backups/20260530_205402_fix_launcher_project_path/Dialog_szhato.md`
+- `Backups/20260530_205402_fix_launcher_project_path/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить `start-aihub.ps1` и документы истории из backup-папки `Backups/20260530_205402_fix_launcher_project_path`.
