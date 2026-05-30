@@ -538,3 +538,41 @@
 ### Откат
 
 Для отката восстановить изменённые текстовые файлы из backup-папки `Backups/20260530_224246_add_application_logo`, удалить `Исходники/AIHub/Assets/AppIcon.ico` и удалить скопированный PNG из `Исходники/AIHub/Assets`, если он больше не нужен.
+
+## 2026-05-30 — иконка переключения темы и очистка верхней панели
+
+Задача: убрать надпись `Первый запуск`, прижать переключатель темы к правому краю и заменить текстовую кнопку на значки луны/солнца с подсказкой.
+
+### Изменения
+
+- В `MainWindow.xaml` удалён текст `Первый запуск` из верхней панели.
+- Кнопка темы стала квадратной кнопкой-иконкой у правого края.
+- В светлой теме кнопка показывает луну `☾` и подсказку `Переключить на тёмную тему`.
+- В тёмной теме кнопка показывает солнце `☀` и подсказку `Переключить на светлую тему`.
+- Версия повышена с `0.0.2-dev` до `0.0.3-dev`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/MainWindow.xaml`
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/MainWindow.xaml.cs`
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/AIHub.csproj`
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/VERSION`
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/CONTEXTHUB.md`
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/Dialog_szhato.md`
+- `Backups/20260530_225921_theme_icon_button_header_cleanup/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить изменённые файлы из backup-папки `Backups/20260530_225921_theme_icon_button_header_cleanup`.
+
+### Проверки
+
+- `dotnet build` прошёл без ошибок и предупреждений.
+- Scanner кириллицы прошёл без ошибок.
+- UI Automation подтвердил заголовок `AI HUB 0.0.3-dev`.
+- UI Automation подтвердил, что текст `Первый запуск` больше не отображается.
+- UI Automation подтвердил луну `☾` в светлой теме и солнце `☀` после переключения в тёмную тему.
+- UI Automation подтвердил подсказку для солнца: `Переключить на светлую тему`.

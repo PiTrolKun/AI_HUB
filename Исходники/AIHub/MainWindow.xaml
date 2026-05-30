@@ -86,10 +86,13 @@
         </Style>
 
         <Style x:Key="ThemeButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-            <Setter Property="Height" Value="32" />
-            <Setter Property="MinWidth" Value="122" />
-            <Setter Property="Padding" Value="12,0" />
-            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Width" Value="42" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="MinWidth" Value="42" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FontFamily" Value="Segoe UI Symbol, Segoe UI" />
+            <Setter Property="FontSize" Value="19" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </Window.Resources>
 
@@ -134,19 +137,12 @@
                     </StackPanel>
                 </StackPanel>
 
-                <StackPanel Grid.Column="2"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
-                    <Button x:Name="ThemeToggleButton"
-                            Content="Тёмная тема"
-                            Style="{StaticResource ThemeButtonStyle}"
-                            Click="ThemeToggleButton_Click" />
-                    <TextBlock Text="Первый запуск"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="13"
-                               VerticalAlignment="Center"
-                               Margin="16,0,0,0" />
-                </StackPanel>
+                <Button x:Name="ThemeToggleButton"
+                        Grid.Column="2"
+                        Content="☾"
+                        Style="{StaticResource ThemeButtonStyle}"
+                        ToolTip="Переключить на тёмную тему"
+                        Click="ThemeToggleButton_Click" />
             </Grid>
         </Border>
 

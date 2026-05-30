@@ -32,7 +32,10 @@ public partial class MainWindow : Window
         SetBrush("SecondaryButtonBackgroundBrush", _isDarkTheme ? "#111827" : "#F8F8F8");
 
         RootWindow.Background = (Brush)Resources["WindowBackgroundBrush"];
-        ThemeToggleButton.Content = _isDarkTheme ? "Светлая тема" : "Тёмная тема";
+        ThemeToggleButton.Content = _isDarkTheme ? "☀" : "☾";
+        ThemeToggleButton.ToolTip = _isDarkTheme
+            ? "Переключить на светлую тему"
+            : "Переключить на тёмную тему";
     }
 
     private void SetBrush(string resourceKey, string color)
