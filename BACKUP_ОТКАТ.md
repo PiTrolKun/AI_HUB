@@ -409,3 +409,28 @@
 ### Откат
 
 Для отката восстановить XAML, code-behind и документы истории из backup-папки `Backups/20260530_205631_show_version_in_status_line`.
+
+## 2026-05-30 — правило одного источника версии
+
+Задача: закрепить в правилах, что версия программы должна иметь один источник истины.
+
+### Изменения
+
+- Обновлён `Инструкции/AGENTS.md`.
+- Обновлён `Инструкции/CODEX.md`.
+- Добавлено правило: будущие UI-элементы, окно About, статусные строки, установщик, updater, release notes, диагностика, логи и модули должны читать версию из основного источника версии проекта.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_205806_single_version_source_rule/Instrukcii_AGENTS.md`
+- `Backups/20260530_205806_single_version_source_rule/Instrukcii_CODEX.md`
+- `Backups/20260530_205806_single_version_source_rule/CONTEXTHUB.md`
+- `Backups/20260530_205806_single_version_source_rule/Dialog_szhato.md`
+- `Backups/20260530_205806_single_version_source_rule/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить инструкции и документы истории из backup-папки `Backups/20260530_205806_single_version_source_rule`.
