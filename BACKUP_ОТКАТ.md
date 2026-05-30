@@ -302,3 +302,29 @@
 ### Откат
 
 Для отката восстановить XAML, code-behind и документы из backup-папки `Backups/20260530_204448_fix_startup_crash_launcher`, затем удалить `Запустить_AI_HUB.cmd` и `start-aihub.ps1`.
+
+## 2026-05-30 — архивирование ТЗ стартового WPF-окна без push
+
+Задача: закрыть выполненное ТЗ стартового WPF-окна и перенести его в архив.
+
+### Изменения
+
+- Файл `ТЗ/2026-05-30_прототип_стартового_окна_wpf.md` перенесён в `ТЗ/Архив/2026-05-30_прототип_стартового_окна_wpf.md`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_204949_archive_startup_window_tz_no_push/TZ_2026-05-30_startup_window_prototype.md`
+- `Backups/20260530_204949_archive_startup_window_tz_no_push/CONTEXTHUB.md`
+- `Backups/20260530_204949_archive_startup_window_tz_no_push/Dialog_szhato.md`
+- `Backups/20260530_204949_archive_startup_window_tz_no_push/BACKUP_OTKAT.md`
+
+### Исключение из правила GitHub-публикации
+
+По прямому текущему указанию пользователя push в GitHub не выполнялся: "в гит хаб пока не кидай".
+
+### Откат
+
+Для отката перенести `ТЗ/Архив/2026-05-30_прототип_стартового_окна_wpf.md` обратно в `ТЗ/2026-05-30_прототип_стартового_окна_wpf.md` и восстановить документы истории из backup-папки `Backups/20260530_204949_archive_startup_window_tz_no_push`.
