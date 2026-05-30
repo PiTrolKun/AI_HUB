@@ -134,3 +134,29 @@
 Документы можно восстановить из backup-папки `Backups/20260530_200837_github_initial_publish_docs`.
 
 Системный откат GitHub CLI выполняется отдельно через `winget uninstall --id GitHub.cli --exact`, если пользователь явно попросит удалить GitHub CLI.
+
+## 2026-05-30 — завершение первой публикации на GitHub
+
+Задача: зафиксировать успешный push первого коммита и перенести ТЗ публикации в архив.
+
+### Изменения
+
+- Первый коммит `9a5e76c Initial project skeleton` отправлен в `origin/main`.
+- GitHub подтвердил репозиторий `PiTrolKun/AI_HUB`, видимость `PRIVATE`, default branch `main`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+- ТЗ `ТЗ/2026-05-30_первая_публикация_github.md` перенесено в `ТЗ/Архив/2026-05-30_первая_публикация_github.md`.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_201505_github_publish_complete_docs/BACKUP_OTKAT.md`
+- `Backups/20260530_201505_github_publish_complete_docs/CONTEXTHUB.md`
+- `Backups/20260530_201505_github_publish_complete_docs/Dialog_szhato.md`
+- `Backups/20260530_201505_github_publish_complete_docs/TZ_2026-05-30_github_publish.md`
+
+### Откат
+
+Документы можно восстановить из backup-папки `Backups/20260530_201505_github_publish_complete_docs`.
+
+После отправки в GitHub откат содержимого делать новым коммитом. Не переписывать опубликованную историю без отдельного решения пользователя.
