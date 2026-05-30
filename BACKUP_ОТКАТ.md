@@ -328,3 +328,31 @@
 ### Откат
 
 Для отката перенести `ТЗ/Архив/2026-05-30_прототип_стартового_окна_wpf.md` обратно в `ТЗ/2026-05-30_прототип_стартового_окна_wpf.md` и восстановить документы истории из backup-папки `Backups/20260530_204949_archive_startup_window_tz_no_push`.
+
+## 2026-05-30 — фиксация версии 0.0.1-dev
+
+Задача: зафиксировать первую официальную dev-версию заготовки проекта.
+
+### Изменения
+
+- Создан файл `VERSION` со значением `0.0.1-dev`.
+- В `Исходники/AIHub/AIHub.csproj` добавлены свойства версии:
+  - `Version`: `0.0.1-dev`
+  - `AssemblyVersion`: `0.0.1.0`
+  - `FileVersion`: `0.0.1.0`
+  - `InformationalVersion`: `0.0.1-dev`
+  - `IncludeSourceRevisionInInformationalVersion`: `false`, чтобы .NET не добавлял git-хэш к dev-версии.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_205215_set_version_0_0_1_dev/AIHub.csproj`
+- `Backups/20260530_205215_set_version_0_0_1_dev/CONTEXTHUB.md`
+- `Backups/20260530_205215_set_version_0_0_1_dev/Dialog_szhato.md`
+- `Backups/20260530_205215_set_version_0_0_1_dev/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить `AIHub.csproj` и документы истории из backup-папки `Backups/20260530_205215_set_version_0_0_1_dev`, затем удалить файл `VERSION`.
