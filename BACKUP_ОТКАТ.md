@@ -212,3 +212,29 @@
 ### Откат
 
 Для отката восстановить изменённые документы из backup-папки `Backups/20260530_202318_history_every_action_rule`.
+
+## 2026-05-30 — прототип стартового WPF-окна
+
+Задача: создать первый реальный визуальный прототип стартового окна AI_HUB.
+
+### Изменения
+
+- Создано ТЗ `ТЗ/2026-05-30_прототип_стартового_окна_wpf.md`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+- Создан WPF-проект `Исходники/AIHub`.
+- Реализован прототип стартового окна.
+- Выполнены `dotnet restore`, `dotnet build` и scanner кириллицы.
+- Приложение запущено для визуальной оценки.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_203002_startup_window_prototype/CONTEXTHUB.md`
+- `Backups/20260530_203002_startup_window_prototype/Dialog_szhato.md`
+- `Backups/20260530_203002_startup_window_prototype/BACKUP_OTKAT.md`
+- `Backups/20260530_203002_startup_window_prototype/Dokumenty_proekta_REESTR.md`
+
+### Откат
+
+Для отката удалить созданный WPF-проект из `Исходники` и восстановить изменённые документы из backup-папки `Backups/20260530_203002_startup_window_prototype`.
