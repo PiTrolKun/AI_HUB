@@ -238,3 +238,30 @@
 ### Откат
 
 Для отката удалить созданный WPF-проект из `Исходники` и восстановить изменённые документы из backup-папки `Backups/20260530_203002_startup_window_prototype`.
+
+## 2026-05-30 — переключатель светлой и тёмной темы
+
+Задача: добавить в стартовое окно кнопку переключения светлой и тёмной темы.
+
+### Изменения
+
+- Обновлён `Исходники/AIHub/MainWindow.xaml`.
+- Обновлён `Исходники/AIHub/MainWindow.xaml.cs`.
+- Добавлена кнопка `Тёмная тема` / `Светлая тема` в правый верхний угол.
+- Тема переключается без перезапуска окна.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_203637_startup_theme_toggle/MainWindow.xaml`
+- `Backups/20260530_203637_startup_theme_toggle/MainWindow.xaml.cs`
+- `Backups/20260530_203637_startup_theme_toggle/CONTEXTHUB.md`
+- `Backups/20260530_203637_startup_theme_toggle/Dialog_szhato.md`
+- `Backups/20260530_203637_startup_theme_toggle/BACKUP_OTKAT.md`
+- `Backups/20260530_203637_startup_theme_toggle/TZ_2026-05-30_startup_window_prototype.md`
+
+### Откат
+
+Для отката восстановить XAML, code-behind и документы из backup-папки `Backups/20260530_203637_startup_theme_toggle`.
