@@ -16,6 +16,7 @@
 | Название | Назначение | Версия | Лицензия | Источник | Обязательно для сборки | Ограничения |
 |---|---|---|---|---|---|---|
 | `check-cyrillic-integrity.ps1` | Внутренний scanner UTF-8 и поломанной кириллицы | 0.1 | GPL-3.0-or-later, как код проекта | `Инструменты/check-cyrillic-integrity.ps1` | Нет | Использует PowerShell и проверяет текстовые файлы проекта |
+| `Запустить_AI_HUB.cmd` + `start-aihub.ps1` | Локальный запуск dev-сборки AI_HUB двойным кликом | 0.1 | GPL-3.0-or-later, как код проекта | Корень проекта | Нет | `.cmd` запускает PowerShell-скрипт, который выполняет `dotnet build` и стартует текущий Debug exe |
 | Microsoft .NET SDK | Создание, restore и build будущего C# / WPF-проекта | 10.0.300 | MIT | `Microsoft.DotNet.SDK.10`, winget / Microsoft | Да | Установлен системно; WPF smoke-test на `net10.0-windows` прошёл |
 | GitHub CLI | Авторизация и публикация проекта на GitHub | 2.93.0 | MIT | `GitHub.cli`, winget / GitHub | Нет | Установлен системно; текущая сессия вызывает `C:\Program Files\GitHub CLI\gh.exe` |
 

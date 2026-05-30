@@ -11,7 +11,7 @@
         MinWidth="860"
         MinHeight="560"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource WindowBackgroundBrush}"
+        Background="#F3F3F3"
         FontFamily="Segoe UI Variable Display, Segoe UI"
         UseLayoutRounding="True">
     <Window.Resources>
@@ -33,8 +33,8 @@
             <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="White" />
-            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -52,8 +52,8 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="{StaticResource AccentDarkBrush}" />
-                    <Setter Property="BorderBrush" Value="{StaticResource AccentDarkBrush}" />
+                    <Setter Property="Background" Value="{DynamicResource AccentDarkBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkBrush}" />
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -64,8 +64,8 @@
             <Setter Property="Padding" Value="18,0" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-            <Setter Property="Background" Value="{StaticResource SecondaryButtonBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Background" Value="{DynamicResource SecondaryButtonBackgroundBrush}" />
             <Setter Property="BorderBrush" Value="#C9CDD4" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Cursor" Value="Hand" />
@@ -100,8 +100,8 @@
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
-                Background="{StaticResource HeaderBackgroundBrush}"
-                BorderBrush="{StaticResource LineBrush}"
+                Background="{DynamicResource HeaderBackgroundBrush}"
+                BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,0,0,1">
             <Grid Margin="28,0">
                 <Grid.ColumnDefinitions>
@@ -124,11 +124,11 @@
                     </Border>
                     <StackPanel Margin="12,0,0,0">
                         <TextBlock Text="AI_HUB"
-                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="18"
                                    FontWeight="SemiBold" />
                         <TextBlock Text="Локальная AI-мастерская для Windows"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                    FontSize="12" />
                     </StackPanel>
                 </StackPanel>
@@ -141,7 +141,7 @@
                             Style="{StaticResource ThemeButtonStyle}"
                             Click="ThemeToggleButton_Click" />
                     <TextBlock Text="Первый запуск"
-                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
                                FontSize="13"
                                VerticalAlignment="Center"
                                Margin="16,0,0,0" />
@@ -158,16 +158,16 @@
 
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Добро пожаловать"
-                           Foreground="{StaticResource TextPrimaryBrush}"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
                            FontSize="34"
                            FontWeight="SemiBold" />
                 <TextBlock Text="Подготовим место для локального ИИ"
-                           Foreground="{StaticResource TextPrimaryBrush}"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
                            FontSize="20"
                            FontWeight="SemiBold"
                            Margin="0,14,0,0" />
                 <TextBlock Text="AI_HUB будет хранить модели, результаты и служебные файлы на выбранных дисках. Сейчас ничего не скачивается и не меняется без вашего подтверждения."
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="15"
                            LineHeight="24"
                            TextWrapping="Wrap"
@@ -183,8 +183,8 @@
             </StackPanel>
 
             <Border Grid.Column="2"
-                    Background="{StaticResource PanelBrush}"
-                    BorderBrush="{StaticResource LineBrush}"
+                    Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource LineBrush}"
                     BorderThickness="1"
                     CornerRadius="8"
                     Padding="28">
@@ -200,7 +200,7 @@
                     </Grid.RowDefinitions>
 
                     <TextBlock Text="Что будет настроено"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
                                FontSize="18"
                                FontWeight="SemiBold" />
 
@@ -212,10 +212,10 @@
                         <Border Width="30"
                                 Height="30"
                                 CornerRadius="15"
-                                Background="{StaticResource StepBadgeBrush}"
+                                Background="{DynamicResource StepBadgeBrush}"
                                 VerticalAlignment="Top">
                             <TextBlock Text="1"
-                                       Foreground="{StaticResource AccentBrush}"
+                                       Foreground="{DynamicResource AccentBrush}"
                                        FontSize="14"
                                        FontWeight="Bold"
                                        HorizontalAlignment="Center"
@@ -223,11 +223,11 @@
                         </Border>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="Хранилище моделей"
-                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="15"
                                        FontWeight="SemiBold" />
                             <TextBlock Text="Выберем диск и лимит для будущих скачиваний."
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        TextWrapping="Wrap"
                                        Margin="0,4,0,0" />
@@ -242,10 +242,10 @@
                         <Border Width="30"
                                 Height="30"
                                 CornerRadius="15"
-                                Background="{StaticResource StepBadgeBrush}"
+                                Background="{DynamicResource StepBadgeBrush}"
                                 VerticalAlignment="Top">
                             <TextBlock Text="2"
-                                       Foreground="{StaticResource AccentBrush}"
+                                       Foreground="{DynamicResource AccentBrush}"
                                        FontSize="14"
                                        FontWeight="Bold"
                                        HorizontalAlignment="Center"
@@ -253,11 +253,11 @@
                         </Border>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="Папка результатов"
-                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="15"
                                        FontWeight="SemiBold" />
                             <TextBlock Text="Отделим созданные файлы от моделей и кэша."
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        TextWrapping="Wrap"
                                        Margin="0,4,0,0" />
@@ -272,10 +272,10 @@
                         <Border Width="30"
                                 Height="30"
                                 CornerRadius="15"
-                                Background="{StaticResource StepBadgeBrush}"
+                                Background="{DynamicResource StepBadgeBrush}"
                                 VerticalAlignment="Top">
                             <TextBlock Text="3"
-                                       Foreground="{StaticResource AccentBrush}"
+                                       Foreground="{DynamicResource AccentBrush}"
                                        FontSize="14"
                                        FontWeight="Bold"
                                        HorizontalAlignment="Center"
@@ -283,11 +283,11 @@
                         </Border>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="Паспорт компьютера"
-                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="15"
                                        FontWeight="SemiBold" />
                             <TextBlock Text="Посмотрим RAM, GPU, VRAM и свободное место."
-                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        TextWrapping="Wrap"
                                        Margin="0,4,0,0" />
@@ -298,12 +298,12 @@
         </Grid>
 
         <Border Grid.Row="2"
-                Background="{StaticResource HeaderBackgroundBrush}"
-                BorderBrush="{StaticResource LineBrush}"
+                Background="{DynamicResource HeaderBackgroundBrush}"
+                BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,1,0,0">
             <Grid Margin="28,0">
                 <TextBlock Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
-                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="12"
                            VerticalAlignment="Center" />
             </Grid>

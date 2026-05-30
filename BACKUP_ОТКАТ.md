@@ -265,3 +265,40 @@
 ### Откат
 
 Для отката восстановить XAML, code-behind и документы из backup-папки `Backups/20260530_203637_startup_theme_toggle`.
+
+## 2026-05-30 — исправление падения стартового окна и скрипт запуска
+
+Задача: проверить сообщение пользователя о том, что окно сразу закрывается, исправить причину и добавить запуск программы двойным кликом.
+
+### Изменения
+
+- Проверен Windows Event Log: найдено падение `AIHub.exe` с `XamlParseException`.
+- Исправлен `Исходники/AIHub/MainWindow.xaml`: начальный фон окна больше не берётся через ранний `StaticResource`, а тематические кисти используют `DynamicResource`.
+- Исправлен `Исходники/AIHub/MainWindow.xaml.cs`: переключение темы заменяет кисти ресурсов и обновляет фон окна.
+- Созданы `Запустить_AI_HUB.cmd` и `start-aihub.ps1` для запуска dev-версии двойным кликом.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md`, `Документы_проекта/REESTR.md`, активное ТЗ и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_204448_fix_startup_crash_launcher/MainWindow.xaml`
+- `Backups/20260530_204448_fix_startup_crash_launcher/MainWindow.xaml.cs`
+- `Backups/20260530_204448_fix_startup_crash_launcher/CONTEXTHUB.md`
+- `Backups/20260530_204448_fix_startup_crash_launcher/Dialog_szhato.md`
+- `Backups/20260530_204448_fix_startup_crash_launcher/BACKUP_OTKAT.md`
+- `Backups/20260530_204448_fix_startup_crash_launcher/TZ_2026-05-30_startup_window_prototype.md`
+- `Backups/20260530_204448_fix_startup_crash_launcher/Dokumenty_proekta_REESTR.md`
+- `Backups/20260530_204448_fix_startup_crash_launcher/Zapustit_AI_HUB_cmd_bad_lf_backup.cmd`
+
+### Проверки
+
+- `dotnet build` прошёл без ошибок и предупреждений.
+- Smoke-запуск `AIHub.exe`: процесс остался активен после старта, немедленного падения нет.
+- `Запустить_AI_HUB.cmd` успешно выполнил сборку и запустил окно.
+- Клик по `Тёмная тема` через Windows UI Automation не завершил процесс.
+- Scanner кириллицы прошёл без ошибок.
+
+### Откат
+
+Для отката восстановить XAML, code-behind и документы из backup-папки `Backups/20260530_204448_fix_startup_crash_launcher`, затем удалить `Запустить_AI_HUB.cmd` и `start-aihub.ps1`.

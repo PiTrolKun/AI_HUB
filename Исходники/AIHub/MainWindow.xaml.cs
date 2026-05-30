@@ -29,14 +29,12 @@ public partial class MainWindow : Window
         SetBrush("StepBadgeBrush", _isDarkTheme ? "#1E3A5F" : "#EAF1FF");
         SetBrush("SecondaryButtonBackgroundBrush", _isDarkTheme ? "#111827" : "#F8F8F8");
 
+        RootWindow.Background = (Brush)Resources["WindowBackgroundBrush"];
         ThemeToggleButton.Content = _isDarkTheme ? "Светлая тема" : "Тёмная тема";
     }
 
     private void SetBrush(string resourceKey, string color)
     {
-        if (Resources[resourceKey] is SolidColorBrush brush)
-        {
-            brush.Color = (Color)ColorConverter.ConvertFromString(color);
-        }
+        Resources[resourceKey] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
     }
 }
