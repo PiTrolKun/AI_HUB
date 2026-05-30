@@ -11,7 +11,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        StatusTextBlock.Text = $"Версия {GetAppVersion()} · Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются.";
+        Title = $"AI HUB {GetAppVersion()}";
     }
 
     private void ThemeToggleButton_Click(object sender, RoutedEventArgs e)

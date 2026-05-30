@@ -5,7 +5,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="AI_HUB"
+        Title="AI HUB"
         Width="980"
         Height="640"
         MinWidth="860"
@@ -302,8 +302,7 @@
                 BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,1,0,0">
             <Grid Margin="28,0">
-                <TextBlock x:Name="StatusTextBlock"
-                           Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
+                <TextBlock Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="12"
                            VerticalAlignment="Center" />

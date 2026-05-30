@@ -434,3 +434,28 @@
 ### Откат
 
 Для отката восстановить инструкции и документы истории из backup-папки `Backups/20260530_205806_single_version_source_rule`.
+
+## 2026-05-30 — версия в заголовке окна
+
+Задача: перенести отображение версии из нижней статусной строки в системный заголовок окна и убрать подчёркивание из названия в заголовке.
+
+### Изменения
+
+- В `MainWindow.xaml` базовый заголовок изменён с `AI_HUB` на `AI HUB`.
+- В `MainWindow.xaml.cs` заголовок окна формируется автоматически как `AI HUB {версия}` из `AssemblyInformationalVersion`.
+- Нижняя строка снова показывает только статус без версии.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот журнал.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_210414_move_version_to_window_title/MainWindow.xaml`
+- `Backups/20260530_210414_move_version_to_window_title/MainWindow.xaml.cs`
+- `Backups/20260530_210414_move_version_to_window_title/CONTEXTHUB.md`
+- `Backups/20260530_210414_move_version_to_window_title/Dialog_szhato.md`
+- `Backups/20260530_210414_move_version_to_window_title/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить XAML, code-behind и документы истории из backup-папки `Backups/20260530_210414_move_version_to_window_title`.
