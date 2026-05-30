@@ -186,3 +186,29 @@
 Для отката восстановить `AGENTS.md`, `CODEX.md` и `BACKUP_ОТКАТ.md` из backup-папки `Backups/20260530_202127_rules_versioning_tz_github`.
 
 Если нужно вернуть ТЗ из архива, перенести `ТЗ/Архив/2026-05-30_подготовка_dotnet_wpf_окружения.md` обратно в `ТЗ/2026-05-30_подготовка_dotnet_wpf_окружения.md`.
+
+## 2026-05-30 — правило обязательной записи в истории
+
+Задача: исправить пропуск записи в истории и добавить правило, что история проекта обновляется после каждого выполненного действия.
+
+### Изменения
+
+- Обновлён `Инструкции/AGENTS.md`.
+- Обновлён `Инструкции/CODEX.md`.
+- Обновлён `CONTEXTHUB.md`.
+- Обновлён `Диалог_сжато.md`.
+- Обновлён этот журнал отката.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260530_202318_history_every_action_rule/Instrukcii_AGENTS.md`
+- `Backups/20260530_202318_history_every_action_rule/Instrukcii_CODEX.md`
+- `Backups/20260530_202318_history_every_action_rule/CONTEXTHUB.md`
+- `Backups/20260530_202318_history_every_action_rule/Dialog_szhato.md`
+- `Backups/20260530_202318_history_every_action_rule/BACKUP_OTKAT.md`
+
+### Откат
+
+Для отката восстановить изменённые документы из backup-папки `Backups/20260530_202318_history_every_action_rule`.
