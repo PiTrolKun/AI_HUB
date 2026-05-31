@@ -100,7 +100,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="64" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="44" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
@@ -873,13 +873,99 @@
                 Background="{DynamicResource HeaderBackgroundBrush}"
                 BorderBrush="{DynamicResource LineBrush}"
                 BorderThickness="0,1,0,0">
-            <Grid Margin="28,0">
+            <StackPanel Margin="28,10">
                 <TextBlock x:Name="StatusText"
                            Text="Статус: прототип стартового окна. Скачивание моделей и изменение настроек пока не выполняются."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="12"
                            VerticalAlignment="Center" />
-            </Grid>
+
+                <Grid x:Name="CoreModelPromptPanel"
+                      Visibility="Collapsed"
+                      Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock x:Name="CoreModelPromptText"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="12"
+                               LineHeight="18"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Margin="14,0,0,0">
+                        <Button x:Name="DownloadCoreModelButton"
+                                Content="Скачать"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                MinWidth="104"
+                                Height="34"
+                                Click="DownloadCoreModelButton_Click" />
+                        <Button x:Name="OpenSetupFromCoreModelButton"
+                                Content="Открыть настройки"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                MinWidth="138"
+                                Height="34"
+                                Margin="8,0,0,0"
+                                Click="OpenSetupFromCoreModelButton_Click" />
+                        <Button x:Name="PostponeCoreModelButton"
+                                Content="Позже"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                MinWidth="86"
+                                Height="34"
+                                Margin="8,0,0,0"
+                                Click="PostponeCoreModelButton_Click" />
+                    </StackPanel>
+                </Grid>
+
+                <Grid x:Name="CoreModelDownloadPanel"
+                      Visibility="Collapsed"
+                      Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="8" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock x:Name="CoreModelDownloadTitleText"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap" />
+
+                    <ProgressBar x:Name="CoreModelDownloadProgressBar"
+                                 Grid.Row="2"
+                                 Height="10"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Value="0" />
+
+                    <StackPanel Grid.RowSpan="3"
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Margin="14,0,0,0">
+                        <Button x:Name="PauseCoreModelDownloadButton"
+                                Content="Пауза"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                MinWidth="86"
+                                Height="34"
+                                Click="PauseCoreModelDownloadButton_Click" />
+                        <Button x:Name="CancelCoreModelDownloadButton"
+                                Content="Отмена"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                MinWidth="86"
+                                Height="34"
+                                Margin="8,0,0,0"
+                                Click="CancelCoreModelDownloadButton_Click" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
         </Border>
     </Grid>
 </Window>

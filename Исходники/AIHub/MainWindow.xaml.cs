@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using AIHub.Models;
 using AIHub.Services;
 using Microsoft.Win32;
@@ -11,9 +12,13 @@ namespace AIHub;
 
 public partial class MainWindow : Window
 {
+    private const int WmKeyDown = 0x0100;
+    private const int VkF12 = 0x7B;
+
     private readonly AppSettingsStore _appSettingsStore = new();
     private readonly AppStateStore _appStateStore = new();
     private readonly ComputerPassportService _computerPassportService = new();
+    private readonly CoreModelManager _coreModelManager = new();
     private readonly LocalizationService _localizationService = new();
     private readonly StorageSettingsStore _storageSettingsStore = new();
 
@@ -21,7 +26,11 @@ public partial class MainWindow : Window
     private AppState _appState = new();
     private ComputerPassport? _lastPassport;
     private StorageSettings _storageSettings = new();
+    private CancellationTokenSource? _coreModelDownloadCts;
+    private CoreModelCheckResult? _lastCoreModelCheck;
+    private DebugChatWindow? _debugChatWindow;
     private bool _isApplyingLanguageSelection;
+    private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
 
     public MainWindow()
@@ -29,7 +38,12 @@ public partial class MainWindow : Window
         InitializeComponent();
         Title = $"AI HUB {GetAppVersion()}";
         _isDarkTheme = IsWindowsAppThemeDark();
-        SourceInitialized += (_, _) => ApplySystemTitleBarTheme();
+        SourceInitialized += (_, _) =>
+        {
+            ApplySystemTitleBarTheme();
+            HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
+        };
+        PreviewKeyDown += MainWindow_PreviewKeyDown;
         InitializeLocalization();
         ApplyTheme();
         ApplyLocalization();
@@ -47,6 +61,13 @@ public partial class MainWindow : Window
     {
         if (_appState.HasCompletedSetup)
         {
+            var coreModelCheck = _coreModelManager.Check(_storageSettings);
+            if (coreModelCheck.Availability != CoreModelAvailability.Installed)
+            {
+                ShowCoreModelPrompt(coreModelCheck);
+                return;
+            }
+
             ShowWorkStartPage();
             StatusText.Text = L("Status.WorkStartOpened");
             return;
@@ -81,12 +102,60 @@ public partial class MainWindow : Window
             : L("Theme.SwitchToDark");
 
         ApplySystemTitleBarTheme();
+        _debugChatWindow?.ApplyTheme(_isDarkTheme);
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
         ShowSettingsPage();
         StatusText.Text = L("Status.SettingsOpened");
+    }
+
+    private void MainWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != System.Windows.Input.Key.F12)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        OpenDebugChatWindow();
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WmKeyDown && wParam.ToInt32() == VkF12)
+        {
+            handled = true;
+            OpenDebugChatWindow();
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private void OpenDebugChatWindow()
+    {
+        try
+        {
+            if (_debugChatWindow is not null)
+            {
+                _debugChatWindow.Activate();
+                return;
+            }
+
+            _debugChatWindow = new DebugChatWindow(_localizationService, _storageSettings, _isDarkTheme)
+            {
+                Owner = this
+            };
+            _debugChatWindow.Closed += (_, _) => _debugChatWindow = null;
+            _debugChatWindow.Show();
+            StatusText.Text = L("Status.DebugChatOpened");
+        }
+        catch (Exception)
+        {
+            _debugChatWindow = null;
+            StatusText.Text = L("Status.DebugChatOpenFailed");
+        }
     }
 
     private void SetBrush(string resourceKey, string color)
@@ -213,6 +282,12 @@ public partial class MainWindow : Window
         ContinuePreviousWorkButton.ToolTip = L("WorkStart.ContinueTooltip");
         BackFromWorkStartButton.Content = L("Settings.Back");
 
+        DownloadCoreModelButton.Content = L("CoreModel.Download");
+        OpenSetupFromCoreModelButton.Content = L("CoreModel.OpenSetup");
+        PostponeCoreModelButton.Content = L("CoreModel.Later");
+        PauseCoreModelDownloadButton.Content = L("CoreModel.Pause");
+        CancelCoreModelDownloadButton.Content = L("CoreModel.Cancel");
+
         ApplyTheme();
         UpdatePrimaryActionButton();
         UpdateStorageSteps();
@@ -268,6 +343,7 @@ public partial class MainWindow : Window
             LoadStorageSettingsIntoControls();
             UpdateStorageSteps();
             UpdateWelcomeStatus();
+            EvaluateCoreModelOnStartup();
         }
         catch
         {
@@ -378,6 +454,12 @@ public partial class MainWindow : Window
         StatusText.Text = _appState.HasCompletedSetup
             ? LF("Status.StorageSavedComplete", AppDataPaths.StorageSettingsPath)
             : L("Status.StorageSavedIncomplete");
+
+        if (_appState.HasCompletedSetup)
+        {
+            _isCoreModelPromptPostponed = false;
+            EvaluateCoreModelAfterStorageSave();
+        }
     }
 
     private void BackToStartButton_Click(object sender, RoutedEventArgs e)
@@ -422,6 +504,36 @@ public partial class MainWindow : Window
         StatusText.Text = L("Status.WorkStartOpened");
     }
 
+    private async void DownloadCoreModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        await StartCoreModelDownloadAsync();
+    }
+
+    private void OpenSetupFromCoreModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        HideCoreModelPrompt();
+        OpenSetupWindow(regeneratePassport: false);
+    }
+
+    private void PostponeCoreModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        _isCoreModelPromptPostponed = true;
+        HideCoreModelPrompt();
+        StatusText.Text = L("Status.CoreModelPostponed");
+    }
+
+    private void PauseCoreModelDownloadButton_Click(object sender, RoutedEventArgs e)
+    {
+        _coreModelDownloadCts?.Cancel();
+        StatusText.Text = L("Status.CoreModelPauseRequested");
+    }
+
+    private void CancelCoreModelDownloadButton_Click(object sender, RoutedEventArgs e)
+    {
+        _coreModelDownloadCts?.Cancel();
+        StatusText.Text = L("Status.CoreModelCancelRequested");
+    }
+
     private void SavePassportState(ComputerPassport passport)
     {
         _appState.ComputerPassportLastUpdated = passport.CreatedAt;
@@ -442,6 +554,164 @@ public partial class MainWindow : Window
         StatusText.Text = _appState.HasCompletedSetup
             ? L("Status.PassportReadySetupComplete")
             : L("Status.PassportReadySetupIncomplete");
+    }
+
+    private void EvaluateCoreModelOnStartup()
+    {
+        var result = _coreModelManager.Check(_storageSettings);
+        _lastCoreModelCheck = result;
+        if (result.Availability != CoreModelAvailability.Installed && !_isCoreModelPromptPostponed)
+        {
+            ShowCoreModelPrompt(result);
+        }
+    }
+
+    private void EvaluateCoreModelAfterStorageSave()
+    {
+        var result = _coreModelManager.Check(_storageSettings);
+        _lastCoreModelCheck = result;
+        if (result.Availability == CoreModelAvailability.Installed)
+        {
+            HideCoreModelPrompt();
+            StatusText.Text = L("Status.CoreModelReady");
+            return;
+        }
+
+        ShowCoreModelPrompt(result);
+    }
+
+    private void ShowCoreModelPrompt(CoreModelCheckResult result)
+    {
+        _lastCoreModelCheck = result;
+        CoreModelPromptPanel.Visibility = Visibility.Visible;
+        CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+        DownloadCoreModelButton.IsEnabled = CanDownloadCoreModel(result);
+        CoreModelPromptText.Text = BuildCoreModelPromptText(result);
+        StatusText.Text = result.Availability switch
+        {
+            CoreModelAvailability.StorageNotConfigured => L("Status.CoreModelStorageNotConfigured"),
+            CoreModelAvailability.ModelsFolderUnavailable => L("Status.CoreModelFolderUnavailable"),
+            CoreModelAvailability.Partial => L("Status.CoreModelPartial"),
+            CoreModelAvailability.Invalid => L("Status.CoreModelInvalid"),
+            _ => L("Status.CoreModelMissing")
+        };
+    }
+
+    private string BuildCoreModelPromptText(CoreModelCheckResult result)
+    {
+        if (!result.HasEnoughSpace)
+        {
+            return LF("CoreModel.NotEnoughSpacePrompt", FormatBytes(CoreModelManager.CoreModelTotalBytes), FormatBytes(CoreModelManager.RecommendedFreeBytes));
+        }
+
+        return result.Availability switch
+        {
+            CoreModelAvailability.StorageNotConfigured => L("CoreModel.StorageNotConfiguredPrompt"),
+            CoreModelAvailability.ModelsFolderUnavailable => L("CoreModel.FolderUnavailablePrompt"),
+            CoreModelAvailability.Partial => LF("CoreModel.PartialPrompt", FormatBytes(result.ExistingBytes), FormatBytes(CoreModelManager.CoreModelTotalBytes)),
+            CoreModelAvailability.Invalid => L("CoreModel.InvalidPrompt"),
+            _ => L("CoreModel.MissingPrompt")
+        };
+    }
+
+    private static bool CanDownloadCoreModel(CoreModelCheckResult result)
+    {
+        return result.HasEnoughSpace
+            && result.Availability is CoreModelAvailability.Missing
+                or CoreModelAvailability.Partial
+                or CoreModelAvailability.Invalid;
+    }
+
+    private void HideCoreModelPrompt()
+    {
+        CoreModelPromptPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private async Task StartCoreModelDownloadAsync()
+    {
+        if (_coreModelDownloadCts is not null)
+        {
+            return;
+        }
+
+        var check = _coreModelManager.Check(_storageSettings);
+        if (!CanDownloadCoreModel(check))
+        {
+            ShowCoreModelPrompt(check);
+            return;
+        }
+
+        _coreModelDownloadCts = new CancellationTokenSource();
+        DownloadCoreModelButton.IsEnabled = false;
+        CoreModelPromptPanel.Visibility = Visibility.Collapsed;
+        CoreModelDownloadPanel.Visibility = Visibility.Visible;
+        CoreModelDownloadProgressBar.Value = 0;
+        CoreModelDownloadTitleText.Text = LF(
+            "CoreModel.DownloadProgress",
+            0,
+            FormatBytes(check.ExistingBytes),
+            FormatBytes(CoreModelManager.CoreModelTotalBytes),
+            FormatBytes(0) + L("Units.PerSecond"));
+        StatusText.Text = L("Status.CoreModelDownloadStarted");
+
+        var progress = new Progress<CoreModelDownloadProgress>(UpdateCoreModelDownloadProgress);
+
+        try
+        {
+            await _coreModelManager.DownloadAsync(_storageSettings, progress, _coreModelDownloadCts.Token);
+            CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+            HideCoreModelPrompt();
+            StatusText.Text = L("Status.CoreModelInstalled");
+        }
+        catch (OperationCanceledException)
+        {
+            CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+            var result = _coreModelManager.Check(_storageSettings);
+            ShowCoreModelPrompt(result);
+            StatusText.Text = L("Status.CoreModelDownloadPaused");
+        }
+        catch (Exception)
+        {
+            CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+            var result = _coreModelManager.Check(_storageSettings);
+            ShowCoreModelPrompt(result);
+            StatusText.Text = L("Status.CoreModelDownloadFailed");
+        }
+        finally
+        {
+            _coreModelDownloadCts?.Dispose();
+            _coreModelDownloadCts = null;
+            DownloadCoreModelButton.IsEnabled = true;
+        }
+    }
+
+    private void UpdateCoreModelDownloadProgress(CoreModelDownloadProgress progress)
+    {
+        if (progress.Stage == "verifying")
+        {
+            CoreModelDownloadTitleText.Text = L("CoreModel.Verifying");
+            CoreModelDownloadProgressBar.Value = 100;
+            return;
+        }
+
+        if (progress.Stage == "installed")
+        {
+            CoreModelDownloadTitleText.Text = L("CoreModel.Installed");
+            CoreModelDownloadProgressBar.Value = 100;
+            return;
+        }
+
+        var percent = progress.TotalBytes <= 0
+            ? 0
+            : Math.Clamp(progress.DownloadedBytes * 100d / progress.TotalBytes, 0, 100);
+
+        CoreModelDownloadProgressBar.Value = percent;
+        CoreModelDownloadTitleText.Text = LF(
+            "CoreModel.DownloadProgress",
+            percent.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
+            FormatBytes(progress.DownloadedBytes),
+            FormatBytes(progress.TotalBytes),
+            FormatBytes(progress.BytesPerSecond) + L("Units.PerSecond"));
     }
 
     private bool HasRequiredStorageSettings()
@@ -680,6 +950,20 @@ public partial class MainWindow : Window
     private static string FormatGbForText(double value)
     {
         return Math.Max(0, value).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private string FormatBytes(double bytes)
+    {
+        string[] units = [L("Units.Bytes"), L("Units.Kb"), L("Units.Mb"), L("Units.Gb")];
+        var value = Math.Max(0, bytes);
+        var unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.Length - 1)
+        {
+            value /= 1024;
+            unitIndex++;
+        }
+
+        return $"{value:0.##} {units[unitIndex]}";
     }
 
     private string BuildPassportSummary(ComputerPassport passport)

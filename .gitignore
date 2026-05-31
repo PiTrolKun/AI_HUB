@@ -24,6 +24,8 @@ project.assets.json
 Backups/*
 !Backups/README.md
 
+Данные_для_внедрения/Модели/**
+
 Runtime/**
 !Runtime/
 !Runtime/README.md

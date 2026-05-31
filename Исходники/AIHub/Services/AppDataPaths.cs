@@ -20,9 +20,34 @@ public static class AppDataPaths
 
     public static string LocalizationDirectory { get; } = Path.Combine(BaseDirectory, "Localization");
 
+    public static string? ProjectRoot { get; } = FindProjectRoot();
+
+    public static string RuntimeDirectory { get; } = ProjectRoot is null
+        ? Path.Combine(BaseDirectory, "Runtime")
+        : Path.Combine(ProjectRoot, "Runtime");
+
+    public static string BackendsDirectory { get; } = Path.Combine(RuntimeDirectory, "Backends");
+
     public static void EnsureBaseDirectory()
     {
         Directory.CreateDirectory(BaseDirectory);
         Directory.CreateDirectory(LocalizationDirectory);
+    }
+
+    private static string? FindProjectRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "VERSION"))
+                && Directory.Exists(Path.Combine(directory.FullName, "Runtime")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 }
