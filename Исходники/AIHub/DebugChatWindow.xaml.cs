@@ -10,25 +10,41 @@ namespace AIHub;
 public partial class DebugChatWindow : Window
 {
     private readonly DebugModelDiscoveryService _modelDiscoveryService = new();
-    private readonly LlamaServerRuntimeService _serverRuntimeService = new();
-    private readonly LlamaCliRuntimeService _cliRuntimeService = new();
+    private readonly LlamaServerRuntimeService _serverRuntimeService;
+    private readonly LlamaCliRuntimeService _cliRuntimeService;
     private readonly LocalizationService _localizationService;
     private readonly StorageSettings _storageSettings;
+    private readonly UserContextService _userContextService;
+    private readonly JsonlSessionLog _debugSessionLog;
     private readonly ObservableCollection<string> _chatItems = [];
     private readonly ObservableCollection<string> _logItems = [];
     private readonly List<DebugChatMessage> _history = [];
     private CancellationTokenSource? _generationCts;
 
-    public DebugChatWindow(LocalizationService localizationService, StorageSettings storageSettings, bool isDarkTheme)
+    public DebugChatWindow(
+        LocalizationService localizationService,
+        StorageSettings storageSettings,
+        UserContextService userContextService,
+        bool isDarkTheme)
     {
         _localizationService = localizationService;
         _storageSettings = storageSettings;
+        _userContextService = userContextService;
+        _serverRuntimeService = new LlamaServerRuntimeService(_userContextService);
+        _cliRuntimeService = new LlamaCliRuntimeService(_userContextService);
+        _debugSessionLog = JsonlSessionLog.CreateDebugModelTester(_storageSettings);
 
         InitializeComponent();
         ApplyTheme(isDarkTheme);
         ApplyLocalization();
         ChatListBox.ItemsSource = _chatItems;
         LogListBox.ItemsSource = _logItems;
+        _debugSessionLog.Write("debug_session_start", new
+        {
+            AppVersion = GetAppVersion(),
+            _debugSessionLog.FilePath
+        });
+        _debugSessionLog.Write("context_snapshot", _userContextService.CreateSnapshot());
         RefreshModels();
     }
 
@@ -37,6 +53,8 @@ public partial class DebugChatWindow : Window
         _generationCts?.Cancel();
         _generationCts?.Dispose();
         _serverRuntimeService.Dispose();
+        _debugSessionLog.Write("debug_session_end");
+        _debugSessionLog.Dispose();
         base.OnClosed(e);
     }
 
@@ -181,6 +199,12 @@ public partial class DebugChatWindow : Window
         PromptTextBox.Clear();
         _history.Add(new DebugChatMessage { Role = L("DebugChat.UserRole"), Text = prompt });
         _chatItems.Add($"{L("DebugChat.UserRole")}: {prompt}");
+        _debugSessionLog.Write("debug_user_message", new
+        {
+            Model = model.Name,
+            ModelPath = model.Path,
+            Text = prompt
+        });
         AddLog(L("DebugChat.LogPromptSent"));
         StatusText.Text = L("DebugChat.Generating");
 
@@ -189,6 +213,12 @@ public partial class DebugChatWindow : Window
             var response = await GenerateWithPreferredRuntimeAsync(model, requestHistory, prompt, _generationCts.Token);
             _history.Add(new DebugChatMessage { Role = L("DebugChat.ModelRole"), Text = response });
             _chatItems.Add($"{L("DebugChat.ModelRole")}: {response}");
+            _debugSessionLog.Write("debug_assistant_message", new
+            {
+                Model = model.Name,
+                ModelPath = model.Path,
+                Text = response
+            });
             StatusText.Text = L("DebugChat.Done");
             AddLog(L("DebugChat.LogResponseReceived"));
         }
@@ -252,6 +282,7 @@ public partial class DebugChatWindow : Window
 
     private void AddLog(string message)
     {
+        _debugSessionLog.Write("debug_log", new { Message = message });
         Dispatcher.Invoke(() =>
         {
             _logItems.Add($"{DateTime.Now:HH:mm:ss}  {message}");
@@ -262,5 +293,14 @@ public partial class DebugChatWindow : Window
 
             LogListBox.ScrollIntoView(_logItems.LastOrDefault());
         });
+    }
+
+    private static string GetAppVersion()
+    {
+        return typeof(DebugChatWindow).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()
+            ?.InformationalVersion ?? "unknown";
     }
 }

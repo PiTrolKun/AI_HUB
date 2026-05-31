@@ -23,6 +23,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
+    private readonly UserContextService _userContextService;
 
     private Process? _process;
     private string? _currentModelPath;
@@ -39,6 +40,11 @@ public sealed class LlamaServerRuntimeService : IDisposable
     public bool IsAvailable => File.Exists(ExpectedExecutablePath);
 
     public string Endpoint => _port == 0 ? string.Empty : $"http://127.0.0.1:{_port}";
+
+    public LlamaServerRuntimeService(UserContextService userContextService)
+    {
+        _userContextService = userContextService;
+    }
 
     public async Task<string> GenerateAsync(
         DebugModelInfo model,
@@ -236,7 +242,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
             || line.Contains("failed", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static List<ChatMessage> BuildMessages(IReadOnlyList<DebugChatMessage> history, string userMessage)
+    private List<ChatMessage> BuildMessages(IReadOnlyList<DebugChatMessage> history, string userMessage)
     {
         var messages = new List<ChatMessage>
         {
@@ -244,6 +250,9 @@ public sealed class LlamaServerRuntimeService : IDisposable
             {
                 Role = "system",
                 Content = "Ты диагностический чат AI HUB. Отвечай кратко и по делу. У тебя нет доступа к файлам, интернету, shell, инструментам и настройкам Windows."
+                    + Environment.NewLine
+                    + Environment.NewLine
+                    + _userContextService.BuildHiddenSystemContext()
             }
         };
 

@@ -32,6 +32,12 @@ Runtime/**
 !Runtime/*/
 !Runtime/*/README.md
 
+# User-selected result folders may live inside the repo during tests
+**/AI_HUB/Core/Sessions/**
+**/AI_HUB/Debug/ModelTester/**
+**/AI_HUB/Tasks/**
+**/AI_HUB/Tools/**
+
 # Generated test installers stay local
 Тесты/Установщики/*.exe
 Тесты/Установщики/*.msi

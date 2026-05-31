@@ -1931,3 +1931,109 @@
 - `F12` smoke-test — debug-окно открывается, приложение не падает.
 - Endpoint-test `llama-server` — `/health` готов, `/v1/chat/completions` вернул ответ `Да, сервер AI HUB работает.`
 - Установщик не собирался по правилу проекта.
+
+## 2026-06-01 — контекст ядра и JSONL-журналы сессий
+
+Задача: реализовать скрытый служебный контекст ядра, автоматическое примерное местоположение по IP, core-session файл на запуск программы и отдельную debug-зону для `F12`.
+
+### Изменения
+
+- Создано рабочее ТЗ `ТЗ/2026-06-01_контекст_ядра_и_журнал_сессий.md`.
+- Добавлен локальный профиль `%LOCALAPPDATA%\AI_HUB\user-profile.json`.
+- Добавлены сервисы:
+  - `UserProfileStore`;
+  - `IpLocationService`;
+  - `UserContextService`;
+  - `SessionPathService`;
+  - `JsonlSessionLog`.
+- Добавлены модели:
+  - `UserProfile`;
+  - `UserLocation`;
+  - `UserContextSnapshot`.
+- `MainWindow` создаёт core-session `jsonl` при запуске и пишет `session_end` при штатном закрытии.
+- `DebugChatWindow` создаёт отдельный debug-session `jsonl`.
+- `llama-server` и `llama-cli` получают скрытый служебный контекст даты/времени/местоположения.
+- `.gitignore` расширен правилами для пользовательских результатов `AI_HUB\Core\Sessions`, `AI_HUB\Debug\ModelTester`, `AI_HUB\Tasks`, `AI_HUB\Tools`.
+- `REESTR.md` и `THIRD_PARTY_NOTICES.md` обновлены под внешний сервис `ipwho.is`.
+- Версия повышена до `0.0.23-dev`.
+- Установщик не собирался по правилу проекта.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260601_024623_core_context_sessions/VERSION`
+- `Backups/20260601_024623_core_context_sessions/BACKUP_ОТКАТ.md`
+- `Backups/20260601_024623_core_context_sessions/CONTEXTHUB.md`
+- `Backups/20260601_024623_core_context_sessions/Диалог_сжато.md`
+- `Backups/20260601_024623_core_context_sessions/THIRD_PARTY_NOTICES.md`
+- `Backups/20260601_024623_core_context_sessions/Документы_проекта__REESTR.md`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__AIHub.csproj`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__Services__AppDataPaths.cs`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__Services__LlamaServerRuntimeService.cs`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__Services__LlamaCliRuntimeService.cs`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__DebugChatWindow.xaml.cs`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__MainWindow.xaml.cs`
+- `Backups/20260601_024623_core_context_sessions/Исходники__AIHub__App.xaml.cs`
+- Дополнительно после обнаружения изменения `.gitignore` сохранены:
+  - `Backups/20260601_024623_core_context_sessions/.gitignore__before_task` — версия из Git до текущего ТЗ;
+  - `Backups/20260601_024623_core_context_sessions/.gitignore__after_task` — версия после добавления ignore-правил.
+
+### Откат
+
+Для отката:
+
+- восстановить изменённые файлы из backup-папки `Backups/20260601_024623_core_context_sessions`;
+- для `.gitignore` использовать `Backups/20260601_024623_core_context_sessions/.gitignore__before_task`;
+- удалить новые модели и сервисы контекста/журналов;
+- удалить ТЗ `ТЗ/2026-06-01_контекст_ядра_и_журнал_сессий.md`;
+- при необходимости удалить локальные пользовательские файлы `%LOCALAPPDATA%\AI_HUB\user-profile.json` и созданные `jsonl`-сессии из выбранной папки результатов.
+
+### Проверки
+
+- `dotnet build H:\AI_HUB\Исходники\AIHub\AIHub.csproj` — успешно, предупреждений `0`, ошибок `0`.
+- `Инструменты\check-cyrillic-integrity.ps1` — успешно.
+- Живой запуск приложения создал core-session `jsonl`.
+- Штатное закрытие окна записало `session_end`.
+- Core-session JSONL валиден построчно и содержит видимую UTF-8 кириллицу.
+- `F12` smoke-test прошёл, debug-окно открылось.
+- Debug-session JSONL создан в отдельной debug-зоне, валиден построчно и содержит видимую UTF-8 кириллицу.
+- Git показывает созданные сессии в папке результатов как ignored.
+
+## 2026-06-01 — закрытие ТЗ контекста ядра и JSONL-сессий
+
+Задача: закрыть выполненное ТЗ `2026-06-01_контекст_ядра_и_журнал_сессий.md`, перенести его в архив и опубликовать актуальное состояние проекта в GitHub.
+
+### Изменения
+
+- ТЗ перенесено из `ТЗ/2026-06-01_контекст_ядра_и_журнал_сессий.md` в `ТЗ/Архив/2026-06-01_контекст_ядра_и_журнал_сессий.md`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот rollback-журнал.
+- Итоговая версия задачи: `0.0.23-dev`.
+- Установщик не собирался по правилу проекта.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260601_030248_archive_core_context_sessions_task/BACKUP_ОТКАТ.md`
+- `Backups/20260601_030248_archive_core_context_sessions_task/CONTEXTHUB.md`
+- `Backups/20260601_030248_archive_core_context_sessions_task/Диалог_сжато.md`
+- `Backups/20260601_030248_archive_core_context_sessions_task/ТЗ__2026-06-01_контекст_ядра_и_журнал_сессий.md`
+
+### Откат
+
+Для отката закрытия:
+
+- вернуть ТЗ из `ТЗ/Архив/2026-06-01_контекст_ядра_и_журнал_сессий.md` обратно в `ТЗ/2026-06-01_контекст_ядра_и_журнал_сессий.md`;
+- восстановить документы истории из backup-папки `Backups/20260601_030248_archive_core_context_sessions_task`;
+- если commit/push уже выполнены, откат публикации делать отдельным согласованным git-действием.
+
+### Проверки
+
+- `dotnet build H:\AI_HUB\Исходники\AIHub\AIHub.csproj` — успешно, предупреждений `0`, ошибок `0`.
+- `Инструменты\check-cyrillic-integrity.ps1` — успешно, проверено `99` текстовых файлов.
+- Сверка локализаций — успешно, ключи `ru.json` и `en.json` совпадают `173/173`.
+- JSONL-проверка — последние core/debug session-файлы валидны построчно.
+- Активных ТЗ вне архива нет, кроме служебного `ТЗ/README.md`.
+- Пользовательские сессии в `Тесты/1/AI_HUB/**`, runtime backend и GGUF-модель отображаются как ignored и не публикуются в GitHub.
+- Установщик не собирался по правилу проекта.

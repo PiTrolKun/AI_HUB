@@ -20,6 +20,13 @@ public sealed class LlamaCliRuntimeService
 
     public bool IsAvailable => File.Exists(ExpectedExecutablePath);
 
+    private readonly UserContextService _userContextService;
+
+    public LlamaCliRuntimeService(UserContextService userContextService)
+    {
+        _userContextService = userContextService;
+    }
+
     public async Task<string> GenerateAsync(
         DebugModelInfo model,
         IReadOnlyList<DebugChatMessage> history,
@@ -113,13 +120,15 @@ public sealed class LlamaCliRuntimeService
         }
     }
 
-    private static string CreatePromptFile(IReadOnlyList<DebugChatMessage> history, string userMessage)
+    private string CreatePromptFile(IReadOnlyList<DebugChatMessage> history, string userMessage)
     {
         Directory.CreateDirectory(AppDataPaths.BaseDirectory);
         var path = Path.Combine(AppDataPaths.BaseDirectory, $"debug-prompt-{Guid.NewGuid():N}.txt");
         var builder = new StringBuilder();
         builder.AppendLine("Ты диагностический чат AI HUB. Отвечай кратко и по делу.");
         builder.AppendLine("У тебя нет доступа к файлам, интернету, shell, инструментам и настройкам Windows.");
+        builder.AppendLine();
+        builder.AppendLine(_userContextService.BuildHiddenSystemContext());
         builder.AppendLine();
 
         foreach (var message in history.TakeLast(8))
@@ -180,6 +189,14 @@ public sealed class LlamaCliRuntimeService
         return line.StartsWith(">", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Ты диагностический чат AI HUB", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("У тебя нет доступа", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Служебный контекст AI HUB", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Используй дату", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Не утверждай", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Текущая локальная", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("UTC-время", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Часовой пояс", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Примерное местоположение", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Источник местоположения", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Пользователь:", StringComparison.OrdinalIgnoreCase)
             || line.Equals("Модель:", StringComparison.OrdinalIgnoreCase);
     }

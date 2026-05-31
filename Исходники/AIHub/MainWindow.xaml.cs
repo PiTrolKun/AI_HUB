@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private readonly AppStateStore _appStateStore = new();
     private readonly ComputerPassportService _computerPassportService = new();
     private readonly CoreModelManager _coreModelManager = new();
+    private readonly UserContextService _userContextService = new(new UserProfileStore(), new IpLocationService());
     private readonly LocalizationService _localizationService = new();
     private readonly StorageSettingsStore _storageSettingsStore = new();
 
@@ -27,6 +28,7 @@ public partial class MainWindow : Window
     private ComputerPassport? _lastPassport;
     private StorageSettings _storageSettings = new();
     private CancellationTokenSource? _coreModelDownloadCts;
+    private JsonlSessionLog? _coreSessionLog;
     private CoreModelCheckResult? _lastCoreModelCheck;
     private DebugChatWindow? _debugChatWindow;
     private bool _isApplyingLanguageSelection;
@@ -143,7 +145,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            _debugChatWindow = new DebugChatWindow(_localizationService, _storageSettings, _isDarkTheme)
+            _debugChatWindow = new DebugChatWindow(_localizationService, _storageSettings, _userContextService, _isDarkTheme)
             {
                 Owner = this
             };
@@ -336,6 +338,8 @@ public partial class MainWindow : Window
         {
             _appState = _appStateStore.LoadOrCreate();
             _storageSettings = _storageSettingsStore.LoadOrCreate();
+            StartCoreSessionLog();
+            _ = InitializeUserContextAsync();
             var passport = _computerPassportService.RegeneratePassport();
             _lastPassport = passport;
             SavePassportState(passport);
@@ -348,6 +352,50 @@ public partial class MainWindow : Window
         catch
         {
             StatusText.Text = L("Status.PassportMissing");
+        }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        try
+        {
+            _coreSessionLog?.Write("session_end");
+            _coreSessionLog?.Dispose();
+        }
+        finally
+        {
+            base.OnClosed(e);
+        }
+    }
+
+    private void StartCoreSessionLog()
+    {
+        try
+        {
+            _coreSessionLog = JsonlSessionLog.CreateCore(_storageSettings);
+            _coreSessionLog.Write("session_start", new
+            {
+                AppVersion = GetAppVersion(),
+                _coreSessionLog.FilePath
+            });
+            _coreSessionLog.Write("context_snapshot", _userContextService.CreateSnapshot());
+        }
+        catch
+        {
+            _coreSessionLog = null;
+        }
+    }
+
+    private async Task InitializeUserContextAsync()
+    {
+        try
+        {
+            await _userContextService.InitializeAsync(CancellationToken.None);
+            _coreSessionLog?.Write("context_snapshot", _userContextService.CreateSnapshot());
+        }
+        catch
+        {
+            // User context must never block the app startup.
         }
     }
 

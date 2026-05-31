@@ -18,6 +18,8 @@ public static class AppDataPaths
 
     public static string SettingsPath { get; } = Path.Combine(BaseDirectory, "settings.json");
 
+    public static string UserProfilePath { get; } = Path.Combine(BaseDirectory, "user-profile.json");
+
     public static string LocalizationDirectory { get; } = Path.Combine(BaseDirectory, "Localization");
 
     public static string? ProjectRoot { get; } = FindProjectRoot();
