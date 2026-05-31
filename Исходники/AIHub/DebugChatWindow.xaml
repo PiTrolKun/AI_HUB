@@ -65,6 +65,26 @@
             <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Padding" Value="8" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        </Style>
+
+        <Style x:Key="WrappingListBoxItemStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0,2" />
+        </Style>
+
+        <DataTemplate x:Key="WrappingTextItemTemplate">
+            <TextBlock Text="{Binding}"
+                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                       TextWrapping="Wrap"
+                       TextTrimming="None"
+                       MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ListBox}}" />
+        </DataTemplate>
+
+        <Style x:Key="NoHorizontalScrollViewerStyle" TargetType="ScrollViewer">
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
         </Style>
 
         <Style TargetType="TextBox">
@@ -200,7 +220,11 @@
                                Margin="0,0,0,10" />
 
                     <ListBox x:Name="ChatListBox"
-                             Grid.Row="1" />
+                             Grid.Row="1"
+                             ItemContainerStyle="{StaticResource WrappingListBoxItemStyle}"
+                             ItemTemplate="{StaticResource WrappingTextItemTemplate}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
 
                     <Grid Grid.Row="2" Margin="0,12,0,0">
                         <Grid.RowDefinitions>
@@ -258,7 +282,10 @@
                     <ListBox x:Name="LogListBox"
                              Grid.Row="1"
                              Foreground="{DynamicResource TextSecondaryBrush}"
-                             />
+                             ItemContainerStyle="{StaticResource WrappingListBoxItemStyle}"
+                             ItemTemplate="{StaticResource WrappingTextItemTemplate}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
 
                     <Button x:Name="ClearLogButton"
                             Grid.Row="2"

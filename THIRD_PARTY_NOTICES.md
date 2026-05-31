@@ -27,7 +27,8 @@
 - Использованные архивы:
   - `llama-b9442-bin-win-cuda-12.4-x64.zip`, SHA-256 `77d78a1d7a1d80e051c3b43db64c0433b97d11fe12f525ddfa50302f726515f1`;
   - `cudart-llama-bin-win-cuda-12.4-x64.zip`, SHA-256 `8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6`.
-- Ограничение: `llama-server.exe` на текущей машине завершался до старта/блокировался защитой Windows, поэтому первая безопасная интеграция использует `llama-cli.exe`.
+- Проверка: после восстановления полного набора DLL `llama-server.exe` стартует, `/health` отвечает `ok`, `/v1/chat/completions` возвращает ответ Qwen3 8B.
+- Ограничение: для Qwen3 server-запуск требует `--reasoning off`, иначе OpenAI-compatible поле `message.content` может быть пустым из-за thinking-режима.
 
 ## Правило обновления
 

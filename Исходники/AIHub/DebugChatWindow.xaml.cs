@@ -10,7 +10,8 @@ namespace AIHub;
 public partial class DebugChatWindow : Window
 {
     private readonly DebugModelDiscoveryService _modelDiscoveryService = new();
-    private readonly LlamaCliRuntimeService _runtimeService = new();
+    private readonly LlamaServerRuntimeService _serverRuntimeService = new();
+    private readonly LlamaCliRuntimeService _cliRuntimeService = new();
     private readonly LocalizationService _localizationService;
     private readonly StorageSettings _storageSettings;
     private readonly ObservableCollection<string> _chatItems = [];
@@ -35,6 +36,7 @@ public partial class DebugChatWindow : Window
     {
         _generationCts?.Cancel();
         _generationCts?.Dispose();
+        _serverRuntimeService.Dispose();
         base.OnClosed(e);
     }
 
@@ -111,6 +113,7 @@ public partial class DebugChatWindow : Window
     private void StopButton_Click(object sender, RoutedEventArgs e)
     {
         _generationCts?.Cancel();
+        _serverRuntimeService.Stop();
         AddLog(L("DebugChat.LogStopRequested"));
     }
 
@@ -134,15 +137,18 @@ public partial class DebugChatWindow : Window
         ModelsComboBox.SelectedItem = models.FirstOrDefault(model => model.IsCoreModel) ?? models.FirstOrDefault();
 
         AddLog(string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogModelsFound"), models.Count));
-        AddLog(_runtimeService.IsAvailable
-            ? string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogBackendFound"), _runtimeService.ExpectedExecutablePath)
-            : string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogBackendMissing"), _runtimeService.ExpectedExecutablePath));
+        AddLog(_serverRuntimeService.IsAvailable
+            ? string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogServerBackendFound"), _serverRuntimeService.ExpectedExecutablePath)
+            : string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogServerBackendMissing"), _serverRuntimeService.ExpectedExecutablePath));
+        AddLog(_cliRuntimeService.IsAvailable
+            ? string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogCliBackendFound"), _cliRuntimeService.ExpectedExecutablePath)
+            : string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogCliBackendMissing"), _cliRuntimeService.ExpectedExecutablePath));
 
         if (models.Count == 0)
         {
             StatusText.Text = L("DebugChat.NoModels");
         }
-        else if (!_runtimeService.IsAvailable)
+        else if (!_serverRuntimeService.IsAvailable && !_cliRuntimeService.IsAvailable)
         {
             StatusText.Text = L("DebugChat.BackendMissing");
         }
@@ -170,6 +176,7 @@ public partial class DebugChatWindow : Window
         }
 
         _generationCts = new CancellationTokenSource();
+        var requestHistory = _history.ToList();
         SetBusy(true);
         PromptTextBox.Clear();
         _history.Add(new DebugChatMessage { Role = L("DebugChat.UserRole"), Text = prompt });
@@ -179,7 +186,7 @@ public partial class DebugChatWindow : Window
 
         try
         {
-            var response = await _runtimeService.GenerateAsync(model, _history, prompt, AddLog, _generationCts.Token);
+            var response = await GenerateWithPreferredRuntimeAsync(model, requestHistory, prompt, _generationCts.Token);
             _history.Add(new DebugChatMessage { Role = L("DebugChat.ModelRole"), Text = response });
             _chatItems.Add($"{L("DebugChat.ModelRole")}: {response}");
             StatusText.Text = L("DebugChat.Done");
@@ -209,6 +216,38 @@ public partial class DebugChatWindow : Window
         RefreshModelsButton.IsEnabled = !isBusy;
         ModelsComboBox.IsEnabled = !isBusy;
         StopButton.IsEnabled = isBusy;
+    }
+
+    private async Task<string> GenerateWithPreferredRuntimeAsync(
+        DebugModelInfo model,
+        IReadOnlyList<DebugChatMessage> requestHistory,
+        string prompt,
+        CancellationToken cancellationToken)
+    {
+        if (_serverRuntimeService.IsAvailable)
+        {
+            try
+            {
+                AddLog(L("DebugChat.LogUsingServerBackend"));
+                return await _serverRuntimeService.GenerateAsync(model, requestHistory, prompt, AddLog, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (_cliRuntimeService.IsAvailable)
+            {
+                AddLog(string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogServerFallback"), ex.Message));
+            }
+        }
+
+        if (!_cliRuntimeService.IsAvailable)
+        {
+            throw new InvalidOperationException(L("DebugChat.BackendMissing"));
+        }
+
+        AddLog(L("DebugChat.LogUsingCliBackend"));
+        return await _cliRuntimeService.GenerateAsync(model, requestHistory, prompt, AddLog, cancellationToken);
     }
 
     private void AddLog(string message)

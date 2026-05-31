@@ -869,6 +869,115 @@
 
 Для отката вернуть ТЗ из `ТЗ/Архив` обратно в `ТЗ` и восстановить документы истории из backup-папки `Backups/20260601_012500_archive_core_model_task`.
 
+## 2026-06-01 — диагностика и восстановление llama-server
+
+Задача: победить запуск `llama-server.exe` для текущего backend-а `llama.cpp b9442`.
+
+### Изменения
+
+- Создано ТЗ `ТЗ/2026-06-01_диагностика_llama_server_backend.md`.
+- Создана диагностическая папка `Runtime/Backends/llama.cpp/b9442/server-diagnostic-win-cuda-12.4-x64`.
+- В диагностическую папку заново распакованы официальные архивы:
+  - `llama-b9442-bin-win-cuda-12.4-x64.zip`;
+  - `cudart-llama-bin-win-cuda-12.4-x64.zip`.
+- Найдена причина первого сбоя: в основной папке отсутствовал `llama-server-impl.dll`.
+- Недостающий `llama-server-impl.dll` скопирован в `Runtime/Backends/llama.cpp/b9442/win-cuda-12.4-x64`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md`, `REESTR.md`, `THIRD_PARTY_NOTICES.md` и это ТЗ.
+- Код AI HUB и версия приложения не менялись.
+
+### Backup
+
+Созданы backup-папки:
+
+- `Backups/20260601_013900_llama_server_tz_start`
+- `Backups/20260601_014800_llama_server_docs`
+
+### Откат
+
+Для отката:
+
+- удалить `Runtime/Backends/llama.cpp/b9442/server-diagnostic-win-cuda-12.4-x64`;
+- удалить `Runtime/Backends/llama.cpp/b9442/win-cuda-12.4-x64/llama-server-impl.dll`, если нужно вернуть состояние до восстановления server-а;
+- восстановить документы из backup-папок.
+
+### Проверки
+
+- `llama-server.exe --version` в чистой диагностической папке — exit code `0`.
+- `llama-server.exe --version` в основной папке после восстановления DLL — exit code `0`.
+- `GET /health` — `{ "status": "ok" }`.
+- `POST /v1/chat/completions` с Qwen3 8B и `--reasoning off` — ответ `Основной сервер работает.`
+- `llama-cli.exe` fallback не тронут.
+- Защита Windows не отключалась, исключения Defender не добавлялись.
+
+## 2026-06-01 — интеграция llama-server в debug-окно
+
+Задача: вторым шагом текущего ТЗ подключить `llama-server.exe` к debug-окну AI HUB.
+
+### Изменения
+
+- Добавлен `Исходники/AIHub/Services/LlamaServerRuntimeService.cs`.
+- `DebugChatWindow` теперь использует server-backend как основной runtime.
+- `llama-cli` оставлен fallback-режимом.
+- Server запускается скрытым дочерним процессом на автоматически выбранном loopback-порту.
+- Перед запросом выполняется `/health`.
+- Chat-запросы отправляются в `/v1/chat/completions`.
+- Server запускается с `--reasoning off`.
+- При закрытии debug-окна server останавливается.
+- Кнопка `Стоп` отменяет запрос и останавливает server.
+- Версия повышена до `0.0.21-dev`.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260601_020500_llama_server_integration`
+
+### Откат
+
+Для отката:
+
+- удалить `Исходники/AIHub/Services/LlamaServerRuntimeService.cs`;
+- восстановить изменённые файлы из backup-папки;
+- `llama-cli` fallback оставить.
+
+### Проверки
+
+- `dotnet build H:\AI_HUB\Исходники\AIHub\AIHub.csproj` прошёл успешно, без предупреждений.
+- `Инструменты/check-cyrillic-integrity.ps1` прошёл успешно.
+- Ключи `ru.json` и `en.json` совпадают: `173/173`.
+- Win32 smoke-test: `F12` открывает окно `AI HUB — отладка моделей`, процесс не падает.
+- Server endpoint smoke-test: `/health` возвращает `ok`.
+- Server endpoint prompt-test: ответ `Сервер бэкенда работает корректно.`
+- Установщик не собирался по правилу проекта.
+
+## 2026-06-01 — перенос текста в debug-чате и логах
+
+Задача: убрать горизонтальный скроллинг в debug-окне.
+
+### Изменения
+
+- Для `ChatListBox` и `LogListBox` отключён горизонтальный scrollbar.
+- Элементы списков отображаются через `TextBlock` с `TextWrapping=Wrap`.
+- Перенос идёт по словам, без резки слов.
+- Вертикальный scrollbar сохранён.
+- Версия повышена до `0.0.22-dev`.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260601_021800_debug_wrap_lists`
+
+### Откат
+
+Для отката восстановить изменённые файлы из backup-папки.
+
+### Проверки
+
+- `dotnet build H:\AI_HUB\Исходники\AIHub\AIHub.csproj` прошёл успешно, без предупреждений.
+- `Инструменты/check-cyrillic-integrity.ps1` прошёл успешно.
+- Установщик не собирался по правилу проекта.
+
 ## 2026-05-31 — менеджер основного ядра Qwen3 8B
 
 Задача: добавить в AI HUB базовую логику основного ИИ-ядра `Qwen3 8B Q4_K_M`, проверку наличия модели, загрузку с прогрессом, resume и manifest.
@@ -1782,3 +1891,43 @@
 ### Проверки
 
 - Scanner кириллицы прошёл без ошибок.
+
+## 2026-06-01 — закрытие ТЗ диагностики llama-server
+
+Задача: закрыть выполненное ТЗ `2026-06-01_диагностика_llama_server_backend.md`, перенести его в архив и опубликовать актуальное состояние проекта в GitHub.
+
+### Изменения
+
+- ТЗ перенесено из `ТЗ/2026-06-01_диагностика_llama_server_backend.md` в `ТЗ/Архив/2026-06-01_диагностика_llama_server_backend.md`.
+- Обновлены `CONTEXTHUB.md`, `Диалог_сжато.md` и этот rollback-журнал.
+- Итоговая версия задачи: `0.0.22-dev`.
+- Runtime backend `Runtime/Backends/llama.cpp/**` и скачанная модель `Данные_для_внедрения/Модели/**` остаются локальными и не публикуются в GitHub.
+- Установщик не собирался по правилу проекта.
+
+### Backup
+
+Создан backup:
+
+- `Backups/20260601_021838_archive_llama_server_task/BACKUP_ОТКАТ.md`
+- `Backups/20260601_021838_archive_llama_server_task/CONTEXTHUB.md`
+- `Backups/20260601_021838_archive_llama_server_task/Диалог_сжато.md`
+- `Backups/20260601_021838_archive_llama_server_task/ТЗ__2026-06-01_диагностика_llama_server_backend.md`
+
+### Откат
+
+Для отката закрытия:
+
+- вернуть ТЗ из `ТЗ/Архив/2026-06-01_диагностика_llama_server_backend.md` обратно в `ТЗ/2026-06-01_диагностика_llama_server_backend.md`;
+- восстановить документы истории из backup-папки `Backups/20260601_021838_archive_llama_server_task`;
+- если commit/push уже выполнены, откат публикации делать отдельным согласованным git-действием.
+
+### Проверки
+
+- `dotnet build H:\AI_HUB\Исходники\AIHub\AIHub.csproj` — успешно, предупреждений `0`, ошибок `0`.
+- `Инструменты\check-cyrillic-integrity.ps1` — успешно, проверено `90` текстовых файлов.
+- Сверка локализаций — успешно, ключи `ru.json` и `en.json` совпадают `173/173`.
+- Активных ТЗ вне архива нет, кроме служебного `ТЗ/README.md`.
+- Runtime/model остаются игнорируемыми Git: `Runtime/Backends/llama.cpp/`, `Runtime/Publish/`, `Данные_для_внедрения/Модели/`.
+- `F12` smoke-test — debug-окно открывается, приложение не падает.
+- Endpoint-test `llama-server` — `/health` готов, `/v1/chat/completions` вернул ответ `Да, сервер AI HUB работает.`
+- Установщик не собирался по правилу проекта.

@@ -1,0 +1,312 @@
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+using AIHub.Models;
+
+namespace AIHub.Services;
+
+public sealed class LlamaServerRuntimeService : IDisposable
+{
+    private const string ReleaseFolder = "b9442";
+    private const string BackendFolder = "win-cuda-12.4-x64";
+    private const string ExecutableName = "llama-server.exe";
+
+    private readonly HttpClient _httpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(120)
+    };
+    private readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    private Process? _process;
+    private string? _currentModelPath;
+    private int _port;
+    private bool _disposed;
+
+    public string ExpectedExecutablePath { get; } = Path.Combine(
+        AppDataPaths.BackendsDirectory,
+        "llama.cpp",
+        ReleaseFolder,
+        BackendFolder,
+        ExecutableName);
+
+    public bool IsAvailable => File.Exists(ExpectedExecutablePath);
+
+    public string Endpoint => _port == 0 ? string.Empty : $"http://127.0.0.1:{_port}";
+
+    public async Task<string> GenerateAsync(
+        DebugModelInfo model,
+        IReadOnlyList<DebugChatMessage> history,
+        string userMessage,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+
+        var request = new ChatCompletionRequest
+        {
+            Messages = BuildMessages(history, userMessage),
+            MaxTokens = 256,
+            Temperature = 0.2,
+            Stream = false
+        };
+
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync(
+            $"{Endpoint}/v1/chat/completions",
+            content,
+            cancellationToken);
+
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
+            stream,
+            _jsonOptions,
+            cancellationToken);
+
+        var text = completion?.Choices.FirstOrDefault()?.Message.Content?.Trim();
+        return string.IsNullOrWhiteSpace(text) ? "(empty response)" : text;
+    }
+
+    public void Stop()
+    {
+        if (_process is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_process.HasExited)
+            {
+                _process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Debug runtime shutdown is best-effort.
+        }
+        finally
+        {
+            _process.Dispose();
+            _process = null;
+            _currentModelPath = null;
+            _port = 0;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Stop();
+        _httpClient.Dispose();
+        _disposed = true;
+    }
+
+    private async Task EnsureStartedAsync(DebugModelInfo model, Action<string> log, CancellationToken cancellationToken)
+    {
+        if (!IsAvailable)
+        {
+            throw new FileNotFoundException("llama-server.exe was not found.", ExpectedExecutablePath);
+        }
+
+        if (_process is not null
+            && !_process.HasExited
+            && string.Equals(_currentModelPath, model.Path, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        Stop();
+        _port = FindFreeLoopbackPort();
+        _currentModelPath = model.Path;
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = ExpectedExecutablePath,
+            WorkingDirectory = Path.GetDirectoryName(ExpectedExecutablePath)!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+
+        AddArgument(startInfo, "-m");
+        AddArgument(startInfo, model.Path);
+        AddArgument(startInfo, "--host");
+        AddArgument(startInfo, "127.0.0.1");
+        AddArgument(startInfo, "--port");
+        AddArgument(startInfo, _port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        AddArgument(startInfo, "--ctx-size");
+        AddArgument(startInfo, "4096");
+        AddArgument(startInfo, "--n-gpu-layers");
+        AddArgument(startInfo, "99");
+        AddArgument(startInfo, "--jinja");
+        AddArgument(startInfo, "--reasoning");
+        AddArgument(startInfo, "off");
+        AddArgument(startInfo, "--no-webui");
+
+        _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        log($"Starting llama-server: {Path.GetFileName(model.Path)} on {Endpoint}");
+        _process.Start();
+        _ = PumpOutputAsync(_process.StandardOutput, log);
+        _ = PumpOutputAsync(_process.StandardError, log);
+
+        await WaitForHealthAsync(log, cancellationToken);
+    }
+
+    private async Task WaitForHealthAsync(Action<string> log, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_process is null)
+            {
+                throw new InvalidOperationException("llama-server process was not started.");
+            }
+
+            if (_process.HasExited)
+            {
+                throw new InvalidOperationException($"llama-server exited with code {_process.ExitCode}.");
+            }
+
+            try
+            {
+                using var response = await _httpClient.GetAsync($"{Endpoint}/health", cancellationToken);
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    log($"llama-server health OK: {Endpoint}");
+                    return;
+                }
+            }
+            catch (HttpRequestException)
+            {
+                // Server is still loading the model.
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Retry until the startup deadline.
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+
+        throw new TimeoutException("llama-server health check timed out.");
+    }
+
+    private static async Task PumpOutputAsync(StreamReader reader, Action<string> log)
+    {
+        try
+        {
+            while (await reader.ReadLineAsync() is { } line)
+            {
+                if (ShouldLogBackendLine(line))
+                {
+                    log(line.Trim());
+                }
+            }
+        }
+        catch
+        {
+            // Process output pumping must not break the UI.
+        }
+    }
+
+    private static bool ShouldLogBackendLine(string line)
+    {
+        return line.Contains("server is listening", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("model loaded", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("prompt eval time", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("eval time", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("error", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("failed", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<ChatMessage> BuildMessages(IReadOnlyList<DebugChatMessage> history, string userMessage)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new()
+            {
+                Role = "system",
+                Content = "Ты диагностический чат AI HUB. Отвечай кратко и по делу. У тебя нет доступа к файлам, интернету, shell, инструментам и настройкам Windows."
+            }
+        };
+
+        foreach (var item in history.TakeLast(8))
+        {
+            messages.Add(new ChatMessage
+            {
+                Role = item.Role.Contains("model", StringComparison.OrdinalIgnoreCase)
+                    || item.Role.Contains("модель", StringComparison.OrdinalIgnoreCase)
+                        ? "assistant"
+                        : "user",
+                Content = item.Text
+            });
+        }
+
+        messages.Add(new ChatMessage { Role = "user", Content = userMessage });
+        return messages;
+    }
+
+    private static int FindFreeLoopbackPort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    private static void AddArgument(ProcessStartInfo startInfo, string value)
+    {
+        startInfo.ArgumentList.Add(value);
+    }
+
+    private sealed class ChatCompletionRequest
+    {
+        public List<ChatMessage> Messages { get; set; } = [];
+
+        public int MaxTokens { get; set; }
+
+        public double Temperature { get; set; }
+
+        public bool Stream { get; set; }
+    }
+
+    private sealed class ChatMessage
+    {
+        public string Role { get; set; } = string.Empty;
+
+        public string Content { get; set; } = string.Empty;
+    }
+
+    private sealed class ChatCompletionResponse
+    {
+        public List<ChatChoice> Choices { get; set; } = [];
+    }
+
+    private sealed class ChatChoice
+    {
+        public ChatMessage Message { get; set; } = new();
+    }
+}

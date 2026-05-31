@@ -30,7 +30,7 @@
 
 | Название | Назначение | Версия | Лицензия | Источник | Способ установки | Ограничения |
 |---|---|---|---|---|---|---|
-| llama.cpp | Первый локальный GGUF-backend для debug-проверки моделей через `llama-cli.exe` | release `b9442`, Windows CUDA 12.4 x64 | MIT | GitHub `ggml-org/llama.cpp`, release `b9442` | Скачан локально в `Runtime/Backends/llama.cpp/b9442/win-cuda-12.4-x64`; не публикуется в GitHub | Используется только как debug-runtime; `llama-server.exe` на текущей машине нестабилен/блокируется, поэтому первая интеграция использует `llama-cli.exe`; модели не получают доступ к файлам, интернету, shell и настройкам Windows |
+| llama.cpp | Локальный GGUF-backend: `llama-server.exe` как основной debug-runtime, `llama-cli.exe` как fallback | release `b9442`, Windows CUDA 12.4 x64 | MIT | GitHub `ggml-org/llama.cpp`, release `b9442` | Скачан локально в `Runtime/Backends/llama.cpp/b9442/win-cuda-12.4-x64`; не публикуется в GitHub | Для Qwen3 server нужно запускать с `--reasoning off`, иначе OpenAI-compatible `message.content` может быть пустым; debug-окно запускает server на свободном loopback-порту; модели не получают доступ к файлам, интернету, shell и настройкам Windows |
 
 ## AI-модели
 
