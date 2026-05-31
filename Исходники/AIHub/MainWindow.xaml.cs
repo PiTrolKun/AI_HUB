@@ -47,7 +47,8 @@ public partial class MainWindow : Window
     {
         if (_appState.HasCompletedSetup)
         {
-            StatusText.Text = L("Status.WorkModeNotReady");
+            ShowWorkStartPage();
+            StatusText.Text = L("Status.WorkStartOpened");
             return;
         }
 
@@ -197,6 +198,20 @@ public partial class MainWindow : Window
         SettingsLanguageLabelText.Text = L("Settings.LanguageLabel");
         SettingsLocalizationFolderText.Text = LF("Settings.LocalizationFolder", AppDataPaths.LocalizationDirectory);
         BackFromSettingsButton.Content = L("Settings.Back");
+
+        WorkStartTitleText.Text = L("WorkStart.Title");
+        WorkStartDescriptionText.Text = L("WorkStart.Description");
+        NewProjectTitleText.Text = L("WorkStart.NewProject");
+        ReasoningModeTitleText.Text = L("WorkStart.ReasoningTitle");
+        ReasoningModeDescriptionText.Text = L("WorkStart.ReasoningDescription");
+        SelectReasoningModeButton.Content = L("WorkStart.SelectMode");
+        PreviousWorkHeaderText.Text = L("WorkStart.PreviousWork");
+        PreviousWorkExampleTitleText.Text = L("WorkStart.PreviousExampleTitle");
+        PreviousWorkExampleNameText.Text = L("WorkStart.PreviousExampleName");
+        PreviousWorkExampleDateText.Text = L("WorkStart.PreviousExampleDate");
+        ContinuePreviousWorkButton.Content = L("WorkStart.Continue");
+        ContinuePreviousWorkButton.ToolTip = L("WorkStart.ContinueTooltip");
+        BackFromWorkStartButton.Content = L("Settings.Back");
 
         ApplyTheme();
         UpdatePrimaryActionButton();
@@ -370,6 +385,7 @@ public partial class MainWindow : Window
         SetupPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         SettingsPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
         UpdateWelcomeStatus();
     }
 
@@ -377,8 +393,33 @@ public partial class MainWindow : Window
     {
         SettingsPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         UpdateWelcomeStatus();
+    }
+
+    private void BackFromWorkStartButton_Click(object sender, RoutedEventArgs e)
+    {
+        WorkStartPage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        WelcomePage.Visibility = Visibility.Visible;
+        UpdateWelcomeStatus();
+    }
+
+    private void SelectReasoningModeButton_Click(object sender, RoutedEventArgs e)
+    {
+        StatusText.Text = L("Status.ReasoningModeNotReady");
+    }
+
+    private void PreviousWorkExpander_Expanded(object sender, RoutedEventArgs e)
+    {
+        StatusText.Text = L("Status.PreviousWorkExpanded");
+    }
+
+    private void PreviousWorkExpander_Collapsed(object sender, RoutedEventArgs e)
+    {
+        StatusText.Text = L("Status.WorkStartOpened");
     }
 
     private void SavePassportState(ComputerPassport passport)
@@ -415,6 +456,7 @@ public partial class MainWindow : Window
         PassportPathText.Text = LF("Setup.PassportPath", AppDataPaths.ComputerPassportPath);
         WelcomePage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Visible;
     }
 
@@ -422,8 +464,18 @@ public partial class MainWindow : Window
     {
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Visible;
         PopulateLanguageComboBox();
+    }
+
+    private void ShowWorkStartPage()
+    {
+        PreviousWorkExpander.IsExpanded = false;
+        WelcomePage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Visible;
     }
 
     private void LoadStorageSettingsIntoControls()

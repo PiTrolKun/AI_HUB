@@ -726,6 +726,149 @@
             </StackPanel>
         </Grid>
 
+        <Grid x:Name="WorkStartPage"
+              Grid.Row="1"
+              Margin="56,44,56,36"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="22" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="18" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock x:Name="WorkStartTitleText"
+                           Text="Начало работы"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="32"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="WorkStartDescriptionText"
+                           Text="Выберите новый режим работы"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="15"
+                           LineHeight="24"
+                           TextWrapping="Wrap"
+                           Margin="0,12,0,0" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="2">
+                <TextBlock x:Name="NewProjectTitleText"
+                           Text="Новый проект"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,12" />
+
+                <Border Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="24"
+                        MaxWidth="720"
+                        HorizontalAlignment="Left">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock x:Name="ReasoningModeTitleText"
+                                       Text="Рассуждение / изучение"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="20"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ReasoningModeDescriptionText"
+                                       Text="Разобрать тему, задать вопросы, изучить материалы, вести рабочий диалог и сохранять результаты."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="14"
+                                       LineHeight="22"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,20,0" />
+                        </StackPanel>
+
+                        <Button x:Name="SelectReasoningModeButton"
+                                Grid.Column="1"
+                                Content="Выбрать режим"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                MinWidth="132"
+                                VerticalAlignment="Bottom"
+                                Click="SelectReasoningModeButton_Click" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <Expander x:Name="PreviousWorkExpander"
+                      Grid.Row="4"
+                      IsExpanded="False"
+                      Expanded="PreviousWorkExpander_Expanded"
+                      Collapsed="PreviousWorkExpander_Collapsed">
+                <Expander.Header>
+                    <TextBlock x:Name="PreviousWorkHeaderText"
+                               Text="Ранее начатое"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="16"
+                               FontWeight="SemiBold" />
+                </Expander.Header>
+
+                <Border Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        MaxWidth="720"
+                        HorizontalAlignment="Left"
+                        Margin="0,12,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock x:Name="PreviousWorkExampleTitleText"
+                                       Text="Пример будущей записи"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="16"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="PreviousWorkExampleNameText"
+                                       Text="Изучение: &quot;Как выбрать локальную AI-модель&quot;"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,16,0" />
+                            <TextBlock x:Name="PreviousWorkExampleDateText"
+                                       Text="Последнее открытие: сегодня"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       Margin="0,4,16,0" />
+                        </StackPanel>
+
+                        <Button x:Name="ContinuePreviousWorkButton"
+                                Grid.Column="1"
+                                Content="Продолжить"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                MinWidth="116"
+                                VerticalAlignment="Bottom"
+                                IsEnabled="False" />
+                    </Grid>
+                </Border>
+            </Expander>
+
+            <StackPanel Grid.Row="6"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button x:Name="BackFromWorkStartButton"
+                        Content="Назад"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Click="BackFromWorkStartButton_Click" />
+            </StackPanel>
+        </Grid>
+
         <Border Grid.Row="2"
                 Background="{DynamicResource HeaderBackgroundBrush}"
                 BorderBrush="{DynamicResource LineBrush}"
