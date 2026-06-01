@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private CoreModelCheckResult? _lastCoreModelCheck;
     private PendingModelDownload _pendingModelDownload = PendingModelDownload.Core;
     private DebugChatWindow? _debugChatWindow;
+    private CoreMemoryStatus _coreMemoryStatus = CoreMemoryStatus.Inactive();
     private bool _isApplyingLanguageSelection;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
@@ -186,7 +187,12 @@ public partial class MainWindow : Window
             {
                 Owner = this
             };
-            _debugChatWindow.Closed += (_, _) => _debugChatWindow = null;
+            _debugChatWindow.CoreMemoryStatusChanged += DebugChatWindow_CoreMemoryStatusChanged;
+            _debugChatWindow.Closed += (_, _) =>
+            {
+                _debugChatWindow = null;
+                UpdateCoreMemoryIndicator(CoreMemoryStatus.Inactive());
+            };
             _debugChatWindow.Show();
             StatusText.Text = L("Status.DebugChatOpened");
         }
@@ -195,6 +201,37 @@ public partial class MainWindow : Window
             _debugChatWindow = null;
             StatusText.Text = L("Status.DebugChatOpenFailed");
         }
+    }
+
+    private void DebugChatWindow_CoreMemoryStatusChanged(CoreMemoryStatus status)
+    {
+        Dispatcher.Invoke(() => UpdateCoreMemoryIndicator(status));
+    }
+
+    private void UpdateCoreMemoryIndicator(CoreMemoryStatus status)
+    {
+        _coreMemoryStatus = status;
+        CoreMemoryProgressBar.IsIndeterminate = status.IsCompressing;
+        CoreMemoryProgressBar.Value = status.IsCompressing ? 0 : status.FillPercent;
+        CoreMemoryIndicatorPanel.Opacity = status.IsActive ? 1.0 : 0.42;
+        CoreMemoryIconText.Text = status.IsNearFull ? "🤯" : "🧠";
+        CoreMemoryIconText.Foreground = status.IsActive
+            ? status.IsNearFull
+                ? new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString("#F97316"))
+                : new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString("#38BDF8"))
+            : (Media.Brush)Resources["TextSecondaryBrush"];
+
+        if (!status.IsActive)
+        {
+            CoreMemoryIndicatorPanel.ToolTip = L("CoreMemory.TooltipInactive");
+            return;
+        }
+
+        CoreMemoryIndicatorPanel.ToolTip = status.IsCompressing
+            ? L("CoreMemory.TooltipCompressing")
+            : status.HasCompressedSummary
+                ? L("CoreMemory.TooltipCompressed")
+                : L("CoreMemory.TooltipReady");
     }
 
     private void SetBrush(string resourceKey, string color)
@@ -362,6 +399,7 @@ public partial class MainWindow : Window
         PostponeCoreModelButton.Content = L("CoreModel.Later");
         PauseCoreModelDownloadButton.Content = L("CoreModel.Pause");
         CancelCoreModelDownloadButton.Content = L("CoreModel.Cancel");
+        UpdateCoreMemoryIndicator(_coreMemoryStatus);
 
         ApplyTheme();
         UpdatePrimaryActionButton();

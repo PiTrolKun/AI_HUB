@@ -24,7 +24,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
-    private readonly UserContextService _userContextService;
+    private readonly CoreIdentityService _coreIdentityService;
 
     private Process? _process;
     private string? _currentModelPath;
@@ -44,7 +44,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
     public LlamaServerRuntimeService(UserContextService userContextService)
     {
-        _userContextService = userContextService;
+        _coreIdentityService = new CoreIdentityService(userContextService);
     }
 
     public async Task<string> GenerateAsync(
@@ -58,7 +58,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         var request = new ChatCompletionRequest
         {
-            Messages = BuildMessages(history, userMessage),
+            Messages = BuildMessages(model, history, userMessage),
             Temperature = 0.2,
             Stream = false
         };
@@ -92,7 +92,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         var request = new ChatCompletionRequest
         {
-            Messages = BuildStructuredMessages(messages),
+            Messages = BuildStructuredMessages(model, messages),
             Tools = tools.ToList(),
             ToolChoice = "auto",
             Temperature = 0.2,
@@ -199,7 +199,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
         AddArgument(startInfo, "--port");
         AddArgument(startInfo, _port.ToString(System.Globalization.CultureInfo.InvariantCulture));
         AddArgument(startInfo, "--ctx-size");
-        AddArgument(startInfo, "4096");
+        AddArgument(startInfo, CoreContextRuntimeLimits.CurrentBackendContextLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
         AddArgument(startInfo, "--n-gpu-layers");
         AddArgument(startInfo, "99");
         AddArgument(startInfo, "--jinja");
@@ -284,28 +284,25 @@ public sealed class LlamaServerRuntimeService : IDisposable
             || line.Contains("failed", StringComparison.OrdinalIgnoreCase);
     }
 
-    private List<ChatMessage> BuildMessages(IReadOnlyList<DebugChatMessage> history, string userMessage)
+    private List<ChatMessage> BuildMessages(DebugModelInfo model, IReadOnlyList<DebugChatMessage> history, string userMessage)
     {
         var messages = new List<ChatMessage>
         {
             new()
             {
                 Role = "system",
-                Content = "Ты диагностическое ядро AI HUB. Отвечай по делу; если пользователь просит подробно, отвечай развёрнуто. У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; если в prompt перечислены инструменты AI HUB, проси их строго в указанном формате."
-                    + Environment.NewLine
-                    + Environment.NewLine
-                    + _userContextService.BuildHiddenSystemContext()
+                Content = _coreIdentityService.BuildSystemPrompt(
+                    model,
+                    CoreInteractionMode.PlainChat,
+                    "llama.cpp llama-server")
             }
         };
 
-        foreach (var item in history.TakeLast(8))
+        foreach (var item in SelectHistoryForPrompt(history, 8))
         {
             messages.Add(new ChatMessage
             {
-                Role = item.Role.Contains("model", StringComparison.OrdinalIgnoreCase)
-                    || item.Role.Contains("модель", StringComparison.OrdinalIgnoreCase)
-                        ? "assistant"
-                        : "user",
+                Role = GetChatApiRole(item.Role),
                 Content = item.Text
             });
         }
@@ -314,17 +311,17 @@ public sealed class LlamaServerRuntimeService : IDisposable
         return messages;
     }
 
-    private List<ChatMessage> BuildStructuredMessages(IReadOnlyList<StructuredChatMessage> messages)
+    private List<ChatMessage> BuildStructuredMessages(DebugModelInfo model, IReadOnlyList<StructuredChatMessage> messages)
     {
         var result = new List<ChatMessage>
         {
             new()
             {
                 Role = "system",
-                Content = "Ты диагностическое ядро AI HUB. Отвечай по делу. Если для задачи нужен инструмент, вызывай его через структурный tool call, а не описывай вызов текстом. У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; доступ выполняется только через инструменты AI HUB."
-                    + Environment.NewLine
-                    + Environment.NewLine
-                    + _userContextService.BuildHiddenSystemContext()
+                Content = _coreIdentityService.BuildSystemPrompt(
+                    model,
+                    CoreInteractionMode.StructuredToolAgent,
+                    "llama.cpp llama-server")
             }
         };
 
@@ -342,6 +339,31 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         return result;
     }
+
+    private static IEnumerable<DebugChatMessage> SelectHistoryForPrompt(IReadOnlyList<DebugChatMessage> history, int recentCount)
+    {
+        return history
+            .Where(item => IsMemoryRole(item.Role))
+            .TakeLast(1)
+            .Concat(history.Where(item => !IsMemoryRole(item.Role)).TakeLast(recentCount));
+    }
+
+    private static string GetChatApiRole(string role)
+    {
+        if (IsMemoryRole(role))
+        {
+            return "system";
+        }
+
+        return role.Contains("model", StringComparison.OrdinalIgnoreCase)
+            || role.Contains("модель", StringComparison.OrdinalIgnoreCase)
+                ? "assistant"
+                : "user";
+    }
+
+    private static bool IsMemoryRole(string role) =>
+        role.Contains("memory", StringComparison.OrdinalIgnoreCase)
+        || role.Contains("память", StringComparison.OrdinalIgnoreCase);
 
     private static int FindFreeLoopbackPort()
     {

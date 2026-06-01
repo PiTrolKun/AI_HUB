@@ -21,6 +21,7 @@ public sealed class ToolGateway
     private readonly TaskPlannerService _taskPlannerService = new();
     private readonly HuggingFaceProviderTool _huggingFaceProviderTool = new();
     private readonly SearchStrategyService _searchStrategyService = new();
+    private readonly SessionLogReaderService _sessionLogReaderService = new();
 
     public bool IsToolCommand(string prompt)
     {
@@ -30,6 +31,7 @@ public sealed class ToolGateway
             || prompt.TrimStart().StartsWith("web_download:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("inventory:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("task_plan:", StringComparison.OrdinalIgnoreCase)
+            || prompt.TrimStart().StartsWith("session_log:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("hf_find_model:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("hf_model_files:", StringComparison.OrdinalIgnoreCase);
     }
@@ -62,6 +64,7 @@ public sealed class ToolGateway
                 "web_download" => await ExecuteDownloadAsync(argument, storageSettings, cancellationToken, downloadProgress),
                 "inventory" => ExecuteInventory(storageSettings),
                 "task_plan" => ExecuteTaskPlan(argument, storageSettings),
+                "session_log" => ExecuteSessionLog(argument, sessionLog),
                 "hf_find_model" => await ExecuteHfFindModelAsync(argument, storageSettings, cancellationToken),
                 "hf_model_files" => await ExecuteHfModelFilesAsync(argument, storageSettings, cancellationToken),
                 _ => throw new InvalidOperationException($"Unknown tool command: {command}")
@@ -272,6 +275,11 @@ public sealed class ToolGateway
         builder.AppendLine("JSON:");
         builder.AppendLine(JsonSerializer.Serialize(plan, JsonOptions));
         return builder.ToString().Trim();
+    }
+
+    private string ExecuteSessionLog(string request, JsonlSessionLog sessionLog)
+    {
+        return _sessionLogReaderService.Read(sessionLog.FilePath, request);
     }
 
     private async Task<string> ExecuteHfFindModelAsync(

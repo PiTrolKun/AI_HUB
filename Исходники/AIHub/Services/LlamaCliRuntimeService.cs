@@ -20,11 +20,11 @@ public sealed class LlamaCliRuntimeService
 
     public bool IsAvailable => File.Exists(ExpectedExecutablePath);
 
-    private readonly UserContextService _userContextService;
+    private readonly CoreIdentityService _coreIdentityService;
 
     public LlamaCliRuntimeService(UserContextService userContextService)
     {
-        _userContextService = userContextService;
+        _coreIdentityService = new CoreIdentityService(userContextService);
     }
 
     public async Task<string> GenerateAsync(
@@ -39,7 +39,7 @@ public sealed class LlamaCliRuntimeService
             throw new FileNotFoundException("llama-cli.exe was not found.", ExpectedExecutablePath);
         }
 
-        var promptPath = CreatePromptFile(history, userMessage);
+        var promptPath = CreatePromptFile(model, history, userMessage);
         try
         {
             var startInfo = new ProcessStartInfo
@@ -61,7 +61,7 @@ public sealed class LlamaCliRuntimeService
             AddArgument(startInfo, "--predict");
             AddArgument(startInfo, "-1");
             AddArgument(startInfo, "--ctx-size");
-            AddArgument(startInfo, "4096");
+            AddArgument(startInfo, CoreContextRuntimeLimits.CurrentBackendContextLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
             AddArgument(startInfo, "--n-gpu-layers");
             AddArgument(startInfo, "99");
             AddArgument(startInfo, "--temp");
@@ -120,19 +120,22 @@ public sealed class LlamaCliRuntimeService
         }
     }
 
-    private string CreatePromptFile(IReadOnlyList<DebugChatMessage> history, string userMessage)
+    private string CreatePromptFile(DebugModelInfo model, IReadOnlyList<DebugChatMessage> history, string userMessage)
     {
         Directory.CreateDirectory(AppDataPaths.BaseDirectory);
         var path = Path.Combine(AppDataPaths.BaseDirectory, $"debug-prompt-{Guid.NewGuid():N}.txt");
         var builder = new StringBuilder();
-        builder.AppendLine("Ты диагностическое ядро AI HUB. Отвечай по делу; если пользователь просит подробно, отвечай развёрнуто.");
-        builder.AppendLine("У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; если в prompt перечислены инструменты AI HUB, проси их строго в указанном формате.");
-        builder.AppendLine();
-        builder.AppendLine(_userContextService.BuildHiddenSystemContext());
+        builder.AppendLine(_coreIdentityService.BuildSystemPrompt(model, CoreInteractionMode.PlainChat, "llama.cpp llama-cli"));
         builder.AppendLine();
 
-        foreach (var message in history.TakeLast(8))
+        foreach (var message in SelectHistoryForPrompt(history, 8))
         {
+            if (IsMemoryRole(message.Role))
+            {
+                builder.AppendLine($"Служебная память AI HUB: {message.Text}");
+                continue;
+            }
+
             builder.AppendLine($"{message.Role}: {message.Text}");
         }
 
@@ -141,6 +144,18 @@ public sealed class LlamaCliRuntimeService
         File.WriteAllText(path, builder.ToString(), Encoding.UTF8);
         return path;
     }
+
+    private static IEnumerable<DebugChatMessage> SelectHistoryForPrompt(IReadOnlyList<DebugChatMessage> history, int recentCount)
+    {
+        return history
+            .Where(message => IsMemoryRole(message.Role))
+            .TakeLast(1)
+            .Concat(history.Where(message => !IsMemoryRole(message.Role)).TakeLast(recentCount));
+    }
+
+    private static bool IsMemoryRole(string role) =>
+        role.Contains("memory", StringComparison.OrdinalIgnoreCase)
+        || role.Contains("память", StringComparison.OrdinalIgnoreCase);
 
     private static string CleanOutput(string output)
     {
@@ -189,6 +204,12 @@ public sealed class LlamaCliRuntimeService
         return line.StartsWith(">", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Ты диагностический чат AI HUB", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Ты диагностическое ядро AI HUB", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Служебная идентичность AI HUB", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Паспорт текущей модели", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Паспорт компьютера пользователя AI HUB", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Карточка пользователя AI HUB", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Если пользователь спрашивает", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Правила обычного чата", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("У тебя нет доступа", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("У тебя нет прямого доступа", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Служебный контекст AI HUB", StringComparison.OrdinalIgnoreCase)
