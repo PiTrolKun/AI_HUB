@@ -10,6 +10,7 @@
 |---|---|---|---|---|---|---|
 | Microsoft .NET Runtime | Запуск будущего .NET-приложения | 10.0.8 | MIT | Установлено вместе с `Microsoft.DotNet.SDK.10` через winget / Microsoft | Нет, системная предпосылка | Требуется Windows x64 |
 | Microsoft Windows Desktop Runtime | Запуск будущего WPF-приложения | 10.0.8 | MIT | Установлено вместе с `Microsoft.DotNet.SDK.10` через winget / Microsoft | Нет, системная предпосылка | Требуется Windows x64; нужен для WPF |
+| Python reranker runtime | Временный локальный runtime для запуска `BAAI/bge-reranker-v2-m3` через Python/Transformers при rerank web-поиска | Python 3.12 venv в `Runtime/Python/reranker/.venv`; `torch 2.12.0`, `transformers 5.9.0`, `safetensors 0.7.0` | Python PSF; PyTorch BSD-style; Transformers Apache-2.0; Safetensors Apache-2.0 | Установлено локально через `pip` в runtime-папку проекта | Нет, runtime-папка не публикуется в GitHub | Временное dev-решение; перед релизом заменить на управляемую поставку/установку или ONNX/встроенный backend |
 
 ## Developer tooling
 
@@ -37,12 +38,15 @@
 | Название | Назначение | Версия/API | Лицензия/условия | Источник | Поставка вместе с программой | Ограничения |
 |---|---|---|---|---|---|---|
 | ipwho.is / ipwhois.io | Примерное автоматическое определение местоположения пользователя по IP для скрытого контекста ядра | HTTPS JSON endpoint `https://ipwho.is/?lang=ru` | Внешний сервис; free endpoint без API-ключа, указан fair-use limit 1 запрос/сек и 60 запросов/60 сек; free endpoint предназначен для non-commercial use | Официальная документация `https://ipwhois.io/documentation` | Нет, это внешний запрос; IP не сохраняется в профиле AI HUB | Использовать редко и best-effort: при отсутствии сохранённого auto-местоположения; при недоступности сервиса программа работает без местоположения; перед публичным/коммерческим релизом пересмотреть условия или заменить провайдера |
+| DuckDuckGo Lite | Первый dev-провайдер web-поиска для проверки Tool Gateway без API-ключа | HTML endpoint `https://lite.duckduckgo.com/lite/?q=...` | Внешний web-сервис; условия DuckDuckGo нужно пересмотреть перед публичным релизом | `https://lite.duckduckgo.com/lite/` | Нет, это внешний HTTPS-запрос | Используется как временный dev-провайдер; HTML-парсинг хрупкий, в будущем заменить на официальный API-провайдер или локальный SearXNG |
 
 ## AI-модели
 
 | Название | Назначение | Версия/квант | Лицензия | Источник | Размер | Ограничения |
 |---|---|---|---|---|---|---|
 | Qwen3 8B GGUF | Основное ИИ-ядро AI HUB: быстрый диспетчер сценариев, будущей RAG-памяти и выбора инструментов | Qwen3 8B / GGUF / Q4_K_M / файл `Qwen3-8B-Q4_K_M.gguf` | Apache-2.0 | Hugging Face `Qwen/Qwen3-8B-GGUF`, commit `7c41481f57cb95916b40956ab2f0b139b296d974` | `5027783488` байт, около 5.03 ГБ | Не поставляется внутри установщика; скачивается отдельно пользователем через AI HUB в выбранную папку моделей; после загрузки проверяется SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` |
+| Qwen3 0.6B GGUF | Тестовый web-download artifact для проверки, что ядро может попросить инструмент скачать маленькую модель | Qwen3 0.6B / GGUF / Q4_K_M / файл `Qwen3-0.6B-Q4_K_M.gguf` | Apache-2.0 | Hugging Face `jc-builds/Qwen3-0.6B-Q4_K_M-GGUF`, repo sha `c3111ad3faedb08c4abf76070a589e256258c62d` | `396705472` байт, около 397 МБ; SHA-256 `ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a` | Не является основным ядром и не включается в установщик; скачана в пользовательскую папку результатов `AI_HUB\Tools\Web\Downloads` для теста инструментов, Git ignored |
+| BAAI bge-reranker-v2-m3 | Будущая вспомогательная модель интернет-инструмента: reranker для выбора более подходящих web-результатов | `BAAI/bge-reranker-v2-m3`, safetensors, commit `953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e` | Apache-2.0 | Hugging Face `BAAI/bge-reranker-v2-m3` | `2293242108` байт, около 2.29 ГБ | Не поставляется внутри установщика; будет автоматически скачиваться AI HUB после основного ядра в выбранную папку моделей `Tools/Reranker/BAAI-bge-reranker-v2-m3`; пока только регистрируется и показывается в F12 как служебная модель без запуска |
 
 ## Встроенные библиотеки
 

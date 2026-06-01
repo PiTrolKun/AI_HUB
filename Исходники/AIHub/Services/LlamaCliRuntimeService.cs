@@ -125,8 +125,8 @@ public sealed class LlamaCliRuntimeService
         Directory.CreateDirectory(AppDataPaths.BaseDirectory);
         var path = Path.Combine(AppDataPaths.BaseDirectory, $"debug-prompt-{Guid.NewGuid():N}.txt");
         var builder = new StringBuilder();
-        builder.AppendLine("Ты диагностический чат AI HUB. Отвечай кратко и по делу.");
-        builder.AppendLine("У тебя нет доступа к файлам, интернету, shell, инструментам и настройкам Windows.");
+        builder.AppendLine("Ты диагностическое ядро AI HUB. Отвечай кратко и по делу.");
+        builder.AppendLine("У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; если в prompt перечислены инструменты AI HUB, проси их строго в указанном формате.");
         builder.AppendLine();
         builder.AppendLine(_userContextService.BuildHiddenSystemContext());
         builder.AppendLine();
@@ -188,7 +188,9 @@ public sealed class LlamaCliRuntimeService
     {
         return line.StartsWith(">", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Ты диагностический чат AI HUB", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("Ты диагностическое ядро AI HUB", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("У тебя нет доступа", StringComparison.OrdinalIgnoreCase)
+            || line.StartsWith("У тебя нет прямого доступа", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Служебный контекст AI HUB", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Используй дату", StringComparison.OrdinalIgnoreCase)
             || line.StartsWith("Не утверждай", StringComparison.OrdinalIgnoreCase)

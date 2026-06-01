@@ -47,7 +47,11 @@
             <Setter Property="Foreground" Value="{DynamicResource NativeComboTextBrush}" />
             <Setter Property="Background" Value="#FFFFFF" />
             <Setter Property="Padding" Value="8,4" />
+            <Setter Property="IsEnabled" Value="{Binding IsRunnable}" />
             <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRunnable}" Value="False">
+                    <Setter Property="Opacity" Value="0.55" />
+                </DataTrigger>
                 <Trigger Property="IsHighlighted" Value="True">
                     <Setter Property="Background" Value="#DCEBFF" />
                     <Setter Property="Foreground" Value="{DynamicResource NativeComboTextBrush}" />
@@ -196,6 +200,22 @@
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                TextWrapping="Wrap"
                                VerticalAlignment="Center" />
+                    <StackPanel Grid.Row="2"
+                                Grid.Column="2"
+                                Margin="0,30,0,0"
+                                VerticalAlignment="Top">
+                        <ProgressBar x:Name="DownloadProgressBar"
+                                     Height="8"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Visibility="Collapsed" />
+                        <TextBlock x:Name="DownloadProgressText"
+                                   Margin="0,5,0,0"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Visibility="Collapsed" />
+                    </StackPanel>
                 </Grid>
             </Border>
 

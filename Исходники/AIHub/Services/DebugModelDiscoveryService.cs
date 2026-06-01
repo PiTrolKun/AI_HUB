@@ -31,12 +31,22 @@ public sealed class DebugModelDiscoveryService
             {
                 models.Add(CreateModelInfo(path));
             }
+
+            foreach (var path in Directory.EnumerateFiles(root, "tool-model.json", SearchOption.AllDirectories))
+            {
+                var toolModel = CreateToolModelInfo(path);
+                if (toolModel is not null)
+                {
+                    models.Add(toolModel);
+                }
+            }
         }
 
         return models
             .GroupBy(model => model.Path, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .OrderByDescending(model => model.IsCoreModel)
+            .ThenBy(model => model.IsRunnable ? 0 : 1)
             .ThenBy(model => model.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -54,7 +64,53 @@ public sealed class DebugModelDiscoveryService
             SizeBytes = file.Length,
             Role = manifest?.Role ?? string.Empty,
             Status = manifest?.Status ?? string.Empty,
-            IsCoreModel = isCore
+            Format = "gguf",
+            IsCoreModel = isCore,
+            IsRunnable = true
+        };
+    }
+
+    private static DebugModelInfo? CreateToolModelInfo(string manifestPath)
+    {
+        ToolModelManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<ToolModelManifest>(File.ReadAllText(manifestPath), JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (manifest is null)
+        {
+            return null;
+        }
+
+        var directory = Path.GetDirectoryName(manifestPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return null;
+        }
+
+        var mainFile = manifest.Files
+            .FirstOrDefault(file => string.Equals(Path.GetFileName(file.File), "model.safetensors", StringComparison.OrdinalIgnoreCase))
+            ?? manifest.Files.FirstOrDefault();
+        var displayPath = mainFile is null ? manifestPath : Path.Combine(directory, mainFile.File);
+        var sizeBytes = manifest.TotalBytes > 0
+            ? manifest.TotalBytes
+            : manifest.Files.Sum(file => File.Exists(Path.Combine(directory, file.File)) ? new FileInfo(Path.Combine(directory, file.File)).Length : file.SizeBytes);
+
+        return new DebugModelInfo
+        {
+            Name = string.IsNullOrWhiteSpace(manifest.Name) ? Path.GetFileName(directory) : manifest.Name,
+            Path = displayPath,
+            SizeBytes = sizeBytes,
+            Role = string.IsNullOrWhiteSpace(manifest.ToolKind) ? manifest.Role : manifest.ToolKind,
+            Status = manifest.Status,
+            Format = manifest.Format,
+            IsCoreModel = false,
+            IsRunnable = false
         };
     }
 

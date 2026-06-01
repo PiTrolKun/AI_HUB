@@ -23,7 +23,17 @@ $textExtensions = New-Object "System.Collections.Generic.HashSet[string]" ([Syst
 ) | ForEach-Object { [void]$textExtensions.Add($_) }
 
 $excludedDirs = New-Object "System.Collections.Generic.HashSet[string]" ([System.StringComparer]::OrdinalIgnoreCase)
-@(".git", ".vs", "bin", "obj", "node_modules", ".cache") | ForEach-Object { [void]$excludedDirs.Add($_) }
+@(
+    ".git",
+    ".vs",
+    "bin",
+    "obj",
+    "node_modules",
+    ".cache",
+    ".venv",
+    "Runtime",
+    "Модели"
+) | ForEach-Object { [void]$excludedDirs.Add($_) }
 if (-not $IncludeBackups) {
     [void]$excludedDirs.Add("Backups")
 }

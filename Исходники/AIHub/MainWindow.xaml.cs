@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly UserContextService _userContextService = new(new UserProfileStore(), new IpLocationService());
     private readonly LocalizationService _localizationService = new();
     private readonly StorageSettingsStore _storageSettingsStore = new();
+    private readonly ToolModelManager _toolModelManager = new();
 
     private AppSettings _appSettings = new();
     private AppState _appState = new();
@@ -30,10 +31,17 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _coreModelDownloadCts;
     private JsonlSessionLog? _coreSessionLog;
     private CoreModelCheckResult? _lastCoreModelCheck;
+    private PendingModelDownload _pendingModelDownload = PendingModelDownload.Core;
     private DebugChatWindow? _debugChatWindow;
     private bool _isApplyingLanguageSelection;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
+
+    private enum PendingModelDownload
+    {
+        Core,
+        Reranker
+    }
 
     public MainWindow()
     {
@@ -554,6 +562,12 @@ public partial class MainWindow : Window
 
     private async void DownloadCoreModelButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_pendingModelDownload == PendingModelDownload.Reranker)
+        {
+            await StartRerankerDownloadAsync();
+            return;
+        }
+
         await StartCoreModelDownloadAsync();
     }
 
@@ -567,7 +581,9 @@ public partial class MainWindow : Window
     {
         _isCoreModelPromptPostponed = true;
         HideCoreModelPrompt();
-        StatusText.Text = L("Status.CoreModelPostponed");
+        StatusText.Text = _pendingModelDownload == PendingModelDownload.Reranker
+            ? L("Status.RerankerModelPostponed")
+            : L("Status.CoreModelPostponed");
     }
 
     private void PauseCoreModelDownloadButton_Click(object sender, RoutedEventArgs e)
@@ -611,6 +627,14 @@ public partial class MainWindow : Window
         if (result.Availability != CoreModelAvailability.Installed && !_isCoreModelPromptPostponed)
         {
             ShowCoreModelPrompt(result);
+            return;
+        }
+
+        if (result.Availability == CoreModelAvailability.Installed
+            && !_toolModelManager.IsRerankerInstalled(_storageSettings)
+            && !_isCoreModelPromptPostponed)
+        {
+            ShowRerankerModelPrompt();
         }
     }
 
@@ -621,7 +645,14 @@ public partial class MainWindow : Window
         if (result.Availability == CoreModelAvailability.Installed)
         {
             HideCoreModelPrompt();
-            StatusText.Text = L("Status.CoreModelReady");
+            if (_toolModelManager.IsRerankerInstalled(_storageSettings))
+            {
+                StatusText.Text = L("Status.CoreModelReady");
+            }
+            else
+            {
+                ShowRerankerModelPrompt();
+            }
             return;
         }
 
@@ -630,6 +661,7 @@ public partial class MainWindow : Window
 
     private void ShowCoreModelPrompt(CoreModelCheckResult result)
     {
+        _pendingModelDownload = PendingModelDownload.Core;
         _lastCoreModelCheck = result;
         CoreModelPromptPanel.Visibility = Visibility.Visible;
         CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
@@ -643,6 +675,19 @@ public partial class MainWindow : Window
             CoreModelAvailability.Invalid => L("Status.CoreModelInvalid"),
             _ => L("Status.CoreModelMissing")
         };
+    }
+
+    private void ShowRerankerModelPrompt()
+    {
+        _pendingModelDownload = PendingModelDownload.Reranker;
+        CoreModelPromptPanel.Visibility = Visibility.Visible;
+        CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+        DownloadCoreModelButton.IsEnabled = HasModelsStorage();
+        CoreModelPromptText.Text = LF(
+            "ToolModel.RerankerMissingPrompt",
+            ToolModelManager.RerankerDisplayName,
+            FormatBytes(ToolModelManager.RerankerTotalBytes));
+        StatusText.Text = L("Status.RerankerModelMissing");
     }
 
     private string BuildCoreModelPromptText(CoreModelCheckResult result)
@@ -668,6 +713,11 @@ public partial class MainWindow : Window
             && result.Availability is CoreModelAvailability.Missing
                 or CoreModelAvailability.Partial
                 or CoreModelAvailability.Invalid;
+    }
+
+    private bool HasModelsStorage()
+    {
+        return _storageSettings.Models.Locations.Any(location => !string.IsNullOrWhiteSpace(location.Path));
     }
 
     private void HideCoreModelPrompt()
@@ -704,26 +754,100 @@ public partial class MainWindow : Window
 
         var progress = new Progress<CoreModelDownloadProgress>(UpdateCoreModelDownloadProgress);
 
+        var coreInstalled = false;
         try
         {
             await _coreModelManager.DownloadAsync(_storageSettings, progress, _coreModelDownloadCts.Token);
+            coreInstalled = true;
+            await _toolModelManager.EnsureRerankerDownloadedAsync(_storageSettings, progress, _coreModelDownloadCts.Token);
             CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
             HideCoreModelPrompt();
-            StatusText.Text = L("Status.CoreModelInstalled");
+            StatusText.Text = L("Status.CoreAndRerankerInstalled");
         }
         catch (OperationCanceledException)
         {
             CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
-            var result = _coreModelManager.Check(_storageSettings);
-            ShowCoreModelPrompt(result);
+            if (coreInstalled)
+            {
+                ShowRerankerModelPrompt();
+            }
+            else
+            {
+                var result = _coreModelManager.Check(_storageSettings);
+                ShowCoreModelPrompt(result);
+            }
+
             StatusText.Text = L("Status.CoreModelDownloadPaused");
         }
         catch (Exception)
         {
             CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
-            var result = _coreModelManager.Check(_storageSettings);
-            ShowCoreModelPrompt(result);
-            StatusText.Text = L("Status.CoreModelDownloadFailed");
+            if (coreInstalled)
+            {
+                ShowRerankerModelPrompt();
+                StatusText.Text = L("Status.RerankerModelDownloadFailed");
+            }
+            else
+            {
+                var result = _coreModelManager.Check(_storageSettings);
+                ShowCoreModelPrompt(result);
+                StatusText.Text = L("Status.CoreModelDownloadFailed");
+            }
+        }
+        finally
+        {
+            _coreModelDownloadCts?.Dispose();
+            _coreModelDownloadCts = null;
+            DownloadCoreModelButton.IsEnabled = true;
+        }
+    }
+
+    private async Task StartRerankerDownloadAsync()
+    {
+        if (_coreModelDownloadCts is not null)
+        {
+            return;
+        }
+
+        if (!HasModelsStorage())
+        {
+            ShowRerankerModelPrompt();
+            return;
+        }
+
+        _coreModelDownloadCts = new CancellationTokenSource();
+        DownloadCoreModelButton.IsEnabled = false;
+        CoreModelPromptPanel.Visibility = Visibility.Collapsed;
+        CoreModelDownloadPanel.Visibility = Visibility.Visible;
+        CoreModelDownloadProgressBar.Value = 0;
+        CoreModelDownloadTitleText.Text = LF(
+            "ToolModel.RerankerDownloadProgress",
+            0,
+            FormatBytes(0),
+            FormatBytes(ToolModelManager.RerankerTotalBytes),
+            FormatBytes(0) + L("Units.PerSecond"));
+        StatusText.Text = L("Status.RerankerModelDownloadStarted");
+
+        var progress = new Progress<CoreModelDownloadProgress>(UpdateCoreModelDownloadProgress);
+
+        try
+        {
+            await _toolModelManager.EnsureRerankerDownloadedAsync(_storageSettings, progress, _coreModelDownloadCts.Token);
+            CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+            HideCoreModelPrompt();
+            StatusText.Text = L("Status.RerankerModelInstalled");
+        }
+        catch (OperationCanceledException)
+        {
+            CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+            ShowRerankerModelPrompt();
+            StatusText.Text = L("Status.CoreModelDownloadPaused");
+        }
+        catch (Exception)
+        {
+            CoreModelDownloadPanel.Visibility = Visibility.Collapsed;
+            ShowRerankerModelPrompt();
+            StatusText.Text = L("Status.RerankerModelDownloadFailed");
         }
         finally
         {
@@ -749,13 +873,30 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (progress.Stage == "verifying-reranker")
+        {
+            CoreModelDownloadTitleText.Text = L("ToolModel.RerankerVerifying");
+            CoreModelDownloadProgressBar.Value = 100;
+            return;
+        }
+
+        if (progress.Stage == "installed-reranker")
+        {
+            CoreModelDownloadTitleText.Text = L("ToolModel.RerankerInstalled");
+            CoreModelDownloadProgressBar.Value = 100;
+            return;
+        }
+
         var percent = progress.TotalBytes <= 0
             ? 0
             : Math.Clamp(progress.DownloadedBytes * 100d / progress.TotalBytes, 0, 100);
 
         CoreModelDownloadProgressBar.Value = percent;
+        var progressKey = progress.Stage == "downloading-reranker"
+            ? "ToolModel.RerankerDownloadProgress"
+            : "CoreModel.DownloadProgress";
         CoreModelDownloadTitleText.Text = LF(
-            "CoreModel.DownloadProgress",
+            progressKey,
             percent.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
             FormatBytes(progress.DownloadedBytes),
             FormatBytes(progress.TotalBytes),

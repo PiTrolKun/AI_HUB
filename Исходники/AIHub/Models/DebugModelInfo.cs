@@ -12,13 +12,19 @@ public sealed class DebugModelInfo
 
     public string Status { get; set; } = string.Empty;
 
+    public string Format { get; set; } = string.Empty;
+
     public bool IsCoreModel { get; set; }
+
+    public bool IsRunnable { get; set; } = true;
 
     public override string ToString()
     {
         var role = string.IsNullOrWhiteSpace(Role) ? "no manifest" : Role;
         var status = string.IsNullOrWhiteSpace(Status) ? "unknown" : Status;
-        return $"{Name} ({FormatSize(SizeBytes)}, {role}, {status})";
+        var format = string.IsNullOrWhiteSpace(Format) ? "model" : Format;
+        var runState = IsRunnable ? "runnable" : "tool-only";
+        return $"{Name} ({FormatSize(SizeBytes)}, {format}, {role}, {status}, {runState})";
     }
 
     private static string FormatSize(long bytes)

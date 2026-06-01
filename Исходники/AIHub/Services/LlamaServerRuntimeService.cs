@@ -249,7 +249,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
             new()
             {
                 Role = "system",
-                Content = "Ты диагностический чат AI HUB. Отвечай кратко и по делу. У тебя нет доступа к файлам, интернету, shell, инструментам и настройкам Windows."
+                Content = "Ты диагностическое ядро AI HUB. Отвечай кратко и по делу. У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; если в prompt перечислены инструменты AI HUB, проси их строго в указанном формате."
                     + Environment.NewLine
                     + Environment.NewLine
                     + _userContextService.BuildHiddenSystemContext()
