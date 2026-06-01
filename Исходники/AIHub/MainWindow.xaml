@@ -142,6 +142,12 @@
                 <StackPanel Grid.Column="2"
                             Orientation="Horizontal"
                             VerticalAlignment="Center">
+                    <Button x:Name="ProfileButton"
+                            Content="👤"
+                            Style="{StaticResource ThemeButtonStyle}"
+                            ToolTip="Профиль пользователя"
+                            Margin="0,0,10,0"
+                            Click="ProfileButton_Click" />
                     <Button x:Name="SettingsButton"
                             Content="⚙"
                             Style="{StaticResource ThemeButtonStyle}"
@@ -724,6 +730,327 @@
                         Style="{StaticResource SecondaryButtonStyle}"
                         Click="BackFromSettingsButton_Click" />
             </StackPanel>
+        </Grid>
+
+        <Grid x:Name="ProfilePage"
+              Grid.Row="1"
+              Margin="56,44,56,36"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="22" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="20" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock x:Name="ProfileTitleText"
+                           Text="Профиль пользователя"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="32"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="ProfileDescriptionText"
+                           Text="Профиль хранится локально и помогает AI HUB точнее обращаться к вам, учитывать местоположение и подбирать стиль работы."
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="15"
+                           LineHeight="24"
+                           TextWrapping="Wrap"
+                           Margin="0,12,0,0" />
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock x:Name="ProfileIdentityTitleText"
+                                       Text="Имя или ник"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ProfileIdentityHelpText"
+                                       Text="Нужно для обращения модели к пользователю и будущего указания автора в документах."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,10" />
+                            <TextBox x:Name="ProfileDisplayNameInput"
+                                     Height="34"
+                                     MaxWidth="520"
+                                     HorizontalAlignment="Left"
+                                     VerticalContentAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock x:Name="ProfileLocationTitleText"
+                                       Text="Местоположение"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ProfileLocationHelpText"
+                                       Text="Нужно для ответов, где важны страна, город, регион, часовой пояс или локальный контекст."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,14" />
+
+                            <Grid MaxWidth="760" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="12" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock x:Name="ProfileCityLabelText"
+                                           Text="Город"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12" />
+                                <TextBox x:Name="ProfileCityInput"
+                                         Grid.Row="2"
+                                         Height="34"
+                                         VerticalContentAlignment="Center" />
+
+                                <TextBlock x:Name="ProfileRegionLabelText"
+                                           Grid.Column="2"
+                                           Text="Регион"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12" />
+                                <TextBox x:Name="ProfileRegionInput"
+                                         Grid.Row="2"
+                                         Grid.Column="2"
+                                         Height="34"
+                                         VerticalContentAlignment="Center" />
+
+                                <TextBlock x:Name="ProfileCountryLabelText"
+                                           Grid.Row="4"
+                                           Text="Страна"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12" />
+                                <TextBox x:Name="ProfileCountryInput"
+                                         Grid.Row="6"
+                                         Height="34"
+                                         VerticalContentAlignment="Center" />
+
+                                <TextBlock x:Name="ProfileTimezoneLabelText"
+                                           Grid.Row="4"
+                                           Grid.Column="2"
+                                           Text="Часовой пояс"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12" />
+                                <TextBox x:Name="ProfileTimezoneInput"
+                                         Grid.Row="6"
+                                         Grid.Column="2"
+                                         Height="34"
+                                         VerticalContentAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock x:Name="ProfileAnswerPreferencesTitleText"
+                                       Text="Предпочитаемые ответы"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ProfileAnswerPreferencesHelpText"
+                                       Text="Выберите, как AI HUB должен чаще строить ответы. Можно отметить несколько вариантов."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,14" />
+
+                            <UniformGrid Columns="2" MaxWidth="760" HorizontalAlignment="Left">
+                                <CheckBox x:Name="PreferenceConciseCheckBox"
+                                          Content="Кратко и по делу"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                                <CheckBox x:Name="PreferenceDetailedCheckBox"
+                                          Content="Подробно с объяснениями"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                                <CheckBox x:Name="PreferenceSimpleCheckBox"
+                                          Content="Простым языком"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                                <CheckBox x:Name="PreferenceStepsCheckBox"
+                                          Content="По шагам"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                                <CheckBox x:Name="PreferenceExamplesCheckBox"
+                                          Content="С примерами"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                                <CheckBox x:Name="PreferenceSourcesCheckBox"
+                                          Content="С источниками при поиске"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                                <CheckBox x:Name="PreferenceRisksCheckBox"
+                                          Content="Предупреждать о рисках и сомнениях"
+                                          Foreground="{DynamicResource TextPrimaryBrush}"
+                                          Margin="0,0,18,10" />
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20">
+                        <StackPanel>
+                            <TextBlock x:Name="ProfileWorkloadTitleText"
+                                       Text="Режим нагрузки"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ProfileWorkloadHelpText"
+                                       Text="Выбор не запрещает другие варианты, но влияет на порядок будущих рекомендаций инструментов."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,14" />
+
+                            <StackPanel MaxWidth="840" HorizontalAlignment="Left">
+                                <RadioButton x:Name="WorkloadLightRadio"
+                                             GroupName="UserWorkloadMode"
+                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                             Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock x:Name="WorkloadLightTitleText"
+                                                   Text="Лёгкий"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock x:Name="WorkloadLightDescriptionText"
+                                                   Text="Стараться держать нагрузку на ПК ниже 80%, чаще выбирать лёгкие модели и простые инструменты."
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton x:Name="WorkloadBalancedRadio"
+                                             GroupName="UserWorkloadMode"
+                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                             Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock x:Name="WorkloadBalancedTitleText"
+                                                   Text="Оптимальный"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock x:Name="WorkloadBalancedDescriptionText"
+                                                   Text="Режим по умолчанию: подбирать нагрузку под паспорт компьютера."
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton x:Name="WorkloadExtremeRadio"
+                                             GroupName="UserWorkloadMode"
+                                             Foreground="{DynamicResource TextPrimaryBrush}">
+                                    <StackPanel>
+                                        <TextBlock x:Name="WorkloadExtremeTitleText"
+                                                   Text="Экстрим"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock x:Name="WorkloadExtremeDescriptionText"
+                                                   Text="Допускать тяжёлые варианты примерно до 150% комфортной нагрузки. Может быть медленнее и требовательнее к RAM/VRAM/CPU/GPU."
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </RadioButton>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button x:Name="BackFromProfileButton"
+                        Content="Назад"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Click="BackFromProfileButton_Click" />
+                <Button x:Name="SaveProfileButton"
+                        Content="Сохранить"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Margin="10,0,0,0"
+                        Click="SaveProfileButton_Click" />
+            </StackPanel>
+        </Grid>
+
+        <Grid x:Name="ProfileReminderPage"
+              Grid.Row="1"
+              Margin="56,44,56,36"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="1"
+                    Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource LineBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="30"
+                    MaxWidth="700"
+                    HorizontalAlignment="Center">
+                <StackPanel>
+                    <TextBlock x:Name="ProfileReminderTitleText"
+                               Text="Профиль не заполнен полностью"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="26"
+                               FontWeight="SemiBold" />
+                    <TextBlock x:Name="ProfileReminderDescriptionText"
+                               Text="Профиль помогает AI HUB точнее обращаться к вам, учитывать местоположение и подбирать стиль ответов и инструменты. Можно заполнить сейчас или продолжить без профиля."
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="15"
+                               LineHeight="24"
+                               TextWrapping="Wrap"
+                               Margin="0,14,0,24" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button x:Name="BackFromProfileReminderButton"
+                                Content="Назад"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Click="BackFromProfileReminderButton_Click" />
+                        <Button x:Name="ContinueWithoutProfileButton"
+                                Content="Продолжить без профиля"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                MinWidth="176"
+                                Margin="10,0,0,0"
+                                Click="ContinueWithoutProfileButton_Click" />
+                        <Button x:Name="FillProfileFromReminderButton"
+                                Content="Заполнить профиль"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                MinWidth="156"
+                                Margin="10,0,0,0"
+                                Click="FillProfileFromReminderButton_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </Grid>
 
         <Grid x:Name="WorkStartPage"

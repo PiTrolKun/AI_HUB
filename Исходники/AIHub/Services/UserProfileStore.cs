@@ -27,6 +27,7 @@ public sealed class UserProfileStore
         {
             var json = File.ReadAllText(AppDataPaths.UserProfilePath);
             var profile = JsonSerializer.Deserialize<UserProfile>(json, JsonOptions) ?? new UserProfile();
+            Normalize(profile);
             Save(profile);
             return profile;
         }
@@ -38,8 +39,20 @@ public sealed class UserProfileStore
 
     public void Save(UserProfile profile)
     {
+        Normalize(profile);
         AppDataPaths.EnsureBaseDirectory();
         var json = JsonSerializer.Serialize(profile, JsonOptions);
         File.WriteAllText(AppDataPaths.UserProfilePath, json);
+    }
+
+    private static void Normalize(UserProfile profile)
+    {
+        profile.ProfileVersion = Math.Max(1, profile.ProfileVersion);
+        profile.Location ??= new UserLocation();
+        profile.AnswerPreferences ??= new UserAnswerPreferences();
+        if (!UserWorkloadModes.IsKnown(profile.WorkloadMode))
+        {
+            profile.WorkloadMode = UserWorkloadModes.Balanced;
+        }
     }
 }

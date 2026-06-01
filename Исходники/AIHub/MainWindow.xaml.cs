@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using AIHub.Models;
 using AIHub.Services;
 using Microsoft.Win32;
@@ -19,15 +20,18 @@ public partial class MainWindow : Window
     private readonly AppStateStore _appStateStore = new();
     private readonly ComputerPassportService _computerPassportService = new();
     private readonly CoreModelManager _coreModelManager = new();
-    private readonly UserContextService _userContextService = new(new UserProfileStore(), new IpLocationService());
+    private readonly UserProfileStore _userProfileStore = new();
+    private readonly UserContextService _userContextService;
     private readonly LocalizationService _localizationService = new();
     private readonly StorageSettingsStore _storageSettingsStore = new();
     private readonly ToolModelManager _toolModelManager = new();
+    private readonly DispatcherTimer _profileBlinkTimer = new();
 
     private AppSettings _appSettings = new();
     private AppState _appState = new();
     private ComputerPassport? _lastPassport;
     private StorageSettings _storageSettings = new();
+    private UserProfile _userProfile = new();
     private CancellationTokenSource? _coreModelDownloadCts;
     private JsonlSessionLog? _coreSessionLog;
     private CoreModelCheckResult? _lastCoreModelCheck;
@@ -45,8 +49,11 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        _userContextService = new UserContextService(_userProfileStore, new IpLocationService());
         InitializeComponent();
         Title = $"AI HUB {GetAppVersion()}";
+        _profileBlinkTimer.Interval = TimeSpan.FromMilliseconds(760);
+        _profileBlinkTimer.Tick += ProfileBlinkTimer_Tick;
         _isDarkTheme = IsWindowsAppThemeDark();
         SourceInitialized += (_, _) =>
         {
@@ -78,6 +85,13 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (!_userProfile.IsComplete())
+            {
+                ShowProfileReminderPage();
+                StatusText.Text = L("Status.ProfileReminderOpened");
+                return;
+            }
+
             ShowWorkStartPage();
             StatusText.Text = L("Status.WorkStartOpened");
             return;
@@ -103,6 +117,7 @@ public partial class MainWindow : Window
         SetBrush("SecondaryButtonBackgroundBrush", _isDarkTheme ? "#111827" : "#F8F8F8");
 
         RootWindow.Background = (Media.Brush)Resources["WindowBackgroundBrush"];
+        ProfileButton.Foreground = (Media.Brush)Resources["TextPrimaryBrush"];
         ThemeToggleButton.Content = _isDarkTheme ? "☀" : "☾";
         ThemeToggleButton.Foreground = _isDarkTheme
             ? new Media.SolidColorBrush((Media.Color)Media.ColorConverter.ConvertFromString("#FBBF24"))
@@ -119,6 +134,20 @@ public partial class MainWindow : Window
     {
         ShowSettingsPage();
         StatusText.Text = L("Status.SettingsOpened");
+    }
+
+    private void ProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        LoadProfileIntoControls();
+        ShowProfilePage();
+        StatusText.Text = _userProfile.IsComplete()
+            ? L("Status.ProfileOpened")
+            : L("Status.ProfileIncomplete");
+    }
+
+    private void ProfileBlinkTimer_Tick(object? sender, EventArgs e)
+    {
+        ProfileButton.Opacity = ProfileButton.Opacity < 0.75 ? 1.0 : 0.48;
     }
 
     private void MainWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -223,6 +252,7 @@ public partial class MainWindow : Window
     {
         HeaderProductNameText.Text = L("App.ProductName");
         HeaderSubtitleText.Text = L("App.Subtitle");
+        ProfileButton.ToolTip = L("Header.ProfileTooltip");
         SettingsButton.ToolTip = L("Header.SettingsTooltip");
 
         HomeWelcomeTitleText.Text = L("Home.Welcome");
@@ -277,6 +307,41 @@ public partial class MainWindow : Window
         SettingsLanguageLabelText.Text = L("Settings.LanguageLabel");
         SettingsLocalizationFolderText.Text = LF("Settings.LocalizationFolder", AppDataPaths.LocalizationDirectory);
         BackFromSettingsButton.Content = L("Settings.Back");
+
+        ProfileTitleText.Text = L("Profile.Title");
+        ProfileDescriptionText.Text = L("Profile.Description");
+        ProfileIdentityTitleText.Text = L("Profile.IdentityTitle");
+        ProfileIdentityHelpText.Text = L("Profile.IdentityHelp");
+        ProfileLocationTitleText.Text = L("Profile.LocationTitle");
+        ProfileLocationHelpText.Text = L("Profile.LocationHelp");
+        ProfileCityLabelText.Text = L("Profile.City");
+        ProfileRegionLabelText.Text = L("Profile.Region");
+        ProfileCountryLabelText.Text = L("Profile.Country");
+        ProfileTimezoneLabelText.Text = L("Profile.Timezone");
+        ProfileAnswerPreferencesTitleText.Text = L("Profile.AnswerPreferencesTitle");
+        ProfileAnswerPreferencesHelpText.Text = L("Profile.AnswerPreferencesHelp");
+        PreferenceConciseCheckBox.Content = L("Profile.PreferenceConcise");
+        PreferenceDetailedCheckBox.Content = L("Profile.PreferenceDetailed");
+        PreferenceSimpleCheckBox.Content = L("Profile.PreferenceSimple");
+        PreferenceStepsCheckBox.Content = L("Profile.PreferenceSteps");
+        PreferenceExamplesCheckBox.Content = L("Profile.PreferenceExamples");
+        PreferenceSourcesCheckBox.Content = L("Profile.PreferenceSources");
+        PreferenceRisksCheckBox.Content = L("Profile.PreferenceRisks");
+        ProfileWorkloadTitleText.Text = L("Profile.WorkloadTitle");
+        ProfileWorkloadHelpText.Text = L("Profile.WorkloadHelp");
+        WorkloadLightTitleText.Text = L("Profile.WorkloadLightTitle");
+        WorkloadLightDescriptionText.Text = L("Profile.WorkloadLightDescription");
+        WorkloadBalancedTitleText.Text = L("Profile.WorkloadBalancedTitle");
+        WorkloadBalancedDescriptionText.Text = L("Profile.WorkloadBalancedDescription");
+        WorkloadExtremeTitleText.Text = L("Profile.WorkloadExtremeTitle");
+        WorkloadExtremeDescriptionText.Text = L("Profile.WorkloadExtremeDescription");
+        BackFromProfileButton.Content = L("Settings.Back");
+        SaveProfileButton.Content = L("Setup.Save");
+        ProfileReminderTitleText.Text = L("Profile.ReminderTitle");
+        ProfileReminderDescriptionText.Text = L("Profile.ReminderDescription");
+        BackFromProfileReminderButton.Content = L("Settings.Back");
+        ContinueWithoutProfileButton.Content = L("Profile.ContinueWithoutProfile");
+        FillProfileFromReminderButton.Content = L("Profile.FillProfile");
 
         WorkStartTitleText.Text = L("WorkStart.Title");
         WorkStartDescriptionText.Text = L("WorkStart.Description");
@@ -346,6 +411,9 @@ public partial class MainWindow : Window
         {
             _appState = _appStateStore.LoadOrCreate();
             _storageSettings = _storageSettingsStore.LoadOrCreate();
+            _userProfile = _userProfileStore.LoadOrCreate();
+            LoadProfileIntoControls();
+            UpdateProfileButtonState();
             StartCoreSessionLog();
             _ = InitializeUserContextAsync();
             var passport = _computerPassportService.RegeneratePassport();
@@ -523,6 +591,8 @@ public partial class MainWindow : Window
         SetupPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
         UpdateWelcomeStatus();
     }
@@ -531,6 +601,53 @@ public partial class MainWindow : Window
     {
         SettingsPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
+        WelcomePage.Visibility = Visibility.Visible;
+        UpdateWelcomeStatus();
+    }
+
+    private void BackFromProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        ProfilePage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
+        WelcomePage.Visibility = Visibility.Visible;
+        UpdateWelcomeStatus();
+    }
+
+    private void SaveProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveProfileFromControls();
+        _userContextService.UpdateProfile(_userProfile);
+        UpdateProfileButtonState();
+        StatusText.Text = _userProfile.IsComplete()
+            ? L("Status.ProfileSavedComplete")
+            : L("Status.ProfileSavedIncomplete");
+    }
+
+    private void FillProfileFromReminderButton_Click(object sender, RoutedEventArgs e)
+    {
+        LoadProfileIntoControls();
+        ShowProfilePage();
+        StatusText.Text = L("Status.ProfileIncomplete");
+    }
+
+    private void ContinueWithoutProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowWorkStartPage();
+        StatusText.Text = L("Status.WorkStartOpenedWithoutProfile");
+    }
+
+    private void BackFromProfileReminderButton_Click(object sender, RoutedEventArgs e)
+    {
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         UpdateWelcomeStatus();
@@ -541,6 +658,8 @@ public partial class MainWindow : Window
         WorkStartPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         UpdateWelcomeStatus();
     }
@@ -915,6 +1034,8 @@ public partial class MainWindow : Window
         PassportPathText.Text = LF("Setup.PassportPath", AppDataPaths.ComputerPassportPath);
         WelcomePage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Visible;
     }
@@ -923,9 +1044,31 @@ public partial class MainWindow : Window
     {
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Visible;
         PopulateLanguageComboBox();
+    }
+
+    private void ShowProfilePage()
+    {
+        WelcomePage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Visible;
+    }
+
+    private void ShowProfileReminderPage()
+    {
+        WelcomePage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Visible;
     }
 
     private void ShowWorkStartPage()
@@ -934,6 +1077,8 @@ public partial class MainWindow : Window
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Visible;
     }
 
@@ -948,6 +1093,86 @@ public partial class MainWindow : Window
         ResultsTemporaryOverflowInput.Text = FormatGb(_storageSettings.Results.TemporaryOverflowGb);
 
         RefreshStorageLists();
+    }
+
+    private void LoadProfileIntoControls()
+    {
+        ProfileDisplayNameInput.Text = _userProfile.DisplayName;
+        ProfileCityInput.Text = _userProfile.Location.City;
+        ProfileRegionInput.Text = _userProfile.Location.Region;
+        ProfileCountryInput.Text = _userProfile.Location.Country;
+        ProfileTimezoneInput.Text = string.IsNullOrWhiteSpace(_userProfile.Location.Timezone)
+            ? TimeZoneInfo.Local.Id
+            : _userProfile.Location.Timezone;
+
+        PreferenceConciseCheckBox.IsChecked = _userProfile.AnswerPreferences.Concise;
+        PreferenceDetailedCheckBox.IsChecked = _userProfile.AnswerPreferences.Detailed;
+        PreferenceSimpleCheckBox.IsChecked = _userProfile.AnswerPreferences.SimpleLanguage;
+        PreferenceStepsCheckBox.IsChecked = _userProfile.AnswerPreferences.StepByStep;
+        PreferenceExamplesCheckBox.IsChecked = _userProfile.AnswerPreferences.Examples;
+        PreferenceSourcesCheckBox.IsChecked = _userProfile.AnswerPreferences.SourcesWhenSearching;
+        PreferenceRisksCheckBox.IsChecked = _userProfile.AnswerPreferences.WarnAboutRisks;
+        SetSelectedWorkloadMode(_userProfile.WorkloadMode);
+    }
+
+    private void SaveProfileFromControls()
+    {
+        _userProfile.ProfileVersion = 1;
+        _userProfile.DisplayName = ProfileDisplayNameInput.Text.Trim();
+        _userProfile.Location.Mode = "manual";
+        _userProfile.Location.Source = "manual";
+        _userProfile.Location.City = ProfileCityInput.Text.Trim();
+        _userProfile.Location.Region = ProfileRegionInput.Text.Trim();
+        _userProfile.Location.Country = ProfileCountryInput.Text.Trim();
+        _userProfile.Location.Timezone = ProfileTimezoneInput.Text.Trim();
+        _userProfile.Location.UpdatedAt = DateTimeOffset.Now;
+        _userProfile.AnswerPreferences.Concise = PreferenceConciseCheckBox.IsChecked == true;
+        _userProfile.AnswerPreferences.Detailed = PreferenceDetailedCheckBox.IsChecked == true;
+        _userProfile.AnswerPreferences.SimpleLanguage = PreferenceSimpleCheckBox.IsChecked == true;
+        _userProfile.AnswerPreferences.StepByStep = PreferenceStepsCheckBox.IsChecked == true;
+        _userProfile.AnswerPreferences.Examples = PreferenceExamplesCheckBox.IsChecked == true;
+        _userProfile.AnswerPreferences.SourcesWhenSearching = PreferenceSourcesCheckBox.IsChecked == true;
+        _userProfile.AnswerPreferences.WarnAboutRisks = PreferenceRisksCheckBox.IsChecked == true;
+        _userProfile.WorkloadMode = GetSelectedWorkloadMode();
+        _userProfileStore.Save(_userProfile);
+    }
+
+    private void UpdateProfileButtonState()
+    {
+        if (_userProfile.IsComplete())
+        {
+            _profileBlinkTimer.Stop();
+            ProfileButton.Opacity = 1.0;
+            return;
+        }
+
+        if (!_profileBlinkTimer.IsEnabled)
+        {
+            ProfileButton.Opacity = 1.0;
+            _profileBlinkTimer.Start();
+        }
+    }
+
+    private string GetSelectedWorkloadMode()
+    {
+        if (WorkloadLightRadio.IsChecked == true)
+        {
+            return UserWorkloadModes.Light;
+        }
+
+        if (WorkloadExtremeRadio.IsChecked == true)
+        {
+            return UserWorkloadModes.Extreme;
+        }
+
+        return UserWorkloadModes.Balanced;
+    }
+
+    private void SetSelectedWorkloadMode(string mode)
+    {
+        WorkloadLightRadio.IsChecked = string.Equals(mode, UserWorkloadModes.Light, StringComparison.OrdinalIgnoreCase);
+        WorkloadExtremeRadio.IsChecked = string.Equals(mode, UserWorkloadModes.Extreme, StringComparison.OrdinalIgnoreCase);
+        WorkloadBalancedRadio.IsChecked = WorkloadLightRadio.IsChecked != true && WorkloadExtremeRadio.IsChecked != true;
     }
 
     private void SaveStorageSettingsFromControls()

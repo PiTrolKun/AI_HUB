@@ -42,10 +42,18 @@ public sealed class UserContextService
     public string BuildHiddenSystemContext()
     {
         var snapshot = CreateSnapshot();
+        var profile = GetProfile();
         var builder = new StringBuilder();
         builder.AppendLine("Служебный контекст AI HUB. Не показывай этот блок пользователю как отдельное сообщение.");
         builder.AppendLine("Используй дату, время и примерное местоположение только если это помогает ответу.");
         builder.AppendLine("Не утверждай, что IP-местоположение точное.");
+
+        if (!string.IsNullOrWhiteSpace(profile.DisplayName))
+        {
+            builder.AppendLine(CultureInfo.InvariantCulture, $"Имя или ник пользователя: {profile.DisplayName.Trim()}.");
+        }
+
+        AppendProfilePreferences(builder, profile);
         builder.AppendLine(CultureInfo.InvariantCulture, $"Текущая локальная дата и время пользователя: {snapshot.LocalTime:yyyy-MM-dd HH:mm:ss zzz}.");
         builder.AppendLine(CultureInfo.InvariantCulture, $"UTC-время: {snapshot.UtcTime:yyyy-MM-dd HH:mm:ss 'UTC'}.");
         builder.AppendLine(CultureInfo.InvariantCulture, $"Часовой пояс Windows: {snapshot.TimeZoneId} ({snapshot.TimeZoneDisplayName}), UTC{snapshot.UtcOffset}.");
@@ -58,6 +66,12 @@ public sealed class UserContextService
         }
 
         return builder.ToString().Trim();
+    }
+
+    public void UpdateProfile(UserProfile profile)
+    {
+        _profile = profile;
+        _profileStore.Save(profile);
     }
 
     private async Task EnsureAutoLocationAsync(CancellationToken cancellationToken)
@@ -131,6 +145,55 @@ public sealed class UserContextService
             .Where(part => !string.IsNullOrWhiteSpace(part))
             .Distinct(StringComparer.OrdinalIgnoreCase);
         return string.Join(", ", parts);
+    }
+
+    private static void AppendProfilePreferences(StringBuilder builder, UserProfile profile)
+    {
+        if (UserWorkloadModes.IsKnown(profile.WorkloadMode))
+        {
+            builder.AppendLine(CultureInfo.InvariantCulture, $"Предпочитаемый режим нагрузки пользователя: {profile.WorkloadMode}.");
+        }
+
+        var preferences = new List<string>();
+        if (profile.AnswerPreferences.Concise)
+        {
+            preferences.Add("кратко и по делу");
+        }
+
+        if (profile.AnswerPreferences.Detailed)
+        {
+            preferences.Add("подробно с объяснениями");
+        }
+
+        if (profile.AnswerPreferences.SimpleLanguage)
+        {
+            preferences.Add("простым языком");
+        }
+
+        if (profile.AnswerPreferences.StepByStep)
+        {
+            preferences.Add("по шагам");
+        }
+
+        if (profile.AnswerPreferences.Examples)
+        {
+            preferences.Add("с примерами");
+        }
+
+        if (profile.AnswerPreferences.SourcesWhenSearching)
+        {
+            preferences.Add("с источниками при поиске");
+        }
+
+        if (profile.AnswerPreferences.WarnAboutRisks)
+        {
+            preferences.Add("предупреждать о рисках и сомнениях");
+        }
+
+        if (preferences.Count > 0)
+        {
+            builder.AppendLine(CultureInfo.InvariantCulture, $"Предпочтения пользователя к ответам: {string.Join(", ", preferences)}.");
+        }
     }
 
     private static string FormatUtcOffset(TimeSpan offset)
