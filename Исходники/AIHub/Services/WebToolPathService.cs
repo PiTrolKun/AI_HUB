@@ -22,6 +22,9 @@ public static class WebToolPathService
     public static string GetPagesDirectory(StorageSettings storageSettings) =>
         Ensure(Path.Combine(GetWebRoot(storageSettings), "Pages"));
 
+    public static string GetResearchDirectory(StorageSettings storageSettings) =>
+        Ensure(Path.Combine(GetWebRoot(storageSettings), "Research"));
+
     public static string GetDownloadsDirectory(StorageSettings storageSettings) =>
         Ensure(Path.Combine(GetWebRoot(storageSettings), "Downloads"));
 

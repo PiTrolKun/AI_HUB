@@ -35,6 +35,7 @@ Runtime/**
 # User-selected result folders may live inside the repo during tests
 **/AI_HUB/Core/Sessions/**
 **/AI_HUB/Debug/ModelTester/**
+**/AI_HUB/Diagnostics/**
 **/AI_HUB/Tasks/**
 **/AI_HUB/Tools/**
 

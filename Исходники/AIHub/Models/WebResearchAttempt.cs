@@ -1,6 +1,6 @@
 namespace AIHub.Models;
 
-public sealed class WebSearchResponse
+public sealed class WebResearchAttempt
 {
     public string Query { get; set; } = string.Empty;
 
@@ -14,11 +14,5 @@ public sealed class WebSearchResponse
 
     public string PossibleReason { get; set; } = string.Empty;
 
-    public List<string> RecommendedNextSteps { get; set; } = [];
-
     public string SavedPath { get; set; } = string.Empty;
-
-    public WebSearchRerankInfo Rerank { get; set; } = new();
-
-    public List<WebSearchResult> Results { get; set; } = [];
 }

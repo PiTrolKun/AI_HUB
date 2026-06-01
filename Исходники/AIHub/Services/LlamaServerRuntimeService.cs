@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using AIHub.Models;
 
 namespace AIHub.Services;
@@ -58,7 +59,6 @@ public sealed class LlamaServerRuntimeService : IDisposable
         var request = new ChatCompletionRequest
         {
             Messages = BuildMessages(history, userMessage),
-            MaxTokens = 256,
             Temperature = 0.2,
             Stream = false
         };
@@ -79,6 +79,48 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         var text = completion?.Choices.FirstOrDefault()?.Message.Content?.Trim();
         return string.IsNullOrWhiteSpace(text) ? "(empty response)" : text;
+    }
+
+    public async Task<StructuredChatResult> GenerateWithToolsAsync(
+        DebugModelInfo model,
+        IReadOnlyList<StructuredChatMessage> messages,
+        IReadOnlyList<StructuredToolDefinition> tools,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+
+        var request = new ChatCompletionRequest
+        {
+            Messages = BuildStructuredMessages(messages),
+            Tools = tools.ToList(),
+            ToolChoice = "auto",
+            Temperature = 0.2,
+            Stream = false
+        };
+
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync(
+            $"{Endpoint}/v1/chat/completions",
+            content,
+            cancellationToken);
+
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
+            stream,
+            _jsonOptions,
+            cancellationToken);
+
+        var choice = completion?.Choices.FirstOrDefault();
+        var message = choice?.Message;
+        return new StructuredChatResult
+        {
+            Content = message?.Content?.Trim() ?? string.Empty,
+            FinishReason = choice?.FinishReason ?? string.Empty,
+            ToolCalls = message?.ToolCalls ?? []
+        };
     }
 
     public void Stop()
@@ -249,7 +291,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
             new()
             {
                 Role = "system",
-                Content = "Ты диагностическое ядро AI HUB. Отвечай кратко и по делу. У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; если в prompt перечислены инструменты AI HUB, проси их строго в указанном формате."
+                Content = "Ты диагностическое ядро AI HUB. Отвечай по делу; если пользователь просит подробно, отвечай развёрнуто. У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; если в prompt перечислены инструменты AI HUB, проси их строго в указанном формате."
                     + Environment.NewLine
                     + Environment.NewLine
                     + _userContextService.BuildHiddenSystemContext()
@@ -270,6 +312,35 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         messages.Add(new ChatMessage { Role = "user", Content = userMessage });
         return messages;
+    }
+
+    private List<ChatMessage> BuildStructuredMessages(IReadOnlyList<StructuredChatMessage> messages)
+    {
+        var result = new List<ChatMessage>
+        {
+            new()
+            {
+                Role = "system",
+                Content = "Ты диагностическое ядро AI HUB. Отвечай по делу. Если для задачи нужен инструмент, вызывай его через структурный tool call, а не описывай вызов текстом. У тебя нет прямого доступа к файлам, интернету, shell и настройкам Windows; доступ выполняется только через инструменты AI HUB."
+                    + Environment.NewLine
+                    + Environment.NewLine
+                    + _userContextService.BuildHiddenSystemContext()
+            }
+        };
+
+        foreach (var message in messages)
+        {
+            result.Add(new ChatMessage
+            {
+                Role = message.Role,
+                Content = message.Content,
+                Name = message.Name,
+                ToolCallId = message.ToolCallId,
+                ToolCalls = message.ToolCalls
+            });
+        }
+
+        return result;
     }
 
     private static int FindFreeLoopbackPort()
@@ -295,7 +366,14 @@ public sealed class LlamaServerRuntimeService : IDisposable
     {
         public List<ChatMessage> Messages { get; set; } = [];
 
-        public int MaxTokens { get; set; }
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<StructuredToolDefinition>? Tools { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ToolChoice { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public int? MaxTokens { get; set; }
 
         public double Temperature { get; set; }
 
@@ -306,7 +384,17 @@ public sealed class LlamaServerRuntimeService : IDisposable
     {
         public string Role { get; set; } = string.Empty;
 
-        public string Content { get; set; } = string.Empty;
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Content { get; set; } = string.Empty;
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Name { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? ToolCallId { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public List<StructuredToolCall>? ToolCalls { get; set; }
     }
 
     private sealed class ChatCompletionResponse
@@ -317,5 +405,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
     private sealed class ChatChoice
     {
         public ChatMessage Message { get; set; } = new();
+
+        public string FinishReason { get; set; } = string.Empty;
     }
 }

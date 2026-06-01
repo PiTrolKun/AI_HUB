@@ -2179,3 +2179,110 @@
 - Установщик не собирался по правилу проекта.
 - Commit/push выполняется по правилу закрытия ТЗ.
 - Откат: вернуть ТЗ интернет-инструментов из backup-папки или из `ТЗ/Архив`, удалить новое ТЗ, если пользователь решит не продолжать этот этап.
+
+### Исправление установленной версии: упаковка backend llama.cpp
+
+- Backup перед правкой: `Backups/20260601_072500_installer_backend_runtime`.
+- Причина: установленная версия искала `llama-server.exe` и `llama-cli.exe` в `%LOCALAPPDATA%\AI_HUB\Runtime\Backends\llama.cpp\b9442\win-cuda-12.4-x64`, но установщик не копировал туда backend-файлы.
+- Изменены `Инструменты/build-installer.ps1` и `Инструменты/Installer/AI_HUB.iss`: сборка установщика теперь требует локальный backend и пакует его в пользовательский runtime-каталог установленной версии.
+- Версия повышена до `0.0.33-dev`.
+- Установщик пересобран как исключение из правила "только по команде", потому что баг проявляется именно в установленной версии.
+- Новый установщик: `Тесты\Установщики\AI_HUB_Setup_0.0.33-dev.exe`.
+- Проверки: `dotnet build` успешно без предупреждений, scanner кириллицы успешно, локализации совпадают `199/199`, Inno Setup сборка прошла успешно.
+- Откат: восстановить `VERSION`, `Исходники/AIHub/AIHub.csproj`, `Инструменты/build-installer.ps1`, `Инструменты/Installer/AI_HUB.iss` и документы истории из backup-папки. Затем пересобрать установщик предыдущей версии, если нужно проверить старое поведение.
+
+### Реестр возможностей, Hugging Face provider и диагностика нулевого поиска
+
+- Backup перед правкой: `Backups/20260601_075500_search_empty_diagnostics`.
+- Дополнительный backup перед правкой reranker-скрипта: `Backups/20260601_080600_reranker_bom_fix`.
+- Дополнительный backup перед обновлением `REESTR.md`: `Backups/20260601_080900_reestr_hf_provider`.
+- Причина: ядро в F12 поверхностно отвечало по актуальным новостям, могло писать о найденном при `0` результатах, не анализировало причину пустой выдачи и ещё не имело общего inventory/task-planner/Hugging Face provider из текущего ТЗ.
+- Добавлены новые модели `CapabilityInventory*`, `TaskPlanResponse`, `HuggingFace*` и сервисы `CapabilityInventoryService`, `TaskPlannerService`, `HuggingFaceProviderTool`.
+- `ToolGateway` получил команды `inventory:`, `task_plan:`, `hf_find_model:`, `hf_model_files:` и расширенный диагностический вывод `web_search`.
+- `DebugChatWindow` получил правила: не финализировать актуальные факты при пустом поиске, пробовать fallback-запросы включая английский, а при найденных результатах читать страницы через `web_read`.
+- `WebSearchTool` теперь возвращает статус, количество результатов, HTTP-статус, вероятную причину и следующие шаги; при пустом DuckDuckGo Lite пробует DuckDuckGo HTML.
+- Исправлен `Tools/bge_rerank.py`: входной JSON читается через `utf-8-sig`, чтобы BOM не ломал reranker и не включал слабый fallback.
+- `hf_find_model` теперь поддерживает многословный `query=...`.
+- `REESTR.md` обновлён для внешнего сервиса Hugging Face Hub API и уточнён статус `BAAI bge-reranker-v2-m3` как уже подключённого к `web_search`.
+- Версия повышена до `0.0.34-dev`.
+- Проверки: `dotnet build` успешно без предупреждений, scanner кириллицы успешно (`259` текстовых файлов), локализации совпадают `199/199`, smoke-test `inventory`, `task_plan`, `hf_find_model`, `web_search` с результатами и `web_search` с нулём результатов прошёл.
+- Установщик не собирался по правилу проекта, потому что задача не требует проверки installed-only поведения.
+- Откат: восстановить изменённые файлы из `Backups/20260601_075500_search_empty_diagnostics`, отдельно восстановить `Исходники/AIHub/Tools/bge_rerank.py` из `Backups/20260601_080600_reranker_bom_fix`, восстановить `REESTR.md` из `Backups/20260601_080900_reestr_hf_provider`, удалить новые файлы моделей/сервисов capability/HuggingFace/task planner и вернуть `VERSION`/`AIHub.csproj` на предыдущую версию.
+
+### Архитектурный принцип Codex-подобной среды
+
+- Backup перед правкой: `Backups/20260601_081500_codex_like_concept`.
+- Причина: пользователь уточнил ключевую концепцию проекта — AI HUB должен быть Codex-подобной рабочей средой для локальных моделей, шире кодинга и с инструментальным каркасом вокруг слабых локальных моделей.
+- Обновлены `Инструкции/AGENTS.md`, `Инструкции/CODEX.md`, `Документы_проекта/АРХИТЕКТУРА.md`, `CONTEXTHUB.md`, `Диалог_сжато.md`.
+- Код не менялся, версия не повышалась.
+- Откат: восстановить перечисленные документы из backup-папки `Backups/20260601_081500_codex_like_concept`.
+
+### Закрытие ТЗ реестра возможностей без GitHub-публикации
+
+- Backup перед переносом ТЗ и записями: `Backups/20260601_083000_close_capability_tz_no_publish`.
+- ТЗ `ТЗ/2026-06-01_реестр_возможностей_и_huggingface_provider.md` перенесён в `ТЗ/Архив/2026-06-01_реестр_возможностей_и_huggingface_provider.md`.
+- Пользователь прямо указал закрыть текущий ТЗ без публикации. GitHub commit/push не выполнялись как исключение из правила архивации.
+- Код не менялся в рамках самого закрытия, версия не повышалась.
+- Откат: вернуть ТЗ из `ТЗ/Архив` обратно в `ТЗ` или восстановить исходный файл и документы из backup-папки `Backups/20260601_083000_close_capability_tz_no_publish`.
+
+### Стратегический web research для F12
+
+- Backup перед правкой: `Backups/20260601_084500_web_research_strategy`.
+- Создано ТЗ `ТЗ/2026-06-01_стратегический_web_research.md`.
+- Добавлены модели `WebResearchAttempt`, `WebResearchPage`, `WebResearchSource`, `WebResearchResponse`.
+- Добавлен сервис `SearchStrategyService`: генерация нескольких запросов, запуск поиска, фильтрация нерелевантных результатов, чтение до 3 страниц и сохранение JSON в `Tools/Web/Research`.
+- `ToolGateway` получил команду `web_research:`.
+- `DebugChatWindow` обновлён: для актуальных фактов и новостей debug-ядро должно предпочитать `web_research`; успешный research считается уже прочитанным источником.
+- `WebSearchTool` получил Bing HTML fallback после пустого DuckDuckGo и распаковку `bing.com/ck/...` ссылок до реальных URL.
+- `REESTR.md` обновлён для временного внешнего сервиса Bing HTML Search.
+- Версия повышена до `0.0.35-dev`.
+- Проверки: обычный `dotnet build` успешно без предупреждений; scanner кириллицы успешно (`177` текстовых файлов); локализации совпадают `199/199`; smoke-test `web_research` по космическим новостям дал `Research status: ok` и 3 прочитанных источника; заведомо пустой точный запрос дал `Research status: empty`.
+- Установщик не собирался по правилу проекта.
+- Откат: восстановить изменённые файлы из `Backups/20260601_084500_web_research_strategy`, удалить новые файлы `Models/WebResearch*.cs` и `Services/SearchStrategyService.cs`, вернуть `VERSION`/`AIHub.csproj` на предыдущую версию.
+
+### Дополнение web research: датированные пункты и F12 без лимита ответа
+
+- Backup перед правкой датированных пунктов: `Backups/20260601_094500_web_research_dated_items`.
+- Backup текущего состояния перед правкой длины debug-ответов: `Backups/20260601_095300_debug_output_length`.
+- Добавлен `WebResearchDatedItem`, блок `Dated items` в `web_research` и фильтр дат под запросы вроде "за 3 дня".
+- Исправлена устойчивость `web_research`: ошибки/таймауты отдельных поисковых провайдеров фиксируются как попытки поиска и не должны ломать весь инструмент.
+- В debug-runtime убран искусственный лимит генерации: `llama-server` не отправляет `max_tokens`, `llama-cli` использует `--predict -1`.
+- Версия повышена до `0.0.37-dev`.
+- Проверка: `dotnet build` успешно без предупреждений.
+- Установщик не собирался по правилу проекта.
+- Откат: восстановить файлы из указанных backup-папок, удалить `Models/WebResearchDatedItem.cs`, вернуть `VERSION`/`AIHub.csproj` на нужную предыдущую версию.
+
+### Закрытие ТЗ стратегического web research без GitHub-публикации
+
+- Backup перед переносом ТЗ и записями: `Backups/20260601_104500_close_web_research_no_publish_and_new_debug_tz`.
+- ТЗ `ТЗ/2026-06-01_стратегический_web_research.md` перенесён в `ТЗ/Архив/2026-06-01_стратегический_web_research.md`.
+- Пользователь прямо указал закрыть текущий ТЗ без публикации. GitHub commit/push не выполнялись как исключение из правила архивации.
+- Новый ТЗ пока не создан по уточнению пользователя: сначала обсуждение следующего этапа.
+- Код не менялся в рамках закрытия, версия не повышалась.
+- Откат: вернуть ТЗ из `ТЗ/Архив` обратно в `ТЗ` или восстановить исходный файл и документы из backup-папки `Backups/20260601_104500_close_web_research_no_publish_and_new_debug_tz`.
+
+### Structured tool-calling для F12
+
+- Backup перед правкой: `Backups/20260601_111500_structured_tool_calling_f12`.
+- Создано ТЗ `ТЗ/2026-06-01_structured_tool_calling_f12.md`.
+- Причина: старый F12 tool-agent опирался на текстовые команды вида `web_search: ...`, из-за чего модель могла писать намерение вызвать инструмент, но не выдавать строгую команду.
+- Добавлена модель structured tool-call данных `Models/StructuredToolCall.cs`.
+- `LlamaServerRuntimeService` теперь умеет отправлять `tools` в `/v1/chat/completions` и читать `message.tool_calls`.
+- `DebugChatWindow` разделяет обычный чат, прямые команды инструментов и structured tool-agent; старый текстовый протокол оставлен как fallback.
+- В structured-режиме описаны инструменты `web_search`, `web_research`, `web_read`, `web_download`, `inventory`, `task_plan`, `hf_find_model`, `hf_model_files`.
+- `web_download` блокируется, если URL не был дан пользователем и не найден предыдущими инструментами.
+- Новые видимые строки debug-лога добавлены в `ru.json` и `en.json`.
+- Версия повышена до `0.0.38-dev`.
+- Проверки: `dotnet build` успешно без предупреждений, scanner кириллицы успешно, локализации совпадают `203/203`, независимый smoke-test `llama-server` вернул structured `web_search` tool call.
+- Установщик не собирался по правилу проекта.
+- Откат: восстановить изменённые файлы из `Backups/20260601_111500_structured_tool_calling_f12`, удалить `Исходники/AIHub/Models/StructuredToolCall.cs`, вернуть `VERSION`/`AIHub.csproj` на предыдущую версию и при необходимости удалить диагностическую папку `Тесты/1/AI_HUB/Diagnostics/structured_tool_calling_smoke_2026-06-01_0.0.38-dev`.
+
+### Закрытие ТЗ structured tool-calling
+
+- Backup перед переносом ТЗ и записями: `Backups/20260601_223500_close_structured_tool_calling_tz`.
+- ТЗ `ТЗ/2026-06-01_structured_tool_calling_f12.md` перенесён в `ТЗ/Архив/2026-06-01_structured_tool_calling_f12.md`.
+- В `.gitignore` добавлено правило `**/AI_HUB/Diagnostics/**`, чтобы локальные diagnostic-прогоны не попадали в GitHub.
+- Финальные проверки закрытия: `dotnet build` успешно без предупреждений, scanner кириллицы успешно, локализации совпадают `203/203`.
+- Установщик не собирался по правилу проекта.
+- По правилу архивации ТЗ выполняется commit/push в GitHub.
+- Откат: восстановить документы и `.gitignore` из backup-папки, вернуть ТЗ из `ТЗ/Архив` обратно в `ТЗ` или восстановить его из backup.

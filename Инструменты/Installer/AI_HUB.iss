@@ -10,6 +10,10 @@
 #error OutputDir is required. Pass /DOutputDir=...
 #endif
 
+#ifndef BackendDir
+#error BackendDir is required. Pass /DBackendDir=...
+#endif
+
 #ifndef SetupIconFile
 #error SetupIconFile is required. Pass /DSetupIconFile=...
 #endif
@@ -48,6 +52,7 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#BackendDir}\*"; DestDir: "{localappdata}\AI_HUB\Runtime\Backends\llama.cpp\b9442\win-cuda-12.4-x64"; Excludes: "*.log"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\AI HUB"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"

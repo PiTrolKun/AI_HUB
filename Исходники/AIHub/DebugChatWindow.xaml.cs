@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using AIHub.Models;
@@ -12,6 +15,7 @@ public partial class DebugChatWindow : Window
     private const string CoreToolTestPrefix = "core_tool_test:";
     private const int MaxDebugToolRequests = 10;
     private const int MaxDebugAgentSteps = 12;
+    private static readonly Regex UrlRegex = new(@"https?://[^\s`""'<>]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly DebugModelDiscoveryService _modelDiscoveryService = new();
     private readonly ToolGateway _toolGateway = new();
@@ -240,7 +244,9 @@ public partial class DebugChatWindow : Window
                 ? await ExecuteToolCommandAsync(prompt, _generationCts.Token)
                 : IsCoreToolTestCommand(prompt)
                     ? await ExecuteCoreToolTestAsync(model, prompt, _generationCts.Token)
-                    : await ExecuteDebugToolAgentAsync(model, requestHistory, prompt, _generationCts.Token);
+                    : ShouldUseToolAgent(prompt)
+                        ? await ExecuteDebugToolAgentAsync(model, requestHistory, prompt, _generationCts.Token)
+                        : await ExecutePlainChatAsync(model, requestHistory, prompt, _generationCts.Token);
             _history.Add(new DebugChatMessage { Role = L("DebugChat.ModelRole"), Text = response });
             _chatItems.Add($"{L("DebugChat.ModelRole")}: {response}");
             _debugSessionLog.Write("debug_assistant_message", new
@@ -279,6 +285,19 @@ public partial class DebugChatWindow : Window
         return result;
     }
 
+    private async Task<string> ExecutePlainChatAsync(
+        DebugModelInfo model,
+        IReadOnlyList<DebugChatMessage> requestHistory,
+        string prompt,
+        CancellationToken cancellationToken)
+    {
+        AddLog(L("DebugChat.LogPlainChat"));
+        _debugSessionLog.Write("debug_plain_chat_start", new { Prompt = prompt });
+        var response = await GenerateWithPreferredRuntimeAsync(model, requestHistory, prompt, cancellationToken);
+        _debugSessionLog.Write("debug_plain_chat_finish", new { Response = response });
+        return response;
+    }
+
     private async Task<string> ExecuteCoreToolTestAsync(
         DebugModelInfo model,
         string prompt,
@@ -291,6 +310,25 @@ public partial class DebugChatWindow : Window
         if (string.IsNullOrWhiteSpace(task))
         {
             task = "Найди и скачай самую маленькую полезную Qwen GGUF-модель для будущих тестов AI HUB.";
+        }
+
+        if (_serverRuntimeService.IsAvailable)
+        {
+            try
+            {
+                return await ExecuteStructuredToolAgentLoopAsync(
+                    model,
+                    [],
+                    task,
+                    "core_tool_test",
+                    cancellationToken,
+                    forceTools: true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                AddLog(string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogStructuredFallback"), ex.Message));
+                _debugSessionLog.Write("core_tool_test_structured_fallback", new { Error = ex.Message });
+            }
         }
 
         return await ExecuteToolAgentLoopAsync(
@@ -311,6 +349,25 @@ public partial class DebugChatWindow : Window
         AddLog(L("DebugChat.LogToolAgentStarted"));
         _debugSessionLog.Write("debug_tool_agent_start", new { Prompt = prompt });
 
+        if (_serverRuntimeService.IsAvailable)
+        {
+            try
+            {
+                return await ExecuteStructuredToolAgentLoopAsync(
+                    model,
+                    requestHistory,
+                    prompt,
+                    "debug_tool_agent",
+                    cancellationToken,
+                    forceTools: false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                AddLog(string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogStructuredFallback"), ex.Message));
+                _debugSessionLog.Write("debug_tool_agent_structured_fallback", new { Error = ex.Message });
+            }
+        }
+
         var result = await ExecuteToolAgentLoopAsync(
             model,
             requestHistory,
@@ -320,6 +377,156 @@ public partial class DebugChatWindow : Window
             cancellationToken);
 
         return result;
+    }
+
+    private async Task<string> ExecuteStructuredToolAgentLoopAsync(
+        DebugModelInfo model,
+        IReadOnlyList<DebugChatMessage> conversationHistory,
+        string prompt,
+        string eventPrefix,
+        CancellationToken cancellationToken,
+        bool forceTools)
+    {
+        AddLog(L("DebugChat.LogStructuredToolCalling"));
+        _debugSessionLog.Write($"{eventPrefix}_structured_start", new { Prompt = prompt });
+
+        var messages = BuildStructuredMessages(conversationHistory, prompt, forceTools);
+        var tools = BuildStructuredToolDefinitions();
+        var allowedDownloadUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AddUrlsToSet(prompt, allowedDownloadUrls);
+        var downloadRequested = IsDownloadRequested(prompt);
+        var currentInfoRequested = IsCurrentInfoRequested(prompt);
+        var successfulDownload = false;
+        var lastDownloadResult = string.Empty;
+        var toolRequestCount = 0;
+
+        for (var step = 1; step <= MaxDebugAgentSteps; step++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AddLog(string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogCoreToolStep"), step));
+
+            var structuredResponse = await _serverRuntimeService.GenerateWithToolsAsync(
+                model,
+                messages,
+                tools,
+                AddLog,
+                cancellationToken);
+
+            _debugSessionLog.Write($"{eventPrefix}_structured_model_response", new
+            {
+                Step = step,
+                structuredResponse.FinishReason,
+                structuredResponse.Content,
+                ToolCalls = structuredResponse.ToolCalls
+            });
+
+            if (!structuredResponse.HasToolCalls)
+            {
+                var final = string.IsNullOrWhiteSpace(structuredResponse.Content)
+                    ? "(empty response)"
+                    : structuredResponse.Content.Trim();
+
+                if ((forceTools || currentInfoRequested) && toolRequestCount == 0 && toolRequestCount < MaxDebugToolRequests)
+                {
+                    messages.Add(new StructuredChatMessage { Role = "assistant", Content = final });
+                    messages.Add(new StructuredChatMessage
+                    {
+                        Role = "user",
+                        Content = currentInfoRequested
+                            ? "Запрос требует актуальных данных. Нельзя отвечать только из памяти. Вызови web_research или другой подходящий инструмент."
+                            : "Это тест инструментов. Нужно вызвать подходящий structured tool call, а не отвечать только текстом."
+                    });
+                    _debugSessionLog.Write($"{eventPrefix}_structured_tool_required", new { Step = step, Final = final });
+                    continue;
+                }
+
+                if (downloadRequested && !successfulDownload && toolRequestCount < MaxDebugToolRequests)
+                {
+                    messages.Add(new StructuredChatMessage { Role = "assistant", Content = final });
+                    messages.Add(new StructuredChatMessage
+                    {
+                        Role = "user",
+                        Content = "Пользователь просил скачать файл, но успешного результата `Web download complete` ещё нет. Если прямой URL не подтверждён инструментами или пользователем, сначала найди источник инструментом. Не придумывай URL."
+                    });
+                    _debugSessionLog.Write($"{eventPrefix}_structured_download_final_blocked", new { Step = step, Final = final });
+                    continue;
+                }
+
+                _debugSessionLog.Write($"{eventPrefix}_structured_finish", new { Step = step, ToolRequests = toolRequestCount, Final = final });
+                return final;
+            }
+
+            messages.Add(new StructuredChatMessage
+            {
+                Role = "assistant",
+                Content = string.IsNullOrWhiteSpace(structuredResponse.Content) ? null : structuredResponse.Content,
+                ToolCalls = structuredResponse.ToolCalls
+            });
+
+            foreach (var toolCall in structuredResponse.ToolCalls)
+            {
+                if (toolRequestCount >= MaxDebugToolRequests)
+                {
+                    _debugSessionLog.Write($"{eventPrefix}_structured_tool_limit_reached", new { Step = step, ToolRequests = toolRequestCount });
+                    return "Лимит инструментов на этот запрос достигнут. Подходящий финальный результат не подтверждён.";
+                }
+
+                toolRequestCount++;
+                var command = BuildCommandFromStructuredToolCall(toolCall);
+                var blockedDownload = IsBlockedStructuredDownload(command, allowedDownloadUrls);
+                AddLog(blockedDownload
+                    ? string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogStructuredToolBlocked"), command)
+                    : string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogCoreToolCommand"), command));
+                _debugSessionLog.Write($"{eventPrefix}_structured_tool_call", new
+                {
+                    Step = step,
+                    ToolRequest = toolRequestCount,
+                    toolCall.Id,
+                    toolCall.Function.Name,
+                    toolCall.Function.Arguments,
+                    Command = command,
+                    Blocked = blockedDownload
+                });
+
+                var toolResult = blockedDownload
+                    ? "Tool blocked. Reason: web_download URL was not provided by the user and was not found in previous tool results. Use web_search/web_read/hf_find_model first and download only confirmed direct URLs."
+                    : await _toolGateway.ExecuteAsync(command, _storageSettings, _debugSessionLog, cancellationToken, CreateDownloadProgress());
+
+                AddUrlsToSet(toolResult, allowedDownloadUrls);
+                if (IsSuccessfulDownloadResult(toolResult))
+                {
+                    successfulDownload = true;
+                    lastDownloadResult = toolResult;
+                }
+
+                messages.Add(new StructuredChatMessage
+                {
+                    Role = "tool",
+                    ToolCallId = toolCall.Id,
+                    Name = toolCall.Function.Name,
+                    Content = LimitForPrompt(toolResult)
+                });
+
+                _debugSessionLog.Write($"{eventPrefix}_structured_tool_result", new
+                {
+                    Step = step,
+                    ToolRequest = toolRequestCount,
+                    toolCall.Id,
+                    Result = toolResult
+                });
+            }
+
+            if (downloadRequested && successfulDownload)
+            {
+                messages.Add(new StructuredChatMessage
+                {
+                    Role = "user",
+                    Content = "Файл успешно скачан инструментом. Ответь финально и обязательно укажи путь файла из результата: " + LimitForPrompt(lastDownloadResult, 1200)
+                });
+            }
+        }
+
+        throw new InvalidOperationException(L("DebugChat.CoreToolTestStepLimit"));
     }
 
     private async Task<string> ExecuteToolAgentLoopAsync(
@@ -337,6 +544,10 @@ public partial class DebugChatWindow : Window
         var successfulDownload = false;
         var lastDownloadResult = string.Empty;
         var toolRequestCount = 0;
+        var emptySearchResults = 0;
+        var usefulSearchResults = 0;
+        var successfulReads = 0;
+        var currentInfoRequested = IsCurrentInfoRequested(fallbackSearchQuery);
 
         for (var step = 1; step <= MaxDebugAgentSteps; step++)
         {
@@ -351,7 +562,7 @@ public partial class DebugChatWindow : Window
             {
                 if (!usedTool && IsToolAccessRefusal(modelResponse))
                 {
-                    command = "web_search: " + fallbackSearchQuery;
+                    command = "web_research: " + fallbackSearchQuery;
                     AddLog(string.Format(System.Globalization.CultureInfo.InvariantCulture, L("DebugChat.LogCoreToolCommand"), command));
                     _debugSessionLog.Write($"{eventPrefix}_refusal_recovered", new { Step = step, Command = command, Refusal = modelResponse });
                 }
@@ -368,6 +579,26 @@ public partial class DebugChatWindow : Window
 
                         nextPrompt = BuildDownloadRequiredPrompt(final, toolRequestCount);
                         _debugSessionLog.Write($"{eventPrefix}_premature_final_blocked", new { Step = step, ToolRequests = toolRequestCount, Final = final });
+                        continue;
+                    }
+
+                    if (currentInfoRequested && emptySearchResults > 0 && usefulSearchResults == 0)
+                    {
+                        if (toolRequestCount >= MaxDebugToolRequests)
+                        {
+                            _debugSessionLog.Write($"{eventPrefix}_finish_empty_search", new { Step = step, ToolRequests = toolRequestCount, Final = final });
+                            return "По текущим инструментам не найдено подтверждённых результатов. Я проверил несколько вариантов запроса, но поиск вернул 0 результатов; поэтому пересказывать новости нельзя.";
+                        }
+
+                        nextPrompt = BuildEmptySearchRequiredPrompt(final, toolRequestCount);
+                        _debugSessionLog.Write($"{eventPrefix}_empty_search_final_blocked", new { Step = step, ToolRequests = toolRequestCount, Final = final });
+                        continue;
+                    }
+
+                    if (currentInfoRequested && usefulSearchResults > 0 && successfulReads == 0 && toolRequestCount < MaxDebugToolRequests)
+                    {
+                        nextPrompt = BuildReadRequiredPrompt(final, toolRequestCount);
+                        _debugSessionLog.Write($"{eventPrefix}_read_required_final_blocked", new { Step = step, ToolRequests = toolRequestCount, Final = final });
                         continue;
                     }
 
@@ -394,6 +625,11 @@ public partial class DebugChatWindow : Window
                     return "Файл не скачан: достигнут лимит инструментов, но ни один `web_download` не подтвердил успешное сохранение файла.";
                 }
 
+                if (currentInfoRequested && emptySearchResults > 0 && usefulSearchResults == 0)
+                {
+                    return "По текущим инструментам не найдено подтверждённых результатов: поиск несколько раз вернул 0 результатов. Возможные причины: слишком узкий запрос, временно пустая выдача провайдера, неверная фильтрация или за указанный период нет подтверждённых событий.";
+                }
+
                 var finalPrompt = BuildToolLimitPrompt(command);
                 var finalResponse = await GenerateWithPreferredRuntimeAsync(model, agentHistory, finalPrompt, cancellationToken);
                 var final = ExtractFinalAnswer(finalResponse);
@@ -413,6 +649,25 @@ public partial class DebugChatWindow : Window
             {
                 successfulDownload = true;
                 lastDownloadResult = toolResult;
+            }
+            if (IsSearchCommand(command))
+            {
+                if (IsEmptySearchResult(toolResult))
+                {
+                    emptySearchResults++;
+                }
+                else if (IsUsefulSearchResult(toolResult))
+                {
+                    usefulSearchResults++;
+                    if (IsResearchCommand(command))
+                    {
+                        successfulReads++;
+                    }
+                }
+            }
+            else if (IsReadCommand(command) && !toolResult.StartsWith("Tool error.", StringComparison.OrdinalIgnoreCase))
+            {
+                successfulReads++;
             }
 
             agentHistory.Add(new DebugChatMessage { Role = L("DebugChat.UserRole"), Text = nextPrompt });
@@ -437,10 +692,18 @@ public partial class DebugChatWindow : Window
             "Выполни задачу через инструменты, не придумывай результат без проверки.",
             "Доступные инструменты. Если нужен инструмент, ответь только одной строкой:",
             "web_search: поисковый запрос",
+            "web_research: задача поиска в интернете",
             "web_read: https://адрес-страницы",
             "web_download: https://прямая-ссылка-на-файл",
+            "inventory: status",
+            "task_plan: задача пользователя",
+            "hf_find_model: role=embedding max_size=1GB format=gguf license=apache-2.0",
+            "hf_model_files: repo/id",
             "Если работа закончена, ответь строкой, начинающейся с FINAL:",
             $"Можно сделать до {MaxDebugToolRequests} tool-запросов. Не ограничивайся первым сайтом: проверяй несколько источников и выбирай лучший подходящий результат.",
+            "Для актуальных фактов и новостей предпочитай web_research: он сам строит несколько запросов, ищет и читает страницы.",
+            "Если web_search вернул Results found: 0, это тоже результат: проанализируй Possible reason и Recommended next steps, затем попробуй упростить запрос, снять фильтр даты, искать на английском или по официальному сайту.",
+            "Если web_search дал результаты для актуальной информации, перед пересказом обязательно прочитай подходящие страницы через web_read.",
             "Для Hugging Face прямую ссылку на файл обычно можно собрать как https://huggingface.co/<repo>/resolve/main/<filename>.",
             "Если задача требует скачать файл, запрещено отвечать FINAL: до результата `Web download complete` от инструмента `web_download`.",
             "Не запускай скачанный файл. Для теста предпочитай маленькую Qwen GGUF-модель, например Qwen3 0.6B Q4_K_M.",
@@ -464,11 +727,21 @@ public partial class DebugChatWindow : Window
             "Отвечай пользователю по делу. Если можешь ответить без инструмента, ответь строкой, начинающейся с FINAL:",
             "Если нужен интернет или скачивание, запроси ровно один инструмент одной строкой:",
             "web_search: поисковый запрос",
+            "web_research: задача поиска в интернете",
             "web_read: https://адрес-страницы",
             "web_download: https://прямая-ссылка-на-файл",
+            "inventory: status",
+            "task_plan: задача пользователя",
+            "hf_find_model: role=embedding max_size=1GB format=gguf license=apache-2.0",
+            "hf_model_files: repo/id",
             "Инструменты выполняет AI HUB. Ты не запускаешь скачанные файлы и не утверждаешь, что файл скачан, пока не получил результат инструмента.",
             "Запрещено отвечать, что у тебя нет доступа к интернету или файлам, пока ты не попробовал доступные инструменты AI HUB.",
+            "Для задач, где нужно понять возможности системы или подобрать модель, сначала используй task_plan или inventory, а подбор моделей делай через hf_find_model/hf_model_files.",
+            "Для актуальных фактов и новостей сначала используй web_research: он делает несколько вариантов поиска, читает лучшие страницы и возвращает диагностику.",
             $"Можно сделать до {MaxDebugToolRequests} tool-запросов на один пользовательский запрос. Для поиска и скачивания не ограничивайся первым сайтом: проверяй несколько источников и выбирай лучший подходящий результат.",
+            "Если web_search вернул Results found: 0, это не провал, а диагностический факт. Не пиши, что что-то найдено. Проанализируй Possible reason, затем попробуй: исправить запрос, упростить запрос, снять жёсткий период, искать на английском, искать смешанным русско-английским запросом или искать по официальному сайту.",
+            "Если после нескольких разных попыток Results found: 0, честно объясни это пользователю и назови вероятные причины.",
+            "Если web_search дал Results found больше 0 для актуальной информации, не пересказывай только snippets: сначала открой 1-3 лучших результата через web_read.",
             "Если пользователь просит найти или скачать публичный файл/материал и прямой ссылки нет, первым шагом используй web_search.",
             "Если пользователь просит скачать файл по прямой ссылке, сразу используй web_download.",
             "Если пользователь просит скачать, запрещено отвечать FINAL: до результата `Web download complete` от инструмента `web_download`.",
@@ -481,6 +754,234 @@ public partial class DebugChatWindow : Window
             string.Empty,
             "Текущий запрос пользователя:",
             task);
+    }
+
+    private static bool ShouldUseToolAgent(string prompt)
+    {
+        var text = prompt.ToLowerInvariant();
+        return IsDownloadRequested(prompt)
+            || IsCurrentInfoRequested(prompt)
+            || text.Contains("найди", StringComparison.Ordinal)
+            || text.Contains("поищи", StringComparison.Ordinal)
+            || text.Contains("поиск", StringComparison.Ordinal)
+            || text.Contains("интернет", StringComparison.Ordinal)
+            || text.Contains("hugging face", StringComparison.Ordinal)
+            || text.Contains("hf_", StringComparison.Ordinal)
+            || (text.Contains("модель", StringComparison.Ordinal) && text.Contains("подбери", StringComparison.Ordinal));
+    }
+
+    private static List<StructuredChatMessage> BuildStructuredMessages(
+        IReadOnlyList<DebugChatMessage> requestHistory,
+        string task,
+        bool forceTools)
+    {
+        var messages = new List<StructuredChatMessage>();
+        foreach (var item in requestHistory.TakeLast(6))
+        {
+            messages.Add(new StructuredChatMessage
+            {
+                Role = item.Role.Contains("model", StringComparison.OrdinalIgnoreCase)
+                    || item.Role.Contains("модель", StringComparison.OrdinalIgnoreCase)
+                        ? "assistant"
+                        : "user",
+                Content = LimitForPrompt(item.Text, 900)
+            });
+        }
+
+        var instruction = string.Join(
+            Environment.NewLine,
+            forceTools
+                ? "Выполни задачу через доступные инструменты AI HUB. Не придумывай результат без проверки."
+                : "Ответь пользователю. Если нужен интернет, скачивание, inventory, task planning или Hugging Face, вызови подходящий tool call.",
+            "Не описывай tool-вызов текстом. Используй только structured tool call.",
+            "Если можно ответить без инструмента, отвечай обычным текстом.",
+            "Для актуальных фактов и новостей предпочитай web_research.",
+            "Для подбора моделей предпочитай hf_find_model и hf_model_files.",
+            "Для скачивания используй web_download только по прямому URL пользователя или по URL, найденному инструментами.",
+            "Не утверждай, что файл скачан, пока web_download не вернул успешный результат.");
+
+        messages.Add(new StructuredChatMessage
+        {
+            Role = "user",
+            Content = instruction + Environment.NewLine + Environment.NewLine + "Задача пользователя:" + Environment.NewLine + task
+        });
+        return messages;
+    }
+
+    private static List<StructuredToolDefinition> BuildStructuredToolDefinitions()
+    {
+        return
+        [
+            CreateTool("web_search", "Search the web and return ranked candidate pages with diagnostics.", ("query", "Search query.")),
+            CreateTool("web_research", "Build several web searches, read selected pages, and return a research report.", ("task", "Research task.")),
+            CreateTool("web_read", "Read a web page and extract text plus candidate direct file URLs.", ("url", "Page URL.")),
+            CreateTool("web_download", "Download a direct public URL and save it through AI HUB.", ("url", "Direct file URL.")),
+            CreateTool("inventory", "Show installed AI HUB capabilities.", ("status", "Use 'status'.")),
+            CreateTool("task_plan", "Plan a user task and identify required AI HUB roles.", ("task", "User task.")),
+            CreateHfFindModelTool(),
+            CreateTool("hf_model_files", "List files in a Hugging Face model repository.", ("repo_id", "Repository id, for example nomic-ai/nomic-embed-text-v1.5-GGUF."))
+        ];
+    }
+
+    private static StructuredToolDefinition CreateTool(
+        string name,
+        string description,
+        params (string Name, string Description)[] stringParameters)
+    {
+        var properties = new JsonObject();
+        var required = new JsonArray();
+        foreach (var parameter in stringParameters)
+        {
+            properties[parameter.Name] = new JsonObject
+            {
+                ["type"] = "string",
+                ["description"] = parameter.Description
+            };
+            required.Add(parameter.Name);
+        }
+
+        return new StructuredToolDefinition
+        {
+            Function = new StructuredToolFunction
+            {
+                Name = name,
+                Description = description,
+                Parameters = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = properties,
+                    ["required"] = required
+                }
+            }
+        };
+    }
+
+    private static StructuredToolDefinition CreateHfFindModelTool()
+    {
+        return new StructuredToolDefinition
+        {
+            Function = new StructuredToolFunction
+            {
+                Name = "hf_find_model",
+                Description = "Search Hugging Face for a model matching role, format, license, size, and query.",
+                Parameters = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["role"] = new JsonObject { ["type"] = "string", ["description"] = "Model role, for example embedding, reranker, vision, speech, core." },
+                        ["query"] = new JsonObject { ["type"] = "string", ["description"] = "Search query." },
+                        ["format"] = new JsonObject { ["type"] = "string", ["description"] = "Preferred format, for example gguf or safetensors." },
+                        ["license"] = new JsonObject { ["type"] = "string", ["description"] = "Preferred license, for example apache-2.0." },
+                        ["max_size"] = new JsonObject { ["type"] = "string", ["description"] = "Maximum file size, for example 1GB." }
+                    },
+                    ["required"] = new JsonArray("role", "query")
+                }
+            }
+        };
+    }
+
+    private static string BuildCommandFromStructuredToolCall(StructuredToolCall toolCall)
+    {
+        var name = toolCall.Function.Name.Trim();
+        var args = ParseToolArguments(toolCall.Function.Arguments);
+        return name.ToLowerInvariant() switch
+        {
+            "web_search" => "web_search: " + GetArgument(args, "query"),
+            "web_research" => "web_research: " + GetArgument(args, "task", "query"),
+            "web_read" => "web_read: " + GetArgument(args, "url"),
+            "web_download" => "web_download: " + GetArgument(args, "url"),
+            "inventory" => "inventory: " + (GetArgument(args, "status", required: false) is { Length: > 0 } status ? status : "status"),
+            "task_plan" => "task_plan: " + GetArgument(args, "task", "query"),
+            "hf_find_model" => BuildHfFindModelCommand(args),
+            "hf_model_files" => "hf_model_files: " + GetArgument(args, "repo_id", "repo"),
+            _ => throw new InvalidOperationException($"Unknown structured tool call: {name}")
+        };
+    }
+
+    private static Dictionary<string, string> ParseToolArguments(string arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            return [];
+        }
+
+        using var document = JsonDocument.Parse(arguments);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            result[property.Name] = property.Value.ValueKind == JsonValueKind.String
+                ? property.Value.GetString() ?? string.Empty
+                : property.Value.ToString();
+        }
+
+        return result;
+    }
+
+    private static string GetArgument(
+        Dictionary<string, string> arguments,
+        string primary,
+        string? secondary = null,
+        bool required = true)
+    {
+        if (arguments.TryGetValue(primary, out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            return value.Trim();
+        }
+
+        if (secondary is not null
+            && arguments.TryGetValue(secondary, out value)
+            && !string.IsNullOrWhiteSpace(value))
+        {
+            return value.Trim();
+        }
+
+        if (!required)
+        {
+            return string.Empty;
+        }
+
+        throw new InvalidOperationException($"Structured tool argument is missing: {primary}");
+    }
+
+    private static string BuildHfFindModelCommand(Dictionary<string, string> arguments)
+    {
+        var parts = new List<string>
+        {
+            "role=" + GetArgument(arguments, "role")
+        };
+        AddOptionalPart(parts, arguments, "max_size");
+        AddOptionalPart(parts, arguments, "format");
+        AddOptionalPart(parts, arguments, "license");
+        parts.Add("query=" + GetArgument(arguments, "query"));
+        return "hf_find_model: " + string.Join(' ', parts);
+    }
+
+    private static void AddOptionalPart(List<string> parts, Dictionary<string, string> arguments, string key)
+    {
+        if (arguments.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+        {
+            parts.Add(key + "=" + value.Trim());
+        }
+    }
+
+    private static bool IsBlockedStructuredDownload(string command, HashSet<string> allowedDownloadUrls)
+    {
+        if (!command.StartsWith("web_download:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var url = command["web_download:".Length..].Trim();
+        return !allowedDownloadUrls.Contains(url);
+    }
+
+    private static void AddUrlsToSet(string text, HashSet<string> urls)
+    {
+        foreach (Match match in UrlRegex.Matches(text))
+        {
+            urls.Add(match.Value.TrimEnd('.', ',', ';', ')', ']'));
+        }
     }
 
     private static string BuildToolResultPrompt(
@@ -499,7 +1000,17 @@ public partial class DebugChatWindow : Window
             + Environment.NewLine
             + "Если это ошибка, страница поиска, HTML вместо нужного файла, неподходящий формат, слишком низкое качество или сомнительный источник, продолжай через следующий инструмент."
             + Environment.NewLine
-            + "Сравнивай несколько источников и выбирай наиболее подходящий результат, а не первый попавшийся сайт.";
+            + "Сравнивай несколько источников и выбирай наиболее подходящий результат, а не первый попавшийся сайт."
+            + Environment.NewLine
+            + "Если результат содержит `Results found: 0`, нельзя писать, что данные найдены. Проанализируй причину и попробуй другой тип поиска: проще, шире, без даты, на английском или через официальный сайт."
+            + Environment.NewLine
+            + "Если результат содержит `Research status: empty` или `Confirmed sources: 0`, нельзя писать, что подтверждённые данные найдены. Проверь Diagnosis и Recommended next steps."
+            + Environment.NewLine
+            + "Если результат содержит найденные ссылки для актуальных фактов, используй web_read по лучшим URL перед пересказом.";
+        prompt += Environment.NewLine
+            + "Если результат содержит `Dated items:`, для новостей пересказывай именно эти датированные пункты, а не меню, навигацию или общий preview страницы.";
+        prompt += Environment.NewLine
+            + "После фактов из инструментов добавляй собственное краткое рассуждение, если оно полезно, но отделяй его от подтверждённых источниками данных. Не выдавай собственный вывод за найденный факт.";
 
         if (downloadRequested && !successfulDownload)
         {
@@ -529,6 +1040,28 @@ public partial class DebugChatWindow : Window
             + "Продолжай: найди прямую ссылку на файл и вызови `web_download: https://...`. Если прямую ссылку найти невозможно, продолжай проверять другие источники до лимита.";
     }
 
+    private static string BuildEmptySearchRequiredPrompt(string prematureFinal, int toolRequestCount)
+    {
+        return "Предыдущий ответ нельзя принять как финальный." + Environment.NewLine
+            + $"Ты хотел ответить: {LimitForPrompt(prematureFinal, 1000)}"
+            + Environment.NewLine
+            + $"Сделано tool-запросов: {toolRequestCount} из {MaxDebugToolRequests}."
+            + Environment.NewLine
+            + "Поиск вернул `Results found: 0`. Это диагностический результат, а не основание придумывать ответ."
+            + Environment.NewLine
+            + "Продолжай анализ: попробуй исправить/упростить запрос, снять ограничение даты, искать на английском, смешать русский и английский или искать по официальному сайту. Если разные попытки не помогут, только тогда честно объясни причины нулевой выдачи.";
+    }
+
+    private static string BuildReadRequiredPrompt(string prematureFinal, int toolRequestCount)
+    {
+        return "Предыдущий ответ слишком поверхностный." + Environment.NewLine
+            + $"Ты хотел ответить: {LimitForPrompt(prematureFinal, 1000)}"
+            + Environment.NewLine
+            + $"Сделано tool-запросов: {toolRequestCount} из {MaxDebugToolRequests}."
+            + Environment.NewLine
+            + "Поиск уже дал ссылки, но для актуальной информации нельзя пересказывать только поисковые snippets. Открой 1-3 лучших результата через `web_read: https://...`, затем сделай краткий пересказ по прочитанному тексту.";
+    }
+
     private static string BuildToolLimitPrompt(string requestedCommand)
     {
         return $"Лимит инструментов AI HUB на этот запрос достигнут: {MaxDebugToolRequests} tool-запросов."
@@ -544,8 +1077,13 @@ public partial class DebugChatWindow : Window
         {
             var line = rawLine.Trim().Trim('`', '"', '\'');
             if (line.StartsWith("web_search:", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("web_research:", StringComparison.OrdinalIgnoreCase)
                 || line.StartsWith("web_read:", StringComparison.OrdinalIgnoreCase)
-                || line.StartsWith("web_download:", StringComparison.OrdinalIgnoreCase))
+                || line.StartsWith("web_download:", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("inventory:", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("task_plan:", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("hf_find_model:", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("hf_model_files:", StringComparison.OrdinalIgnoreCase))
             {
                 return line;
             }
@@ -587,6 +1125,43 @@ public partial class DebugChatWindow : Window
             || text.Contains("download", StringComparison.Ordinal)
             || text.Contains("save file", StringComparison.Ordinal);
     }
+
+    private static bool IsCurrentInfoRequested(string task)
+    {
+        var text = task.ToLowerInvariant();
+        return text.Contains("новост", StringComparison.Ordinal)
+            || text.Contains("актуаль", StringComparison.Ordinal)
+            || text.Contains("последн", StringComparison.Ordinal)
+            || text.Contains("сейчас", StringComparison.Ordinal)
+            || text.Contains("сегодня", StringComparison.Ordinal)
+            || text.Contains("за 3 дня", StringComparison.Ordinal)
+            || text.Contains("за неделю", StringComparison.Ordinal)
+            || text.Contains("latest", StringComparison.Ordinal)
+            || text.Contains("current", StringComparison.Ordinal)
+            || text.Contains("news", StringComparison.Ordinal);
+    }
+
+    private static bool IsSearchCommand(string command) =>
+        command.StartsWith("web_search:", StringComparison.OrdinalIgnoreCase)
+        || command.StartsWith("web_research:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsResearchCommand(string command) =>
+        command.StartsWith("web_research:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsReadCommand(string command) =>
+        command.StartsWith("web_read:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsEmptySearchResult(string toolResult) =>
+        toolResult.Contains("Search status: empty", StringComparison.OrdinalIgnoreCase)
+        || toolResult.Contains("Results found: 0", StringComparison.OrdinalIgnoreCase)
+        || toolResult.Contains("Research status: empty", StringComparison.OrdinalIgnoreCase)
+        || toolResult.Contains("Confirmed sources: 0", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsUsefulSearchResult(string toolResult) =>
+        (toolResult.Contains("Search status: ok", StringComparison.OrdinalIgnoreCase)
+            && !toolResult.Contains("Results found: 0", StringComparison.OrdinalIgnoreCase))
+        || (toolResult.Contains("Research status: ok", StringComparison.OrdinalIgnoreCase)
+            && !toolResult.Contains("Confirmed sources: 0", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsSuccessfulDownloadResult(string toolResult)
     {
