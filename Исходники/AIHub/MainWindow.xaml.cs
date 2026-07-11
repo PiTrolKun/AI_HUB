@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -32,6 +33,7 @@ public partial class MainWindow : Window
     private readonly DebugModelDiscoveryService _choiceModelDiscoveryService = new();
     private readonly CapabilityInventoryService _choiceInventoryService = new();
     private readonly HuggingFaceCatalogStartupService _catalogStartupService = new();
+    private readonly CoreSpeechPresentationCoordinator _coreSpeechCoordinator;
     private readonly DispatcherTimer _profileBlinkTimer = new();
     private readonly ObservableCollection<ChoiceScenarioOption> _choiceScenarioOptions = [];
 
@@ -50,11 +52,15 @@ public partial class MainWindow : Window
     private ChoiceScenarioStep? _currentChoiceScenarioStep;
     private LlamaServerRuntimeService? _choiceScenarioRuntimeService;
     private CancellationTokenSource? _choiceScenarioCts;
+    private CancellationTokenSource? _coreSpeechCts;
     private readonly CancellationTokenSource _catalogStartupCts = new();
     private ISessionEventLog? _choiceScenarioLog;
     private int _choiceScenarioInvalidJsonCount;
     private bool _choiceScenarioRequestInProgress;
     private bool _isApplyingLanguageSelection;
+    private bool _isApplyingCoreVoiceSettings = true;
+    private bool _coreSpeechPresentationActive;
+    private long _coreSpeechPresentationId;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
 
@@ -80,10 +86,14 @@ public partial class MainWindow : Window
         };
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         InitializeLocalization();
+        _coreSpeechCoordinator = new CoreSpeechPresentationCoordinator(
+            new CoreVoiceEngineRouter(new EspeakCoreVoiceEngine(), new RhVoiceCoreVoiceEngine()));
         ApplyTheme();
         ApplyLocalization();
         ChoiceOptionsItemsControl.ItemsSource = _choiceScenarioOptions;
         InitializeAppData();
+        LoadCoreVoiceSettingsIntoControls();
+        UpdateCoreVoiceControls();
         _ = RefreshModelCatalogOnStartupAsync();
         UpdatePrimaryActionButton();
     }
@@ -172,6 +182,13 @@ public partial class MainWindow : Window
 
     private void MainWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == System.Windows.Input.Key.Escape && _coreSpeechPresentationActive)
+        {
+            e.Handled = true;
+            CancelCoreSpeech(revealFullText: true, "keyboard_skip");
+            return;
+        }
+
         if (e.Key != System.Windows.Input.Key.F12)
         {
             return;
@@ -268,6 +285,7 @@ public partial class MainWindow : Window
     private void InitializeLocalization()
     {
         _appSettings = _appSettingsStore.LoadOrCreate();
+        _appSettings.CoreVoice ??= new CoreVoiceSettings();
         if (!_appSettings.LanguageWasChosen)
         {
             var windowsLanguage = LocalizationService.GetWindowsLanguageCode();
@@ -362,6 +380,14 @@ public partial class MainWindow : Window
         SettingsLanguageHelpText.Text = L("Settings.LanguageHelp");
         SettingsLanguageLabelText.Text = L("Settings.LanguageLabel");
         SettingsLocalizationFolderText.Text = LF("Settings.LocalizationFolder", AppDataPaths.LocalizationDirectory);
+        SettingsCoreVoiceTitleText.Text = L("Settings.CoreVoiceTitle");
+        SettingsCoreVoiceHelpText.Text = L("Settings.CoreVoiceHelp");
+        SettingsCoreVoiceProviderText.Text = L("Settings.CoreVoiceProvider");
+        CoreVoiceEnabledCheckBox.Content = L("Settings.CoreVoiceEnabled");
+        SettingsCoreVoiceVolumeText.Text = L("Settings.CoreVoiceVolume");
+        SettingsCoreVoiceRateText.Text = L("Settings.CoreVoiceRate");
+        CoreVoiceTestButton.Content = L("Settings.CoreVoiceTest");
+        PopulateCoreVoiceProviderComboBox();
         BackFromSettingsButton.Content = L("Settings.Back");
 
         ProfileTitleText.Text = L("Profile.Title");
@@ -415,6 +441,7 @@ public partial class MainWindow : Window
         ChoiceScenarioTitleText.Text = L("ChoiceScenario.Title");
         ChoiceScenarioDescriptionText.Text = L("ChoiceScenario.Description");
         ChoiceScenarioCoreThoughtTitleText.Text = L("ChoiceScenario.CoreThoughtTitle");
+        UpdateCoreVoiceControls();
         ChoiceCustomOptionButton.Content = L("ChoiceScenario.CustomOption");
         ChoiceCustomInputHelpText.Text = L("ChoiceScenario.CustomInputHelp");
         ChoiceCustomSubmitButton.Content = L("ChoiceScenario.AcceptCustom");
@@ -472,6 +499,151 @@ public partial class MainWindow : Window
         StatusText.Text = L("Status.LanguageSaved");
     }
 
+    private void LoadCoreVoiceSettingsIntoControls()
+    {
+        _isApplyingCoreVoiceSettings = true;
+        try
+        {
+            _appSettings.CoreVoice ??= new CoreVoiceSettings();
+            if (_appSettings.CoreVoice.Provider is not CoreVoiceSettings.EspeakProvider
+                and not CoreVoiceSettings.RhVoiceProvider)
+            {
+                _appSettings.CoreVoice.Provider = CoreVoiceSettings.EspeakProvider;
+            }
+
+            PopulateCoreVoiceProviderComboBox();
+            CoreVoiceEnabledCheckBox.IsChecked = _appSettings.CoreVoice.Enabled;
+            CoreVoiceVolumeSlider.Value = Math.Clamp(_appSettings.CoreVoice.Volume, 0, 200);
+            CoreVoiceRateSlider.Value = Math.Clamp(_appSettings.CoreVoice.Rate, 80, 240);
+        }
+        finally
+        {
+            _isApplyingCoreVoiceSettings = false;
+        }
+    }
+
+    private void PopulateCoreVoiceProviderComboBox()
+    {
+        var wasApplying = _isApplyingCoreVoiceSettings;
+        _isApplyingCoreVoiceSettings = true;
+        try
+        {
+            var providers = new[]
+            {
+                new CoreVoiceProviderOption(CoreVoiceSettings.EspeakProvider, L("Settings.CoreVoiceProviderEspeak")),
+                new CoreVoiceProviderOption(CoreVoiceSettings.RhVoiceProvider, L("Settings.CoreVoiceProviderRhVoice"))
+            };
+            CoreVoiceProviderComboBox.ItemsSource = providers;
+            CoreVoiceProviderComboBox.SelectedItem = providers.First(provider =>
+                string.Equals(provider.Id, _appSettings.CoreVoice.Provider, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            _isApplyingCoreVoiceSettings = wasApplying;
+        }
+    }
+
+    private void CoreVoiceProviderComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingCoreVoiceSettings
+            || CoreVoiceProviderComboBox.SelectedItem is not CoreVoiceProviderOption provider)
+        {
+            return;
+        }
+
+        CancelCoreSpeech(revealFullText: true, "voice_provider_changed");
+        _appSettings.CoreVoice.Provider = provider.Id;
+        _appSettingsStore.Save(_appSettings);
+        UpdateCoreVoiceControls();
+        StatusText.Text = LF("Status.CoreVoiceProviderSaved", provider.DisplayName);
+    }
+
+    private void CoreVoiceSettingChanged(object sender, RoutedEventArgs e)
+    {
+        if (_isApplyingCoreVoiceSettings)
+        {
+            return;
+        }
+
+        _appSettings.CoreVoice.Enabled = CoreVoiceEnabledCheckBox.IsChecked == true;
+        _appSettingsStore.Save(_appSettings);
+        if (!_appSettings.CoreVoice.Enabled)
+        {
+            CancelCoreSpeech(revealFullText: true, "settings_disabled");
+        }
+
+        UpdateCoreVoiceControls();
+    }
+
+    private void CoreVoiceSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isApplyingCoreVoiceSettings)
+        {
+            return;
+        }
+
+        _appSettings.CoreVoice.Volume = (int)Math.Round(CoreVoiceVolumeSlider.Value);
+        _appSettings.CoreVoice.Rate = (int)Math.Round(CoreVoiceRateSlider.Value);
+        _appSettingsStore.Save(_appSettings);
+        UpdateCoreVoiceControls();
+    }
+
+    private async void CoreVoiceTestButton_Click(object sender, RoutedEventArgs e)
+    {
+        CancelCoreSpeech(revealFullText: true, "settings_test");
+        CoreVoiceTestButton.IsEnabled = false;
+        try
+        {
+            var request = new CoreSpeechRequest(
+                [new CoreSpeechSegment("test", L("Settings.CoreVoiceTestPhrase"))],
+                _appSettings.LanguageCode,
+                _appSettings.CoreVoice,
+                "settings_test");
+            var progress = new Progress<CoreSpeechProgress>(_ => { });
+            var result = await _coreSpeechCoordinator.PresentAsync(
+                request,
+                progress,
+                _coreSessionLog,
+                CancellationToken.None);
+            StatusText.Text = result.Completed
+                ? L("Status.CoreVoiceTestCompleted")
+                : L("Status.CoreVoiceUnavailable");
+        }
+        finally
+        {
+            CoreVoiceTestButton.IsEnabled = true;
+        }
+    }
+
+    private void UpdateCoreVoiceControls()
+    {
+        if (!IsInitialized)
+        {
+            return;
+        }
+
+        var enabled = _appSettings.CoreVoice.Enabled;
+        CoreVoiceVolumeSlider.IsEnabled = enabled;
+        CoreVoiceRateSlider.IsEnabled = enabled;
+        CoreVoiceVolumeValueText.Text = _appSettings.CoreVoice.Volume.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        CoreVoiceRateValueText.Text = _appSettings.CoreVoice.Rate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        CoreVoiceToggleButton.Content = enabled ? "🔊" : "🔇";
+        CoreVoiceToggleButton.ToolTip = enabled
+            ? L("ChoiceScenario.CoreVoiceDisable")
+            : L("ChoiceScenario.CoreVoiceEnable");
+        CoreVoiceProviderComboBox.IsEnabled = enabled;
+        CoreVoiceProviderComboBox.ToolTip = string.Equals(
+                _appSettings.CoreVoice.Provider,
+                CoreVoiceSettings.RhVoiceProvider,
+                StringComparison.OrdinalIgnoreCase)
+            && !_coreSpeechCoordinator.IsRhVoiceAvailable
+                ? L("Settings.CoreVoiceRhVoiceUnavailable")
+                : null;
+        CoreVoiceTestButton.ToolTip = _coreSpeechCoordinator.IsAvailable
+            ? L("Settings.CoreVoiceTestTooltip")
+            : L("Settings.CoreVoiceUnavailable");
+    }
+
     private void InitializeAppData()
     {
         try
@@ -502,6 +674,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            CancelCoreSpeech(revealFullText: false, "app_closed");
             _choiceScenarioCts?.Cancel();
             _catalogStartupCts.Cancel();
             _choiceScenarioRuntimeService?.Dispose();
@@ -509,6 +682,7 @@ public partial class MainWindow : Window
             _choiceScenarioLog?.Dispose();
             _coreSessionLog?.Write("session_end");
             _coreSessionLog?.Dispose();
+            _coreSpeechCoordinator.Dispose();
             _catalogStartupCts.Dispose();
         }
         finally
@@ -1290,6 +1464,7 @@ public partial class MainWindow : Window
 
     private void ShowSettingsPage()
     {
+        CancelCoreSpeech(revealFullText: false, "open_settings");
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         ProfilePage.Visibility = Visibility.Collapsed;
@@ -1302,6 +1477,7 @@ public partial class MainWindow : Window
 
     private void ShowProfilePage()
     {
+        CancelCoreSpeech(revealFullText: false, "open_profile");
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
@@ -1313,6 +1489,7 @@ public partial class MainWindow : Window
 
     private void ShowProfileReminderPage()
     {
+        CancelCoreSpeech(revealFullText: false, "open_profile_reminder");
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
@@ -1324,6 +1501,7 @@ public partial class MainWindow : Window
 
     private void ShowWorkStartPage()
     {
+        CancelCoreSpeech(revealFullText: false, "open_work_start");
         PreviousWorkExpander.IsExpanded = false;
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
@@ -1629,7 +1807,12 @@ public partial class MainWindow : Window
 
     private void RenderChoiceScenarioStep(ChoiceScenarioStep step)
     {
+        CancelCoreSpeech(revealFullText: false, "step_replaced");
         _currentChoiceScenarioStep = step;
+        ChoiceScenarioQuestionMeasureText.Text = step.Question;
+        ChoiceScenarioCoreThoughtMeasureText.Text = step.CoreThought;
+        AutomationProperties.SetName(ChoiceScenarioQuestionText, step.Question);
+        AutomationProperties.SetName(ChoiceScenarioCoreThoughtText, step.CoreThought);
         ChoiceScenarioQuestionText.Text = step.Question;
         ChoiceScenarioCoreThoughtText.Text = step.CoreThought;
         var stepStatus = step.IsFinal
@@ -1660,16 +1843,151 @@ public partial class MainWindow : Window
             : Visibility.Collapsed;
         ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
         RenderChoiceScenarioSummary(step);
+        if (!step.IsFinal
+            && _appSettings.CoreVoice.Enabled
+            && _coreSpeechCoordinator.IsAvailable
+            && (!string.IsNullOrWhiteSpace(step.Question) || !string.IsNullOrWhiteSpace(step.CoreThought)))
+        {
+            StartChoiceScenarioSpeech(step);
+        }
     }
 
     private void SetChoiceScenarioInteractionEnabled(bool enabled)
     {
-        ChoiceOptionsItemsControl.IsEnabled = enabled;
-        ChoiceCustomOptionButton.IsEnabled = enabled;
-        ChoiceCustomSubmitButton.IsEnabled = enabled;
-        ChoiceGoFinalButton.IsEnabled = enabled;
+        var answersEnabled = enabled && !_coreSpeechPresentationActive;
+        ChoiceOptionsItemsControl.IsEnabled = answersEnabled;
+        ChoiceOptionsItemsControl.Opacity = answersEnabled ? 1.0 : 0.58;
+        ChoiceCustomOptionButton.IsEnabled = answersEnabled;
+        ChoiceCustomSubmitButton.IsEnabled = answersEnabled;
+        ChoiceGoFinalButton.IsEnabled = answersEnabled;
         BackFromChoiceScenarioButton.IsEnabled = enabled;
         CancelChoiceScenarioButton.IsEnabled = enabled;
+    }
+
+    private void StartChoiceScenarioSpeech(ChoiceScenarioStep step)
+    {
+        _coreSpeechCts = new CancellationTokenSource();
+        var presentationId = Interlocked.Increment(ref _coreSpeechPresentationId);
+        _coreSpeechPresentationActive = true;
+        ChoiceScenarioQuestionText.Text = string.Empty;
+        ChoiceScenarioCoreThoughtText.Text = string.Empty;
+        SetChoiceScenarioInteractionEnabled(!_choiceScenarioRequestInProgress);
+
+        var request = new CoreSpeechRequest(
+            [
+                new CoreSpeechSegment("coreThought", step.CoreThought),
+                new CoreSpeechSegment("question", step.Question)
+            ],
+            _appSettings.LanguageCode,
+            _appSettings.CoreVoice,
+            $"uncertainty:{step.StepType}");
+        var progress = new Progress<CoreSpeechProgress>(value =>
+        {
+            if (presentationId != _coreSpeechPresentationId)
+            {
+                return;
+            }
+
+            ChoiceScenarioCoreThoughtText.Text = VisibleText(
+                step.CoreThought,
+                value.VisibleCharacters.GetValueOrDefault("coreThought"));
+            ChoiceScenarioQuestionText.Text = VisibleText(
+                step.Question,
+                value.VisibleCharacters.GetValueOrDefault("question"));
+        });
+
+        _ = PresentChoiceScenarioSpeechAsync(step, request, progress, presentationId, _coreSpeechCts);
+    }
+
+    private async Task PresentChoiceScenarioSpeechAsync(
+        ChoiceScenarioStep step,
+        CoreSpeechRequest request,
+        IProgress<CoreSpeechProgress> progress,
+        long presentationId,
+        CancellationTokenSource cancellationSource)
+    {
+        try
+        {
+            var result = await _coreSpeechCoordinator.PresentAsync(
+                request,
+                progress,
+                _choiceScenarioLog,
+                cancellationSource.Token);
+            if (presentationId != _coreSpeechPresentationId)
+            {
+                return;
+            }
+
+            if (!result.Completed && !result.Skipped)
+            {
+                _choiceScenarioLog?.Write("core_voice_disabled_for_session", new
+                {
+                    request.Source,
+                    result.ErrorCode
+                });
+            }
+        }
+        finally
+        {
+            if (presentationId == _coreSpeechPresentationId)
+            {
+                ChoiceScenarioCoreThoughtText.Text = step.CoreThought;
+                ChoiceScenarioQuestionText.Text = step.Question;
+                _coreSpeechPresentationActive = false;
+                _coreSpeechCts = null;
+                SetChoiceScenarioInteractionEnabled(!_choiceScenarioRequestInProgress);
+            }
+
+            cancellationSource.Dispose();
+        }
+    }
+
+    private void CancelCoreSpeech(bool revealFullText, string reason)
+    {
+        if (_coreSpeechCts is null && !_coreSpeechPresentationActive)
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _coreSpeechPresentationId);
+        var cancellationSource = _coreSpeechCts;
+        _coreSpeechCts = null;
+        cancellationSource?.Cancel();
+        _coreSpeechCoordinator.Cancel();
+        _coreSpeechPresentationActive = false;
+        if (revealFullText && _currentChoiceScenarioStep is { } step)
+        {
+            ChoiceScenarioCoreThoughtText.Text = step.CoreThought;
+            ChoiceScenarioQuestionText.Text = step.Question;
+        }
+
+        _choiceScenarioLog?.Write("core_voice_cancelled", new { Reason = reason });
+        SetChoiceScenarioInteractionEnabled(!_choiceScenarioRequestInProgress);
+    }
+
+    private static string VisibleText(string text, int visibleCharacters) =>
+        string.IsNullOrEmpty(text)
+            ? string.Empty
+            : text[..Math.Clamp(visibleCharacters, 0, text.Length)];
+
+    private void CoreVoiceToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        _appSettings.CoreVoice.Enabled = !_appSettings.CoreVoice.Enabled;
+        _appSettingsStore.Save(_appSettings);
+        _isApplyingCoreVoiceSettings = true;
+        CoreVoiceEnabledCheckBox.IsChecked = _appSettings.CoreVoice.Enabled;
+        _isApplyingCoreVoiceSettings = false;
+
+        if (!_appSettings.CoreVoice.Enabled)
+        {
+            CancelCoreSpeech(revealFullText: true, "scenario_muted");
+        }
+        else if (_currentChoiceScenarioStep is { IsFinal: false } step)
+        {
+            StartChoiceScenarioSpeech(step);
+        }
+
+        UpdateCoreVoiceControls();
     }
 
     private void RenderChoiceScenarioSummary(ChoiceScenarioStep step)

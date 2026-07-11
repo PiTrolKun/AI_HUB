@@ -47,3 +47,26 @@ powershell -ExecutionPolicy Bypass -File .\Инструменты\check-cyrillic
 ```powershell
 winget install --id JRSoftware.InnoSetup -e
 ```
+
+### `setup-espeak-ng-runtime.ps1`
+
+Скачивает официальный MSI eSpeak NG `1.52.0`, проверяет закреплённый SHA-256 и административно распаковывает переносимый runtime без установки системного голоса.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Инструменты\setup-espeak-ng-runtime.ps1
+```
+
+Runtime сохраняется в `Runtime/Voice/eSpeakNG/1.52.0` и копируется в build/publish через проект AIHub, если он подготовлен.
+
+### `setup-rhvoice.ps1`
+
+Скачивает с официальных GitHub releases, проверяет SHA-256 и тихо устанавливает два SAPI-профиля альтернативной читалки ядра:
+
+- `Aleksandr` — русский мужской;
+- `Slt` — английский женский.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Инструменты\setup-rhvoice.ps1
+```
+
+RHVoice является необязательной альтернативой. По умолчанию AI HUB продолжает использовать eSpeak NG.

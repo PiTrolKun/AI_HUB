@@ -702,8 +702,8 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="22" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="0" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -722,42 +722,135 @@
                            Margin="0,12,0,0" />
             </StackPanel>
 
-            <Border Grid.Row="2"
-                    Background="{DynamicResource PanelBrush}"
-                    BorderBrush="{DynamicResource LineBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    Padding="20"
-                    MaxWidth="560"
-                    HorizontalAlignment="Left">
-                <StackPanel>
-                    <TextBlock x:Name="SettingsLanguageTitleText"
-                               Text="Язык интерфейса"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
-                               FontSize="18"
-                               FontWeight="SemiBold" />
-                    <TextBlock x:Name="SettingsLanguageHelpText"
-                               Text="Можно выбрать встроенный язык или добавить свой JSON-файл перевода в папку локализации пользователя."
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="13"
-                               TextWrapping="Wrap"
-                               Margin="0,8,0,0" />
-                    <TextBlock x:Name="SettingsLanguageLabelText"
-                               Text="Текущий язык"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="12"
-                               Margin="0,18,0,6" />
-                    <ComboBox x:Name="LanguageComboBox"
-                              Width="220"
-                              HorizontalAlignment="Left"
-                              SelectionChanged="LanguageComboBox_SelectionChanged" />
-                    <TextBlock x:Name="SettingsLocalizationFolderText"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="12"
-                               TextWrapping="Wrap"
-                               Margin="0,16,0,0" />
-                </StackPanel>
-            </Border>
+            <Viewbox Grid.Row="2"
+                     Stretch="Uniform"
+                     StretchDirection="DownOnly"
+                     HorizontalAlignment="Left"
+                     VerticalAlignment="Stretch">
+            <StackPanel Width="620">
+                <Border Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20">
+                    <StackPanel>
+                        <TextBlock x:Name="SettingsLanguageTitleText"
+                                   Text="Язык интерфейса"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold" />
+                        <TextBlock x:Name="SettingsLanguageHelpText"
+                                   Text="Можно выбрать встроенный язык или добавить свой JSON-файл перевода в папку локализации пользователя."
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0" />
+                        <TextBlock x:Name="SettingsLanguageLabelText"
+                                   Text="Текущий язык"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   Margin="0,18,0,6" />
+                        <ComboBox x:Name="LanguageComboBox"
+                                  Width="220"
+                                  HorizontalAlignment="Left"
+                                  SelectionChanged="LanguageComboBox_SelectionChanged" />
+                        <TextBlock x:Name="SettingsLocalizationFolderText"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Margin="0,16,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <Border Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="20"
+                        Margin="0,14,0,0">
+                    <StackPanel>
+                        <TextBlock x:Name="SettingsCoreVoiceTitleText"
+                                   Text="Голос ядра"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold" />
+                        <TextBlock x:Name="SettingsCoreVoiceHelpText"
+                                   Text="Локальный синтетический голос произносит короткие мысли и вопросы ядра."
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0" />
+                        <TextBlock x:Name="SettingsCoreVoiceProviderText"
+                                   Text="Читалка"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   Margin="0,14,0,6" />
+                        <ComboBox x:Name="CoreVoiceProviderComboBox"
+                                  Width="220"
+                                  HorizontalAlignment="Left"
+                                  SelectionChanged="CoreVoiceProviderComboBox_SelectionChanged" />
+                        <CheckBox x:Name="CoreVoiceEnabledCheckBox"
+                                  Content="Включить голос ядра"
+                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                  Margin="0,14,0,0"
+                                  Checked="CoreVoiceSettingChanged"
+                                  Unchecked="CoreVoiceSettingChanged" />
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="52" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="SettingsCoreVoiceVolumeText"
+                                       Text="Громкость"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Slider x:Name="CoreVoiceVolumeSlider"
+                                    Grid.Column="1"
+                                    Minimum="0"
+                                    Maximum="200"
+                                    TickFrequency="10"
+                                    IsSnapToTickEnabled="True"
+                                    ValueChanged="CoreVoiceSlider_ValueChanged" />
+                            <TextBlock x:Name="CoreVoiceVolumeValueText"
+                                       Grid.Column="2"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="52" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="SettingsCoreVoiceRateText"
+                                       Text="Скорость"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Slider x:Name="CoreVoiceRateSlider"
+                                    Grid.Column="1"
+                                    Minimum="80"
+                                    Maximum="240"
+                                    TickFrequency="5"
+                                    IsSnapToTickEnabled="True"
+                                    ValueChanged="CoreVoiceSlider_ValueChanged" />
+                            <TextBlock x:Name="CoreVoiceRateValueText"
+                                       Grid.Column="2"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                        <Button x:Name="CoreVoiceTestButton"
+                                Content="Проверить голос"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                HorizontalAlignment="Left"
+                                Margin="0,16,0,0"
+                                Click="CoreVoiceTestButton_Click" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+            </Viewbox>
 
             <StackPanel Grid.Row="4"
                         Orientation="Horizontal"
@@ -1273,12 +1366,38 @@
                             Padding="22"
                             Margin="0,0,0,14">
                         <StackPanel>
-                            <TextBlock x:Name="ChoiceScenarioQuestionText"
-                                       Text="К чему ближе вопрос?"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="22"
-                                       FontWeight="SemiBold"
-                                       TextWrapping="Wrap" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid>
+                                    <TextBlock x:Name="ChoiceScenarioQuestionMeasureText"
+                                               Text="К чему ближе вопрос?"
+                                               Foreground="Transparent"
+                                               FontSize="22"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap"
+                                               IsHitTestVisible="False" />
+                                    <TextBlock x:Name="ChoiceScenarioQuestionText"
+                                               Text="К чему ближе вопрос?"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="22"
+                                               FontWeight="SemiBold"
+                                               TextWrapping="Wrap" />
+                                </Grid>
+                                <Button x:Name="CoreVoiceToggleButton"
+                                        Grid.Column="1"
+                                        Content="🔊"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Width="42"
+                                        Height="36"
+                                        MinWidth="42"
+                                        Padding="0"
+                                        Margin="12,0,0,0"
+                                        VerticalAlignment="Top"
+                                        Click="CoreVoiceToggleButton_Click" />
+                            </Grid>
                             <TextBlock x:Name="ChoiceScenarioStatusText"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
@@ -1299,13 +1418,21 @@
                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                FontSize="13"
                                                FontWeight="SemiBold" />
-                                    <TextBlock x:Name="ChoiceScenarioCoreThoughtText"
-                                               Text="Сначала определим крупную область вопроса, а потом сузим направление."
-                                               Foreground="{DynamicResource TextSecondaryBrush}"
-                                               FontSize="13"
-                                               LineHeight="21"
-                                               TextWrapping="Wrap"
-                                               Margin="0,6,0,0" />
+                                    <Grid Margin="0,6,0,0">
+                                        <TextBlock x:Name="ChoiceScenarioCoreThoughtMeasureText"
+                                                   Text="Сначала определим крупную область вопроса, а потом сузим направление."
+                                                   Foreground="Transparent"
+                                                   FontSize="13"
+                                                   LineHeight="21"
+                                                   TextWrapping="Wrap"
+                                                   IsHitTestVisible="False" />
+                                        <TextBlock x:Name="ChoiceScenarioCoreThoughtText"
+                                                   Text="Сначала определим крупную область вопроса, а потом сузим направление."
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   FontSize="13"
+                                                   LineHeight="21"
+                                                   TextWrapping="Wrap" />
+                                    </Grid>
                                 </StackPanel>
                             </Border>
 

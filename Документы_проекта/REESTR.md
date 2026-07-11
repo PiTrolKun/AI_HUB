@@ -10,6 +10,8 @@
 |---|---|---|---|---|---|---|
 | Microsoft .NET Runtime | Запуск будущего .NET-приложения | 10.0.8 | MIT | Установлено вместе с `Microsoft.DotNet.SDK.10` через winget / Microsoft | Нет, системная предпосылка | Требуется Windows x64 |
 | Microsoft Windows Desktop Runtime | Запуск будущего WPF-приложения | 10.0.8 | MIT | Установлено вместе с `Microsoft.DotNet.SDK.10` через winget / Microsoft | Нет, системная предпосылка | Требуется Windows x64; нужен для WPF |
+| eSpeak NG | Локальный синтетический голос ядра и события слов для синхронного раскрытия текста | 1.52.0 | GPL-3.0-or-later | Официальный release `https://github.com/espeak-ng/espeak-ng/releases/tag/1.52.0`; MSI `https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi` | Да, DLL и `espeak-ng-data` копируются в `VoiceRuntime/eSpeakNG` при наличии подготовленного runtime | Только голос ядра; MSI SHA-256 `7F673C709EA5DD579D3B5EBB98688CC575328A6AB7438D2BC405B88CEDAEAFB9`, DLL SHA-256 `E737572DF0A35A32B7BD444537C661C1C916B13B0B91351030C7F1D531307BEB`; runtime готовится скриптом `Инструменты/setup-espeak-ng-runtime.ps1`; требуется поставка лицензии и доступность исходника |
+| RHVoice через Windows SAPI | Альтернативный локальный голос ядра, выбираемый пользователем вместо eSpeak NG | Engine 1.18.1; Aleksandr 4.2.2; Slt 4.1.2 | RHVoice engine: LGPL-2.1-or-later для C API, репозиторий также помечен GPL-2.0; Slt: CMU License; лицензия пакета Aleksandr явно не объявлена в его репозитории | Официальные voice releases `RHVoice/aleksandr-rus` и `RHVoice/slt-eng`; установка скриптом `Инструменты/setup-rhvoice.ps1` | Нет, используется как отдельно установленный системный SAPI-компонент | В UI называется `Просто ИИ голос`; eSpeak NG остается вариантом по умолчанию `Привет из 80-ых`; установщики и voice data не включать в publish до отдельной юридической проверки пакета Aleksandr |
 | Python reranker runtime | Временный локальный runtime для запуска `BAAI/bge-reranker-v2-m3` через Python/Transformers при rerank web-поиска | Python 3.12 venv в `Runtime/Python/reranker/.venv`; `torch 2.12.0`, `transformers 5.9.0`, `safetensors 0.7.0` | Python PSF; PyTorch BSD-style; Transformers Apache-2.0; Safetensors Apache-2.0 | Установлено локально через `pip` в runtime-папку проекта | Нет, runtime-папка не публикуется в GitHub | Временное dev-решение; перед релизом заменить на управляемую поставку/установку или ONNX/встроенный backend |
 
 ## Developer tooling
@@ -55,7 +57,7 @@
 
 | Название | Назначение | Версия | Лицензия | Источник | Ограничения |
 |---|---|---|---|---|---|
-| | | | | | |
+| System.Speech | Доступ к установленным Windows SAPI-голосам RHVoice и событиям произнесённых слов | 10.0.9 | MIT | NuGet `System.Speech`, Microsoft | Windows-only; библиотека включается в publish, сами RHVoice-голоса остаются внешней установкой |
 
 ## Правило
 
