@@ -72,17 +72,17 @@ public sealed class CapabilityInventoryService
 
     private static CapabilityInventoryItem CreateBackendItem()
     {
-        var serverPath = Path.Combine(AppDataPaths.BackendsDirectory, "llama.cpp", "b9442", "win-cuda-12.4-x64", "llama-server.exe");
-        var cliPath = Path.Combine(AppDataPaths.BackendsDirectory, "llama.cpp", "b9442", "win-cuda-12.4-x64", "llama-cli.exe");
+        var serverPath = LlamaBackendPaths.ServerExecutablePath;
+        var cliPath = LlamaBackendPaths.CliExecutablePath;
         var installed = File.Exists(serverPath) || File.Exists(cliPath);
         return new CapabilityInventoryItem
         {
             Role = "llama_backend",
-            Name = "llama.cpp b9442",
+            Name = LlamaBackendPaths.DisplayName,
             Status = installed ? "installed" : "missing",
             IsInstalled = installed,
             IsRunnable = installed,
-            Format = "win-cuda-12.4-x64",
+            Format = LlamaBackendPaths.Platform,
             Path = File.Exists(serverPath) ? serverPath : cliPath,
             Source = "Runtime/Backends",
             Details = installed ? "Local GGUF runtime backend." : "GGUF models cannot run without backend."

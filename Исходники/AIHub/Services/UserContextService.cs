@@ -27,6 +27,7 @@ public sealed class UserContextService
     {
         var now = DateTimeOffset.Now;
         var timeZone = TimeZoneInfo.Local;
+        var profile = GetProfile();
 
         return new UserContextSnapshot
         {
@@ -35,7 +36,8 @@ public sealed class UserContextService
             TimeZoneId = timeZone.Id,
             TimeZoneDisplayName = timeZone.DisplayName,
             UtcOffset = FormatUtcOffset(now.Offset),
-            Location = CloneKnownLocation(GetProfile().Location)
+            Location = CloneKnownLocation(profile.Location),
+            WorkloadMode = profile.WorkloadMode
         };
     }
 

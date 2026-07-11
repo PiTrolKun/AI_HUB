@@ -6,16 +6,13 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using AIHub.Models;
 
 namespace AIHub.Services;
 
 public sealed class LlamaServerRuntimeService : IDisposable
 {
-    private const string ReleaseFolder = "b9442";
-    private const string BackendFolder = "win-cuda-12.4-x64";
-    private const string ExecutableName = "llama-server.exe";
-
     private readonly HttpClient _httpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(120)
@@ -31,12 +28,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
     private int _port;
     private bool _disposed;
 
-    public string ExpectedExecutablePath { get; } = Path.Combine(
-        AppDataPaths.BackendsDirectory,
-        "llama.cpp",
-        ReleaseFolder,
-        BackendFolder,
-        ExecutableName);
+    public string ExpectedExecutablePath { get; } = LlamaBackendPaths.ServerExecutablePath;
 
     public bool IsAvailable => File.Exists(ExpectedExecutablePath);
 
@@ -81,10 +73,10 @@ public sealed class LlamaServerRuntimeService : IDisposable
         return string.IsNullOrWhiteSpace(text) ? "(empty response)" : text;
     }
 
-    public async Task<StructuredChatResult> GenerateWithToolsAsync(
+    public async Task<string> GenerateScenarioJsonAsync(
         DebugModelInfo model,
-        IReadOnlyList<StructuredChatMessage> messages,
-        IReadOnlyList<StructuredToolDefinition> tools,
+        string systemPrompt,
+        string userMessage,
         Action<string> log,
         CancellationToken cancellationToken)
     {
@@ -92,9 +84,60 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         var request = new ChatCompletionRequest
         {
-            Messages = BuildStructuredMessages(model, messages),
+            Messages =
+            [
+                new ChatMessage
+                {
+                    Role = "system",
+                    Content = string.Join(
+                        Environment.NewLine,
+                        _coreIdentityService.BuildSystemPrompt(
+                            model,
+                            CoreInteractionMode.ScenarioPlanner,
+                            "llama.cpp llama-server"),
+                        string.Empty,
+                        systemPrompt)
+                },
+                new ChatMessage { Role = "user", Content = userMessage }
+            ],
+            ResponseFormat = ChoiceScenarioJsonContract.CreateResponseFormat(),
+            Temperature = 0.1,
+            Stream = false
+        };
+
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync(
+            $"{Endpoint}/v1/chat/completions",
+            content,
+            cancellationToken);
+
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
+            stream,
+            _jsonOptions,
+            cancellationToken);
+
+        return completion?.Choices.FirstOrDefault()?.Message.Content?.Trim() ?? string.Empty;
+    }
+
+    public async Task<StructuredChatResult> GenerateWithToolsAsync(
+        DebugModelInfo model,
+        IReadOnlyList<StructuredChatMessage> messages,
+        IReadOnlyList<StructuredToolDefinition> tools,
+        Action<string> log,
+        CancellationToken cancellationToken,
+        CoreInteractionMode interactionMode = CoreInteractionMode.StructuredToolAgent,
+        string? requiredToolName = null)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+
+        var request = new ChatCompletionRequest
+        {
+            Messages = BuildStructuredMessages(model, messages, interactionMode),
             Tools = tools.ToList(),
-            ToolChoice = "auto",
+            ToolChoice = CreateToolChoice(requiredToolName),
             Temperature = 0.2,
             Stream = false
         };
@@ -311,7 +354,10 @@ public sealed class LlamaServerRuntimeService : IDisposable
         return messages;
     }
 
-    private List<ChatMessage> BuildStructuredMessages(DebugModelInfo model, IReadOnlyList<StructuredChatMessage> messages)
+    private List<ChatMessage> BuildStructuredMessages(
+        DebugModelInfo model,
+        IReadOnlyList<StructuredChatMessage> messages,
+        CoreInteractionMode interactionMode)
     {
         var result = new List<ChatMessage>
         {
@@ -320,7 +366,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
                 Role = "system",
                 Content = _coreIdentityService.BuildSystemPrompt(
                     model,
-                    CoreInteractionMode.StructuredToolAgent,
+                    interactionMode,
                     "llama.cpp llama-server")
             }
         };
@@ -384,6 +430,23 @@ public sealed class LlamaServerRuntimeService : IDisposable
         startInfo.ArgumentList.Add(value);
     }
 
+    private static JsonNode CreateToolChoice(string? requiredToolName)
+    {
+        if (string.IsNullOrWhiteSpace(requiredToolName))
+        {
+            return JsonValue.Create("auto")!;
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "function",
+            ["function"] = new JsonObject
+            {
+                ["name"] = requiredToolName.Trim()
+            }
+        };
+    }
+
     private sealed class ChatCompletionRequest
     {
         public List<ChatMessage> Messages { get; set; } = [];
@@ -392,10 +455,13 @@ public sealed class LlamaServerRuntimeService : IDisposable
         public List<StructuredToolDefinition>? Tools { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string? ToolChoice { get; set; }
+        public JsonNode? ToolChoice { get; set; }
 
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? MaxTokens { get; set; }
+
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public JsonObject? ResponseFormat { get; set; }
 
         public double Temperature { get; set; }
 

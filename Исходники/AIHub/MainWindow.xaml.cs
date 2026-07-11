@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Reflection;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -25,7 +27,13 @@ public partial class MainWindow : Window
     private readonly LocalizationService _localizationService = new();
     private readonly StorageSettingsStore _storageSettingsStore = new();
     private readonly ToolModelManager _toolModelManager = new();
+    private readonly ChoiceScenarioService _choiceScenarioService = new();
+    private readonly ChoiceScenarioOrchestrator _choiceScenarioOrchestrator;
+    private readonly DebugModelDiscoveryService _choiceModelDiscoveryService = new();
+    private readonly CapabilityInventoryService _choiceInventoryService = new();
+    private readonly HuggingFaceCatalogStartupService _catalogStartupService = new();
     private readonly DispatcherTimer _profileBlinkTimer = new();
+    private readonly ObservableCollection<ChoiceScenarioOption> _choiceScenarioOptions = [];
 
     private AppSettings _appSettings = new();
     private AppState _appState = new();
@@ -38,6 +46,14 @@ public partial class MainWindow : Window
     private PendingModelDownload _pendingModelDownload = PendingModelDownload.Core;
     private DebugChatWindow? _debugChatWindow;
     private CoreMemoryStatus _coreMemoryStatus = CoreMemoryStatus.Inactive();
+    private readonly ChoiceScenarioSessionState _choiceScenarioState = new();
+    private ChoiceScenarioStep? _currentChoiceScenarioStep;
+    private LlamaServerRuntimeService? _choiceScenarioRuntimeService;
+    private CancellationTokenSource? _choiceScenarioCts;
+    private readonly CancellationTokenSource _catalogStartupCts = new();
+    private ISessionEventLog? _choiceScenarioLog;
+    private int _choiceScenarioInvalidJsonCount;
+    private bool _choiceScenarioRequestInProgress;
     private bool _isApplyingLanguageSelection;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
@@ -51,6 +67,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         _userContextService = new UserContextService(_userProfileStore, new IpLocationService());
+        _choiceScenarioOrchestrator = new ChoiceScenarioOrchestrator(_choiceScenarioService);
         InitializeComponent();
         Title = $"AI HUB {GetAppVersion()}";
         _profileBlinkTimer.Interval = TimeSpan.FromMilliseconds(760);
@@ -65,7 +82,9 @@ public partial class MainWindow : Window
         InitializeLocalization();
         ApplyTheme();
         ApplyLocalization();
+        ChoiceOptionsItemsControl.ItemsSource = _choiceScenarioOptions;
         InitializeAppData();
+        _ = RefreshModelCatalogOnStartupAsync();
         UpdatePrimaryActionButton();
     }
 
@@ -393,6 +412,16 @@ public partial class MainWindow : Window
         ContinuePreviousWorkButton.Content = L("WorkStart.Continue");
         ContinuePreviousWorkButton.ToolTip = L("WorkStart.ContinueTooltip");
         BackFromWorkStartButton.Content = L("Settings.Back");
+        ChoiceScenarioTitleText.Text = L("ChoiceScenario.Title");
+        ChoiceScenarioDescriptionText.Text = L("ChoiceScenario.Description");
+        ChoiceScenarioCoreThoughtTitleText.Text = L("ChoiceScenario.CoreThoughtTitle");
+        ChoiceCustomOptionButton.Content = L("ChoiceScenario.CustomOption");
+        ChoiceCustomInputHelpText.Text = L("ChoiceScenario.CustomInputHelp");
+        ChoiceCustomSubmitButton.Content = L("ChoiceScenario.AcceptCustom");
+        ChoiceGoFinalButton.Content = L("ChoiceScenario.GoFinal");
+        ChoiceScenarioSummaryTitleText.Text = L("ChoiceScenario.TaskCardTitle");
+        BackFromChoiceScenarioButton.Content = L("Settings.Back");
+        CancelChoiceScenarioButton.Content = L("ChoiceScenario.Cancel");
 
         DownloadCoreModelButton.Content = L("CoreModel.Download");
         OpenSetupFromCoreModelButton.Content = L("CoreModel.OpenSetup");
@@ -473,8 +502,14 @@ public partial class MainWindow : Window
     {
         try
         {
+            _choiceScenarioCts?.Cancel();
+            _catalogStartupCts.Cancel();
+            _choiceScenarioRuntimeService?.Dispose();
+            _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "app_closed" });
+            _choiceScenarioLog?.Dispose();
             _coreSessionLog?.Write("session_end");
             _coreSessionLog?.Dispose();
+            _catalogStartupCts.Dispose();
         }
         finally
         {
@@ -510,6 +545,33 @@ public partial class MainWindow : Window
         catch
         {
             // User context must never block the app startup.
+        }
+    }
+
+    private async Task RefreshModelCatalogOnStartupAsync()
+    {
+        await Task.Yield();
+        try
+        {
+            _coreSessionLog?.Write("catalog_startup_sync_started", new
+            {
+                AppDataPaths.HuggingFaceCatalogPath,
+                AppDataPaths.HuggingFaceCatalogSeedPath
+            });
+            var result = await _catalogStartupService.SynchronizeIfDueAsync(_catalogStartupCts.Token);
+            _coreSessionLog?.Write("catalog_startup_sync_finished", result);
+        }
+        catch (OperationCanceledException)
+        {
+            _coreSessionLog?.Write("catalog_startup_sync_cancelled");
+        }
+        catch (Exception ex)
+        {
+            _coreSessionLog?.Write("catalog_startup_sync_error", new
+            {
+                ErrorType = ex.GetType().FullName,
+                ex.Message
+            });
         }
     }
 
@@ -687,6 +749,7 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Collapsed;
         ProfilePage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         UpdateWelcomeStatus();
     }
@@ -698,13 +761,159 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Collapsed;
         ProfilePage.Visibility = Visibility.Collapsed;
         ProfileReminderPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Visible;
         UpdateWelcomeStatus();
     }
 
     private void SelectReasoningModeButton_Click(object sender, RoutedEventArgs e)
     {
-        StatusText.Text = L("Status.ReasoningModeNotReady");
+        StartChoiceScenario();
+        StatusText.Text = L("Status.ChoiceScenarioOpened");
+    }
+
+    private void ChoiceOptionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_choiceScenarioRequestInProgress
+            || sender is not System.Windows.Controls.Button button
+            || button.Tag is not ChoiceScenarioOption option)
+        {
+            return;
+        }
+
+        ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
+        if (option.Id.StartsWith("budget_", StringComparison.Ordinal)
+            && !string.Equals(_currentChoiceScenarioStep?.StepType, "budget_setup", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (string.Equals(_currentChoiceScenarioStep?.StepType, "budget_setup", StringComparison.Ordinal)
+            && ChoiceScenarioStepBudget.TryCreate(option.Id, out var budget))
+        {
+            _choiceScenarioState.ConfigureStepBudget(budget);
+            _choiceScenarioLog?.Write("scenario_step_budget_selected", new
+            {
+                budget.Mode,
+                budget.MaximumSteps,
+                budget.IsAutomatic
+            });
+            var domainStep = _choiceScenarioService.CreateDomainStartStep(L);
+            _choiceScenarioState.AddStep(domainStep, consumedAnswer: false);
+            RenderChoiceScenarioStep(domainStep);
+            _choiceScenarioLog?.Write("scenario_parsed_step", domainStep);
+            StatusText.Text = LF("Status.ChoiceScenarioBudgetSelected", option.Title);
+            return;
+        }
+
+        if (!_choiceScenarioState.TryAddAnswer(option))
+        {
+            return;
+        }
+
+        _choiceScenarioLog?.Write("scenario_user_choice", _choiceScenarioState.Answers[^1]);
+        _choiceScenarioLog?.Write("scenario_capability_profile_updated", new
+        {
+            Source = "user_choice",
+            _choiceScenarioState.Answers[^1].DecisionDimension,
+            _choiceScenarioState.Answers[^1].AppliedProfileEffects,
+            Profile = _choiceScenarioState.CapabilityProfile
+        });
+        foreach (var effect in _choiceScenarioState.Answers[^1].AppliedProfileEffects
+            .Where(effect => effect.Status is ChoiceDimensionStatuses.Resolved or ChoiceDimensionStatuses.NotApplicable))
+        {
+            _choiceScenarioLog?.Write("scenario_resolved_dimension", effect);
+        }
+        StatusText.Text = LF("Status.ChoiceScenarioSelected", option.Title);
+        _ = RequestNextChoiceScenarioStepAsync(requestFinal: false);
+    }
+
+    private void ChoiceCustomOptionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_choiceScenarioRequestInProgress)
+        {
+            return;
+        }
+
+        ChoiceCustomInputPanel.Visibility = Visibility.Visible;
+        ChoiceCustomInput.Focus();
+        StatusText.Text = L("Status.ChoiceScenarioCustomInput");
+    }
+
+    private void ChoiceCustomSubmitButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_choiceScenarioRequestInProgress)
+        {
+            return;
+        }
+
+        var customText = ChoiceCustomInput.Text.Trim();
+        if (!IsValidCustomChoice(customText))
+        {
+            StatusText.Text = L("Status.ChoiceScenarioCustomTooLong");
+            return;
+        }
+
+        var option = new ChoiceScenarioOption
+        {
+            Id = "custom",
+            Title = customText,
+            Description = L("ChoiceScenario.CustomDescription")
+        };
+        ChoiceCustomInput.Clear();
+        ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
+        ChoiceOptionButton_Click(new System.Windows.Controls.Button { Tag = option }, e);
+    }
+
+    private void BackFromChoiceScenarioButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_choiceScenarioRequestInProgress)
+        {
+            return;
+        }
+
+        if (_choiceScenarioState.TryGoBack(out var previousStep) && previousStep is not null)
+        {
+            if (string.Equals(previousStep.StepType, "budget_setup", StringComparison.Ordinal))
+            {
+                _choiceScenarioState.ClearStepBudget();
+            }
+
+            RenderChoiceScenarioStep(previousStep);
+            _choiceScenarioLog?.Write("scenario_back", new
+            {
+                RestoredStep = previousStep,
+                AnswerCount = _choiceScenarioState.Answers.Count,
+                CapabilityProfile = _choiceScenarioState.CapabilityProfile
+            });
+            StatusText.Text = L("Status.ChoiceScenarioBack");
+            return;
+        }
+
+        _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "back_to_modes" });
+        _choiceScenarioLog?.Dispose();
+        _choiceScenarioLog = null;
+        ShowWorkStartPage();
+        StatusText.Text = L("Status.WorkStartOpened");
+    }
+
+    private void CancelChoiceScenarioButton_Click(object sender, RoutedEventArgs e)
+    {
+        _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "cancelled" });
+        _choiceScenarioLog?.Dispose();
+        _choiceScenarioLog = null;
+        ShowWorkStartPage();
+        StatusText.Text = L("Status.ChoiceScenarioCancelled");
+    }
+
+    private void ChoiceGoFinalButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_choiceScenarioRequestInProgress)
+        {
+            return;
+        }
+
+        _ = RequestNextChoiceScenarioStepAsync(requestFinal: true);
     }
 
     private void PreviousWorkExpander_Expanded(object sender, RoutedEventArgs e)
@@ -1075,6 +1284,7 @@ public partial class MainWindow : Window
         ProfilePage.Visibility = Visibility.Collapsed;
         ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Visible;
     }
 
@@ -1085,6 +1295,7 @@ public partial class MainWindow : Window
         ProfilePage.Visibility = Visibility.Collapsed;
         ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Visible;
         PopulateLanguageComboBox();
     }
@@ -1096,6 +1307,7 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Collapsed;
         ProfileReminderPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         ProfilePage.Visibility = Visibility.Visible;
     }
 
@@ -1106,6 +1318,7 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Collapsed;
         ProfilePage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         ProfileReminderPage.Visibility = Visibility.Visible;
     }
 
@@ -1117,7 +1330,413 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Collapsed;
         ProfilePage.Visibility = Visibility.Collapsed;
         ProfileReminderPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Visible;
+    }
+
+    private void StartChoiceScenario()
+    {
+        _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "restart" });
+        _choiceScenarioLog?.Dispose();
+        try
+        {
+            _choiceScenarioLog = ScenarioSessionLog.CreateUncertainty(_storageSettings);
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog = new NullSessionEventLog();
+            _choiceScenarioLog.Write("scenario_log_unavailable", new
+            {
+                ErrorType = ex.GetType().FullName,
+                ex.Message
+            });
+        }
+
+        _choiceScenarioLog.Write("scenario_session_start", new
+        {
+            AppVersion = GetAppVersion(),
+            _choiceScenarioLog.FilePath
+        });
+        _choiceScenarioLog.Write("scenario_context_snapshot", _userContextService.CreateSnapshot());
+        _choiceScenarioInvalidJsonCount = 0;
+        _choiceScenarioRequestInProgress = false;
+        ChoiceCustomInput.Clear();
+        ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
+        var startStep = _choiceScenarioService.CreateBudgetStep(L);
+        _choiceScenarioState.Reset(startStep);
+        RenderChoiceScenarioStep(startStep);
+        _choiceScenarioLog.Write("scenario_parsed_step", _currentChoiceScenarioStep);
+        WelcomePage.Visibility = Visibility.Collapsed;
+        SetupPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        ProfilePage.Visibility = Visibility.Collapsed;
+        ProfileReminderPage.Visibility = Visibility.Collapsed;
+        WorkStartPage.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPage.Visibility = Visibility.Visible;
+    }
+
+    private async Task RequestNextChoiceScenarioStepAsync(bool requestFinal)
+    {
+        if (_choiceScenarioRequestInProgress || _choiceScenarioCts is not null)
+        {
+            return;
+        }
+
+        var stepBudget = _choiceScenarioState.StepBudget;
+        if (stepBudget is null)
+        {
+            return;
+        }
+
+        var mustReturnFinal = _choiceScenarioState.IsStepBudgetExhausted;
+        var effectiveRequestFinal = requestFinal || mustReturnFinal;
+        _choiceScenarioRequestInProgress = true;
+        _choiceScenarioCts = new CancellationTokenSource();
+        SetChoiceScenarioInteractionEnabled(false);
+        ChoiceScenarioStatusText.Text = L("ChoiceScenario.CoreWorking");
+        StatusText.Text = effectiveRequestFinal
+            ? L("Status.ChoiceScenarioRequestFinal")
+            : L("Status.ChoiceScenarioCoreThinking");
+
+        try
+        {
+            var model = _choiceModelDiscoveryService
+                .Discover(_storageSettings)
+                .FirstOrDefault(item => item.IsCoreModel && item.IsRunnable)
+                ?? _choiceModelDiscoveryService.Discover(_storageSettings).FirstOrDefault(item => item.IsRunnable);
+
+            if (model is null)
+            {
+                _choiceScenarioLog?.Write("scenario_core_unavailable", new { Reason = "No runnable model" });
+                var fallbackStep = _choiceScenarioService.CreateFallbackStep(_choiceScenarioState.Answers, L);
+                if (_choiceScenarioState.GetFingerprintCount(fallbackStep) > 0)
+                {
+                    if (!requestFinal)
+                    {
+                        _choiceScenarioState.RemoveLastAnswer();
+                    }
+                    ChoiceScenarioStatusText.Text = L("ChoiceScenario.CoreUnavailableStop");
+                    StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
+                    return;
+                }
+
+                _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: !requestFinal);
+                RenderChoiceScenarioStep(fallbackStep);
+                StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
+                return;
+            }
+
+            _choiceScenarioRuntimeService ??= new LlamaServerRuntimeService(_userContextService);
+            var inventory = _choiceInventoryService.Create(_storageSettings);
+            var inventorySummary = string.Join(
+                Environment.NewLine,
+                inventory.Items.Select(item => $"{item.Role}: installed={item.IsInstalled}; runnable={item.IsRunnable}; name={item.Name}"));
+            var systemPrompt = _choiceScenarioService.BuildSystemPrompt();
+            var userPrompt = _choiceScenarioService.BuildUserPrompt(
+                _choiceScenarioState.Answers,
+                requestFinal,
+                mustReturnFinal,
+                _userContextService.CreateSnapshot(),
+                inventorySummary,
+                _appSettings.LanguageCode,
+                stepBudget,
+                _choiceScenarioState.SubstantiveStepsUsed,
+                _choiceScenarioState.StepsRemaining,
+                _choiceScenarioState.CapabilityProfile);
+            _choiceScenarioLog?.Write("scenario_core_prompt", new
+            {
+                Model = model.Name,
+                model.Path,
+                RequestFinal = effectiveRequestFinal,
+                ManualRequestFinal = requestFinal,
+                MustReturnFinal = mustReturnFinal,
+                CapabilityProfile = _choiceScenarioState.CapabilityProfile,
+                StepBudget = stepBudget,
+                StepsUsed = _choiceScenarioState.SubstantiveStepsUsed,
+                StepsRemaining = _choiceScenarioState.StepsRemaining,
+                SystemPrompt = systemPrompt,
+                UserPrompt = userPrompt
+            });
+
+            var generation = await _choiceScenarioOrchestrator.GenerateAsync(
+                _choiceScenarioRuntimeService,
+                model,
+                systemPrompt,
+                userPrompt,
+                _storageSettings,
+                _choiceScenarioLog ?? new NullSessionEventLog(),
+                _choiceScenarioCts.Token,
+                effectiveRequestFinal,
+                mustReturnFinal,
+                _userProfile.WorkloadMode,
+                _choiceScenarioState.CapabilityProfile);
+            _choiceScenarioLog?.Write("scenario_core_raw_response", new
+            {
+                Model = model.Name,
+                Text = generation.RawResponse,
+                generation.RepairAttempts
+            });
+
+            if (generation.Step is { } step)
+            {
+                var repeatedStep = !step.IsFinal
+                    && (_choiceScenarioState.GetFingerprintCount(step) > 0
+                        || _choiceScenarioState.IsSemanticLoop(step));
+                var subjectMatterOverreach = !step.IsFinal
+                    && _choiceScenarioState.IsSubjectMatterOverreach(step);
+                if (repeatedStep || subjectMatterOverreach)
+                {
+                    _choiceScenarioLog?.Write(
+                        subjectMatterOverreach
+                            ? "scenario_subject_matter_overreach"
+                            : "scenario_repeated_step_blocked",
+                        new
+                        {
+                            step.Question,
+                            step.DecisionDimension,
+                            step.SelectionImpact,
+                            Fingerprint = ChoiceScenarioSessionState.CreateFingerprint(step)
+                        });
+                    var correctionPrompt = userPrompt + Environment.NewLine + Environment.NewLine
+                        + (subjectMatterOverreach
+                            ? "Предыдущий вопрос отклонён как повторное предметное углубление. Не уточняй содержание темы. Выбери другое неизвестное измерение профиля исполнителя: операцию, данные, контекст, инструменты, точность, скорость или приватность. Если профиль уже достаточен, сформируй final_task_card."
+                            : "Запрещено повторять уже заданный вопрос, измерение или тот же набор вариантов. Выбери другое неизвестное измерение профиля исполнителя. Если данных достаточно, сформируй final_task_card.");
+                    generation = await _choiceScenarioOrchestrator.GenerateAsync(
+                        _choiceScenarioRuntimeService,
+                        model,
+                        systemPrompt,
+                        correctionPrompt,
+                        _storageSettings,
+                        _choiceScenarioLog ?? new NullSessionEventLog(),
+                        _choiceScenarioCts.Token,
+                        effectiveRequestFinal,
+                        mustReturnFinal,
+                        _userProfile.WorkloadMode,
+                        _choiceScenarioState.CapabilityProfile);
+                    step = generation.Step ?? step;
+                    repeatedStep = !step.IsFinal
+                        && (_choiceScenarioState.GetFingerprintCount(step) > 0
+                            || _choiceScenarioState.IsSemanticLoop(step));
+                    subjectMatterOverreach = !step.IsFinal
+                        && _choiceScenarioState.IsSubjectMatterOverreach(step);
+                    if (repeatedStep || subjectMatterOverreach)
+                    {
+                        _choiceScenarioLog?.Write("scenario_question_rejected_as_non_productive", new
+                        {
+                            step.Question,
+                            step.DecisionDimension,
+                            Reason = subjectMatterOverreach ? "subject_matter_overreach" : "repeated_step"
+                        });
+                        var forcedFinalPrompt = userPrompt + Environment.NewLine + Environment.NewLine
+                            + "Два последовательных вопроса отклонены как непродуктивные. Новый question_step запрещён. Сформируй final_task_card по текущему capability profile, честно обозначь пробелы и поручай рабочей модели задать недостающие предметные вопросы.";
+                        generation = await _choiceScenarioOrchestrator.GenerateAsync(
+                            _choiceScenarioRuntimeService,
+                            model,
+                            systemPrompt,
+                            forcedFinalPrompt,
+                            _storageSettings,
+                            _choiceScenarioLog ?? new NullSessionEventLog(),
+                            _choiceScenarioCts.Token,
+                            requestFinal: true,
+                            mustReturnFinal: true,
+                            workloadMode: _userProfile.WorkloadMode,
+                            capabilityProfile: _choiceScenarioState.CapabilityProfile);
+                        step = generation.Step ?? step;
+                        if (!step.IsFinal)
+                        {
+                            _choiceScenarioInvalidJsonCount++;
+                            if (!requestFinal)
+                            {
+                                _choiceScenarioState.RemoveLastAnswer();
+                            }
+                            ChoiceScenarioStatusText.Text = L("ChoiceScenario.RepeatedStepError");
+                            StatusText.Text = L("Status.ChoiceScenarioRepeatedStep");
+                            return;
+                        }
+                    }
+                }
+
+                _choiceScenarioInvalidJsonCount = 0;
+                _choiceScenarioState.AddStep(step, consumedAnswer: !requestFinal);
+                RenderChoiceScenarioStep(step);
+                _choiceScenarioLog?.Write("scenario_capability_profile_updated", _choiceScenarioState.CapabilityProfile);
+                if (!step.IsFinal)
+                {
+                    _choiceScenarioLog?.Write("scenario_decision_dimension", new
+                    {
+                        step.DecisionDimension,
+                        step.SelectionImpact,
+                        ResolvedDimensions = _choiceScenarioState.CapabilityProfile.ResolvedDimensions
+                    });
+                }
+                _choiceScenarioLog?.Write(step.IsFinal ? "scenario_final_task_card" : "scenario_parsed_step", step);
+                StatusText.Text = step.IsFinal
+                    ? L("Status.ChoiceScenarioTaskCardReady")
+                    : L("Status.ChoiceScenarioStepReady");
+                return;
+            }
+
+            _choiceScenarioInvalidJsonCount++;
+            if (!requestFinal)
+            {
+                _choiceScenarioState.RemoveLastAnswer();
+            }
+            _choiceScenarioLog?.Write("scenario_structure_error", new
+            {
+                Error = generation.Error,
+                Raw = generation.RawResponse,
+                Count = _choiceScenarioInvalidJsonCount
+            });
+            ChoiceScenarioStatusText.Text = L("ChoiceScenario.StructureError");
+            StatusText.Text = L("Status.ChoiceScenarioStructureError");
+        }
+        catch (OperationCanceledException)
+        {
+            _choiceScenarioLog?.Write("scenario_request_cancelled");
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog?.Write("scenario_core_unavailable", new
+            {
+                Reason = "Exception while requesting core step",
+                ErrorType = ex.GetType().FullName,
+                ex.Message
+            });
+            var fallbackStep = _choiceScenarioService.CreateFallbackStep(_choiceScenarioState.Answers, L);
+            if (_choiceScenarioState.GetFingerprintCount(fallbackStep) > 0)
+            {
+                if (!requestFinal)
+                {
+                    _choiceScenarioState.RemoveLastAnswer();
+                }
+                ChoiceScenarioStatusText.Text = L("ChoiceScenario.CoreUnavailableStop");
+                StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
+                return;
+            }
+
+            _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: !requestFinal);
+            RenderChoiceScenarioStep(fallbackStep);
+            StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
+        }
+        finally
+        {
+            _choiceScenarioCts?.Dispose();
+            _choiceScenarioCts = null;
+            _choiceScenarioRequestInProgress = false;
+            SetChoiceScenarioInteractionEnabled(true);
+        }
+    }
+
+    private void RenderChoiceScenarioStep(ChoiceScenarioStep step)
+    {
+        _currentChoiceScenarioStep = step;
+        ChoiceScenarioQuestionText.Text = step.Question;
+        ChoiceScenarioCoreThoughtText.Text = step.CoreThought;
+        var stepStatus = step.IsFinal
+            ? L("ChoiceScenario.FinalStatus")
+            : L("ChoiceScenario.StepStatus");
+        if (!step.IsFinal
+            && !string.Equals(step.StepType, "budget_setup", StringComparison.Ordinal)
+            && _choiceScenarioState.StepBudget is { } budget)
+        {
+            var currentQuestion = Math.Min(budget.MaximumSteps, _choiceScenarioState.SubstantiveStepsUsed + 1);
+            var progress = budget.IsAutomatic
+                ? LF("ChoiceScenario.BudgetProgressAutomatic", currentQuestion, budget.MaximumSteps)
+                : LF("ChoiceScenario.BudgetProgress", currentQuestion, budget.MaximumSteps);
+            stepStatus += Environment.NewLine + progress;
+        }
+
+        ChoiceScenarioStatusText.Text = stepStatus;
+
+        _choiceScenarioOptions.Clear();
+        foreach (var option in step.Options.Take(6))
+        {
+            _choiceScenarioOptions.Add(option);
+        }
+
+        ChoiceCustomOptionButton.Visibility = step.AllowCustom ? Visibility.Visible : Visibility.Collapsed;
+        ChoiceGoFinalButton.Visibility = !step.IsFinal && _choiceScenarioState.Answers.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
+        RenderChoiceScenarioSummary(step);
+    }
+
+    private void SetChoiceScenarioInteractionEnabled(bool enabled)
+    {
+        ChoiceOptionsItemsControl.IsEnabled = enabled;
+        ChoiceCustomOptionButton.IsEnabled = enabled;
+        ChoiceCustomSubmitButton.IsEnabled = enabled;
+        ChoiceGoFinalButton.IsEnabled = enabled;
+        BackFromChoiceScenarioButton.IsEnabled = enabled;
+        CancelChoiceScenarioButton.IsEnabled = enabled;
+    }
+
+    private void RenderChoiceScenarioSummary(ChoiceScenarioStep step)
+    {
+        if (!step.SummaryLines.Any() && step.TaskCard is null)
+        {
+            ChoiceScenarioSummaryPanel.Visibility = Visibility.Collapsed;
+            ChoiceScenarioSummaryText.Text = string.Empty;
+            return;
+        }
+
+        var builder = new StringBuilder();
+        foreach (var line in step.SummaryLines)
+        {
+            builder.AppendLine(line);
+        }
+
+        if (step.TaskCard is not null)
+        {
+            var card = step.TaskCard;
+            builder.AppendLine();
+            builder.AppendLine(LF("ChoiceScenario.Card.Goal", card.Goal));
+            builder.AppendLine(LF("ChoiceScenario.Card.Executor", card.RecommendedExecutor));
+            builder.AppendLine(LF("ChoiceScenario.Card.ExecutorStatus", card.ExecutorStatus));
+            builder.AppendLine(LF("ChoiceScenario.Card.Reason", card.ExecutorReason));
+            builder.AppendLine(LF("ChoiceScenario.Card.Internet", card.NeedsWeb ? L("Common.Yes") : L("Common.No")));
+            if (card.RequiredTools.Count > 0)
+            {
+                builder.AppendLine(LF("ChoiceScenario.Card.RequiredTools", string.Join(", ", card.RequiredTools)));
+            }
+            if (card.CapabilityProfile.Dimensions.Count > 0)
+            {
+                builder.AppendLine();
+                builder.AppendLine(L("ChoiceScenario.Card.CapabilityProfile"));
+                foreach (var dimension in card.CapabilityProfile.Dimensions)
+                {
+                    var label = L($"ChoiceScenario.Dimension.{dimension.Dimension}");
+                    var values = dimension.Values.Count == 0
+                        ? dimension.Status
+                        : string.Join(", ", dimension.Values);
+                    builder.AppendLine($"{label}: {values}");
+                }
+            }
+            builder.AppendLine();
+            builder.AppendLine(L("ChoiceScenario.Card.Prompt"));
+            builder.AppendLine(card.PromptForExecutor);
+        }
+
+        ChoiceScenarioSummaryPanel.Visibility = Visibility.Visible;
+        ChoiceScenarioSummaryText.Text = builder.ToString().Trim();
+    }
+
+    private static bool IsValidCustomChoice(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var words = value
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return words.Length is >= 1 and <= 3;
+    }
+
+    private static string FormatInvariant(string format, params object[] args)
+    {
+        return string.Format(System.Globalization.CultureInfo.InvariantCulture, format, args);
     }
 
     private void LoadStorageSettingsIntoControls()

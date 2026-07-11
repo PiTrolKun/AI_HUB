@@ -20,6 +20,7 @@ public sealed class ToolGateway
     private readonly CapabilityInventoryService _inventoryService = new();
     private readonly TaskPlannerService _taskPlannerService = new();
     private readonly HuggingFaceProviderTool _huggingFaceProviderTool = new();
+    private readonly LocalModelCatalogTool _localModelCatalogTool = new();
     private readonly SearchStrategyService _searchStrategyService = new();
     private readonly SessionLogReaderService _sessionLogReaderService = new();
 
@@ -32,6 +33,7 @@ public sealed class ToolGateway
             || prompt.TrimStart().StartsWith("inventory:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("task_plan:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("session_log:", StringComparison.OrdinalIgnoreCase)
+            || prompt.TrimStart().StartsWith("model_catalog_search:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("hf_find_model:", StringComparison.OrdinalIgnoreCase)
             || prompt.TrimStart().StartsWith("hf_model_files:", StringComparison.OrdinalIgnoreCase);
     }
@@ -39,9 +41,10 @@ public sealed class ToolGateway
     public async Task<string> ExecuteAsync(
         string prompt,
         StorageSettings storageSettings,
-        JsonlSessionLog sessionLog,
+        ISessionEventLog sessionLog,
         CancellationToken cancellationToken,
-        IProgress<WebDownloadProgress>? downloadProgress = null)
+        IProgress<WebDownloadProgress>? downloadProgress = null,
+        string currentCoreName = "")
     {
         var trimmed = prompt.Trim();
         var separator = trimmed.IndexOf(':', StringComparison.Ordinal);
@@ -65,6 +68,7 @@ public sealed class ToolGateway
                 "inventory" => ExecuteInventory(storageSettings),
                 "task_plan" => ExecuteTaskPlan(argument, storageSettings),
                 "session_log" => ExecuteSessionLog(argument, sessionLog),
+                "model_catalog_search" => ExecuteModelCatalogSearch(argument, currentCoreName),
                 "hf_find_model" => await ExecuteHfFindModelAsync(argument, storageSettings, cancellationToken),
                 "hf_model_files" => await ExecuteHfModelFilesAsync(argument, storageSettings, cancellationToken),
                 _ => throw new InvalidOperationException($"Unknown tool command: {command}")
@@ -277,7 +281,7 @@ public sealed class ToolGateway
         return builder.ToString().Trim();
     }
 
-    private string ExecuteSessionLog(string request, JsonlSessionLog sessionLog)
+    private string ExecuteSessionLog(string request, ISessionEventLog sessionLog)
     {
         return _sessionLogReaderService.Read(sessionLog.FilePath, request);
     }
@@ -309,6 +313,40 @@ public sealed class ToolGateway
             }
         }
 
+        return builder.ToString().Trim();
+    }
+
+    private string ExecuteModelCatalogSearch(string argument, string currentCoreName)
+    {
+        var result = _localModelCatalogTool.Search(argument, currentCoreName);
+        var builder = new StringBuilder();
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Local model catalog search status: {result.Status}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Last successful sync: {result.LastSuccessfulSyncUtc?.ToString("O", CultureInfo.InvariantCulture) ?? "none"}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Records considered: {result.RecordsConsidered}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Hardware rejected: {result.HardwareRejectedCount}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Lineage rejected: {result.LineageRejectedCount}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Candidates found: {result.Candidates.Count}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Requires live search: {result.RequiresLiveSearch}");
+        builder.AppendLine(CultureInfo.InvariantCulture, $"Live verification suggested: {result.LiveVerificationSuggested}");
+        foreach (var candidate in result.Candidates)
+        {
+            builder.AppendLine(CultureInfo.InvariantCulture, $"- {candidate.RepoId}");
+            builder.AppendLine(CultureInfo.InvariantCulture, $"  pipeline: {EmptyAsNone(candidate.PipelineTag)}; license: {EmptyAsNone(candidate.License)}; parameters: {candidate.ParameterCount?.ToString(CultureInfo.InvariantCulture) ?? "n/a"}; context: {candidate.ContextLength?.ToString(CultureInfo.InvariantCulture) ?? "n/a"}");
+            builder.AppendLine(CultureInfo.InvariantCulture, $"  lineage: base_models={FormatList(candidate.BaseModels)}; model_type={EmptyAsNone(candidate.ModelType)}");
+            builder.AppendLine(CultureInfo.InvariantCulture, $"  directions: {string.Join(", ", candidate.Directions)}; roles: {string.Join(", ", candidate.Roles)}");
+            builder.AppendLine(CultureInfo.InvariantCulture, $"  load: {string.Join(", ", candidate.LoadLevels)}{(candidate.LoadLevelWasInferred ? " (inferred)" : string.Empty)}; source: {candidate.Source}");
+            builder.AppendLine(CultureInfo.InvariantCulture, $"  hardware: status={candidate.Hardware.Status}; compatible={candidate.Hardware.IsCompatible?.ToString() ?? "unknown"}; estimated_q4_runtime_gb={candidate.Hardware.EstimatedQ4RuntimeGb?.ToString("0.##", CultureInfo.InvariantCulture) ?? "n/a"}; ram_gb={candidate.Hardware.AvailableRamGb:0.##}; vram_gb={candidate.Hardware.AvailableVramGb:0.##}");
+            builder.AppendLine(CultureInfo.InvariantCulture, $"  evidence: {string.Join("; ", candidate.MatchReasons)}");
+        }
+
+        foreach (var warning in result.Warnings)
+        {
+            builder.AppendLine(CultureInfo.InvariantCulture, $"Warning: {warning}");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("JSON:");
+        builder.AppendLine(JsonSerializer.Serialize(result, JsonOptions));
         return builder.ToString().Trim();
     }
 
@@ -382,6 +420,12 @@ public sealed class ToolGateway
     }
 
     private static string EmptyAsNone(string value) => string.IsNullOrWhiteSpace(value) ? "none" : value;
+
+    private static string FormatList(IEnumerable<string> values)
+    {
+        var items = values.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+        return items.Length == 0 ? "none" : string.Join(',', items);
+    }
 
     private static string LimitForToolOutput(string text, int maxLength)
     {

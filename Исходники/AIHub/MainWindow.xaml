@@ -94,6 +94,43 @@
             <Setter Property="FontSize" Value="19" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
+
+        <Style x:Key="ChoiceOptionButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="76" />
+            <Setter Property="Margin" Value="5" />
+            <Setter Property="Padding" Value="16,12" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsRecommended}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                    <Setter Property="BorderThickness" Value="2" />
+                    <Setter Property="Background" Value="{DynamicResource StepBadgeBrush}" />
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentDarkBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid>
@@ -1105,12 +1142,12 @@
 
                         <StackPanel>
                             <TextBlock x:Name="ReasoningModeTitleText"
-                                       Text="Рассуждение / изучение"
+                                       Text="Режим неопределенности"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="20"
                                        FontWeight="SemiBold" />
                             <TextBlock x:Name="ReasoningModeDescriptionText"
-                                       Text="Разобрать тему, задать вопросы, изучить материалы, вести рабочий диалог и сохранять результаты."
+                                       Text="Пройти короткие шаги выбора, собрать карточку задачи и понять, какая модель нужна дальше."
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="14"
                                        LineHeight="22"
@@ -1193,6 +1230,214 @@
                         Content="Назад"
                         Style="{StaticResource SecondaryButtonStyle}"
                         Click="BackFromWorkStartButton_Click" />
+            </StackPanel>
+        </Grid>
+
+        <Grid x:Name="ChoiceScenarioPage"
+              Grid.Row="1"
+              Margin="56,34,56,26"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="14" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock x:Name="ChoiceScenarioTitleText"
+                           Text="Режим неопределенности"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           FontSize="32"
+                           FontWeight="SemiBold" />
+                <TextBlock x:Name="ChoiceScenarioDescriptionText"
+                           Text="AI HUB проведёт по коротким шагам, соберёт карточку задачи и предложит исполнителя."
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           FontSize="15"
+                           LineHeight="24"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0" />
+            </StackPanel>
+
+            <Viewbox Grid.Row="2"
+                     Stretch="Uniform"
+                     StretchDirection="DownOnly"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center">
+                <StackPanel Width="960">
+                    <Border Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="22"
+                            Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock x:Name="ChoiceScenarioQuestionText"
+                                       Text="К чему ближе вопрос?"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="22"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="ChoiceScenarioStatusText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       LineHeight="21"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,14" />
+
+                            <Border x:Name="ChoiceScenarioCoreThoughtPanel"
+                                    Background="{DynamicResource StepBadgeBrush}"
+                                    BorderBrush="{DynamicResource LineBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="12"
+                                    Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock x:Name="ChoiceScenarioCoreThoughtTitleText"
+                                               Text="Мысль ядра"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="13"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock x:Name="ChoiceScenarioCoreThoughtText"
+                                               Text="Сначала определим крупную область вопроса, а потом сузим направление."
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontSize="13"
+                                               LineHeight="21"
+                                               TextWrapping="Wrap"
+                                               Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <ItemsControl x:Name="ChoiceOptionsItemsControl">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="2" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource ChoiceOptionButtonStyle}"
+                                                Tag="{Binding}"
+                                                ToolTip="{Binding RecommendationReason}"
+                                                Opacity="0"
+                                                Click="ChoiceOptionButton_Click">
+                                            <Button.RenderTransform>
+                                                <TranslateTransform Y="8" />
+                                            </Button.RenderTransform>
+                                            <Button.Triggers>
+                                                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                                                    <BeginStoryboard>
+                                                        <Storyboard>
+                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                             To="1"
+                                                                             Duration="0:0:0.18" />
+                                                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                                             To="0"
+                                                                             Duration="0:0:0.18" />
+                                                        </Storyboard>
+                                                    </BeginStoryboard>
+                                                </EventTrigger>
+                                            </Button.Triggers>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding Description}"
+                                                           FontSize="12"
+                                                           LineHeight="17"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,6,0,0" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Button x:Name="ChoiceCustomOptionButton"
+                                    Content="Свой вариант"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    MinWidth="260"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="5"
+                                    Click="ChoiceCustomOptionButton_Click" />
+                            <Button x:Name="ChoiceGoFinalButton"
+                                    Content="Перейти к финалу"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    MinWidth="260"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="5"
+                                    Click="ChoiceGoFinalButton_Click" />
+
+                            <StackPanel x:Name="ChoiceCustomInputPanel"
+                                        Visibility="Collapsed"
+                                        Margin="5,14,5,0">
+                                <TextBlock x:Name="ChoiceCustomInputHelpText"
+                                           Text="Коротко, 1-3 слова. Например: Смена работы."
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12"
+                                           Margin="0,0,0,6" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ChoiceCustomInput"
+                                             Height="36"
+                                             MaxLength="48"
+                                             VerticalContentAlignment="Center" />
+                                    <Button x:Name="ChoiceCustomSubmitButton"
+                                            Grid.Column="1"
+                                            Content="Принять"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Height="36"
+                                            MinWidth="110"
+                                            Margin="10,0,0,0"
+                                            Click="ChoiceCustomSubmitButton_Click" />
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border x:Name="ChoiceScenarioSummaryPanel"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="ChoiceScenarioSummaryTitleText"
+                                       Text="Карточка подготовки"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ChoiceScenarioSummaryText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       LineHeight="21"
+                                       TextWrapping="Wrap"
+                                       Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Viewbox>
+
+            <StackPanel Grid.Row="4"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button x:Name="BackFromChoiceScenarioButton"
+                        Content="Назад"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Click="BackFromChoiceScenarioButton_Click" />
+                <Button x:Name="CancelChoiceScenarioButton"
+                        Content="Отмена"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        Margin="10,0,0,0"
+                        Click="CancelChoiceScenarioButton_Click" />
             </StackPanel>
         </Grid>
 

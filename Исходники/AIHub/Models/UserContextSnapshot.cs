@@ -13,4 +13,6 @@ public sealed class UserContextSnapshot
     public string UtcOffset { get; set; } = string.Empty;
 
     public UserLocation? Location { get; set; }
+
+    public string WorkloadMode { get; set; } = UserWorkloadModes.Balanced;
 }

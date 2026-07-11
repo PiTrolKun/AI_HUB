@@ -38,11 +38,13 @@ Runtime/**
 **/AI_HUB/Diagnostics/**
 **/AI_HUB/Tasks/**
 **/AI_HUB/Tools/**
+**/AI_HUB/Scenarios/**
 
 # Generated test installers stay local
 Тесты/Установщики/*.exe
 Тесты/Установщики/*.msi
 Тесты/Установщики/*.zip
+Тесты/HuggingFaceCatalogProbe/**
 
 # Local logs and temporary files
 *.log

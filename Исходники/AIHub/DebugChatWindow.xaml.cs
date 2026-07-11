@@ -909,18 +909,11 @@ public partial class DebugChatWindow : Window
 
     private static List<StructuredToolDefinition> BuildStructuredToolDefinitions()
     {
-        return
-        [
-            CreateTool("web_search", "Search the web and return ranked candidate pages with diagnostics.", ("query", "Search query.")),
-            CreateTool("web_research", "Build several web searches, read selected pages, and return a research report.", ("task", "Research task.")),
-            CreateTool("web_read", "Read a web page and extract text plus candidate direct file URLs.", ("url", "Page URL.")),
-            CreateTool("web_download", "Download a direct public URL and save it through AI HUB.", ("url", "Direct file URL.")),
-            CreateTool("inventory", "Show installed AI HUB capabilities.", ("status", "Use 'status'.")),
-            CreateTool("task_plan", "Plan a user task and identify required AI HUB roles.", ("task", "User task.")),
-            CreateTool("session_log", "Read or search the current AI HUB debug session JSONL log.", ("request", "Use 'tail 80' or 'search text'.")),
-            CreateHfFindModelTool(),
-            CreateTool("hf_model_files", "List files in a Hugging Face model repository.", ("repo_id", "Repository id, for example nomic-ai/nomic-embed-text-v1.5-GGUF."))
-        ];
+        var tools = ScenarioToolCatalog.CreateDefinitions();
+        tools.Add(CreateTool("web_download", "Download a direct public URL and save it through AI HUB.", ("url", "Direct file URL.")));
+        tools.Add(CreateTool("task_plan", "Plan a user task and identify required AI HUB roles.", ("task", "User task.")));
+        tools.Add(CreateTool("session_log", "Read or search the current AI HUB debug session JSONL log.", ("request", "Use 'tail 80' or 'search text'.")));
+        return tools;
     }
 
     private static StructuredToolDefinition CreateTool(
@@ -956,46 +949,20 @@ public partial class DebugChatWindow : Window
         };
     }
 
-    private static StructuredToolDefinition CreateHfFindModelTool()
-    {
-        return new StructuredToolDefinition
-        {
-            Function = new StructuredToolFunction
-            {
-                Name = "hf_find_model",
-                Description = "Search Hugging Face for a model matching role, format, license, size, and query.",
-                Parameters = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["role"] = new JsonObject { ["type"] = "string", ["description"] = "Model role, for example embedding, reranker, vision, speech, core." },
-                        ["query"] = new JsonObject { ["type"] = "string", ["description"] = "Search query." },
-                        ["format"] = new JsonObject { ["type"] = "string", ["description"] = "Preferred format, for example gguf or safetensors." },
-                        ["license"] = new JsonObject { ["type"] = "string", ["description"] = "Preferred license, for example apache-2.0." },
-                        ["max_size"] = new JsonObject { ["type"] = "string", ["description"] = "Maximum file size, for example 1GB." }
-                    },
-                    ["required"] = new JsonArray("role", "query")
-                }
-            }
-        };
-    }
-
     private static string BuildCommandFromStructuredToolCall(StructuredToolCall toolCall)
     {
         var name = toolCall.Function.Name.Trim();
+        if (name is "web_search" or "web_research" or "web_read" or "inventory" or "hf_find_model" or "hf_model_files")
+        {
+            return ScenarioToolCatalog.BuildCommand(toolCall);
+        }
+
         var args = ParseToolArguments(toolCall.Function.Arguments);
         return name.ToLowerInvariant() switch
         {
-            "web_search" => "web_search: " + GetArgument(args, "query"),
-            "web_research" => "web_research: " + GetArgument(args, "task", "query"),
-            "web_read" => "web_read: " + GetArgument(args, "url"),
             "web_download" => "web_download: " + GetArgument(args, "url"),
-            "inventory" => "inventory: " + (GetArgument(args, "status", required: false) is { Length: > 0 } status ? status : "status"),
             "task_plan" => "task_plan: " + GetArgument(args, "task", "query"),
             "session_log" => "session_log: " + GetArgument(args, "request", "query"),
-            "hf_find_model" => BuildHfFindModelCommand(args),
-            "hf_model_files" => "hf_model_files: " + GetArgument(args, "repo_id", "repo"),
             _ => throw new InvalidOperationException($"Unknown structured tool call: {name}")
         };
     }
@@ -1043,27 +1010,6 @@ public partial class DebugChatWindow : Window
         }
 
         throw new InvalidOperationException($"Structured tool argument is missing: {primary}");
-    }
-
-    private static string BuildHfFindModelCommand(Dictionary<string, string> arguments)
-    {
-        var parts = new List<string>
-        {
-            "role=" + GetArgument(arguments, "role")
-        };
-        AddOptionalPart(parts, arguments, "max_size");
-        AddOptionalPart(parts, arguments, "format");
-        AddOptionalPart(parts, arguments, "license");
-        parts.Add("query=" + GetArgument(arguments, "query"));
-        return "hf_find_model: " + string.Join(' ', parts);
-    }
-
-    private static void AddOptionalPart(List<string> parts, Dictionary<string, string> arguments, string key)
-    {
-        if (arguments.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
-        {
-            parts.Add(key + "=" + value.Trim());
-        }
     }
 
     private static bool IsBlockedStructuredDownload(string command, HashSet<string> allowedDownloadUrls)

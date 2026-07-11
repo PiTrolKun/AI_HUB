@@ -2,7 +2,7 @@
 
 Этот файл фиксирует всё, что может повлиять на лицензии, поставку, безопасность и воспроизводимость проекта.
 
-Пока реальные зависимости, модели и backends не добавлены.
+Реальные зависимости, модели и backends перечислены ниже.
 
 ## Runtime-зависимости
 
@@ -20,6 +20,7 @@
 | `Запустить_AI_HUB.cmd` + `start-aihub.ps1` | Локальный запуск dev-сборки AI_HUB двойным кликом | 0.1 | GPL-3.0-or-later, как код проекта | Корень проекта | Нет | `.cmd` запускает PowerShell-скрипт, который выполняет `dotnet build` и стартует текущий Debug exe |
 | Microsoft .NET SDK | Создание, restore и build будущего C# / WPF-проекта | 10.0.300 | MIT | `Microsoft.DotNet.SDK.10`, winget / Microsoft | Да | Установлен системно; WPF smoke-test на `net10.0-windows` прошёл |
 | GitHub CLI | Авторизация и публикация проекта на GitHub | 2.93.0 | MIT | `GitHub.cli`, winget / GitHub | Нет | Установлен системно; текущая сессия вызывает `C:\Program Files\GitHub CLI\gh.exe` |
+| MSTest.Sdk | Автоматические тесты JSON-контракта и состояния сценария | 4.2.3 | MIT | NuGet `MSTest.Sdk` | Да, только для test-проекта | Developer tooling; в runtime и установщик не включается |
 
 ## Внешние инструменты
 
@@ -40,7 +41,7 @@
 | ipwho.is / ipwhois.io | Примерное автоматическое определение местоположения пользователя по IP для скрытого контекста ядра | HTTPS JSON endpoint `https://ipwho.is/?lang=ru` | Внешний сервис; free endpoint без API-ключа, указан fair-use limit 1 запрос/сек и 60 запросов/60 сек; free endpoint предназначен для non-commercial use | Официальная документация `https://ipwhois.io/documentation` | Нет, это внешний запрос; IP не сохраняется в профиле AI HUB | Использовать редко и best-effort: при отсутствии сохранённого auto-местоположения; при недоступности сервиса программа работает без местоположения; перед публичным/коммерческим релизом пересмотреть условия или заменить провайдера |
 | DuckDuckGo Lite | Первый dev-провайдер web-поиска для проверки Tool Gateway без API-ключа | HTML endpoint `https://lite.duckduckgo.com/lite/?q=...` | Внешний web-сервис; условия DuckDuckGo нужно пересмотреть перед публичным релизом | `https://lite.duckduckgo.com/lite/` | Нет, это внешний HTTPS-запрос | Используется как временный dev-провайдер; HTML-парсинг хрупкий, в будущем заменить на официальный API-провайдер или локальный SearXNG |
 | Bing HTML Search | Резервный dev-провайдер web-поиска, если DuckDuckGo вернул пустую выдачу или HTML-парсер не сработал | HTML endpoint `https://www.bing.com/search?q=...` | Внешний web-сервис; условия Microsoft/Bing нужно пересмотреть перед публичным релизом | `https://www.bing.com/search` | Нет, это внешний HTTPS-запрос | Временный fallback для разработки; HTML-парсинг хрупкий, не считать финальным поисковым API |
-| Hugging Face Hub API | Структурированный подбор моделей и файлов по repo metadata вместо HTML-поиска | REST endpoints `https://huggingface.co/api/models` и `https://huggingface.co/api/models/{repoId}?blobs=true` | Внешний web-сервис Hugging Face; условия Hub/API нужно соблюдать отдельно от лицензий конкретных моделей | `https://huggingface.co/docs/hub/api` | Нет, это внешний HTTPS-запрос | Используется для чтения публичных metadata и прямых `resolve` ссылок; перед скачиванием/поставкой каждой модели отдельно проверять лицензию, размер, назначение и ограничения |
+| Hugging Face Hub API | Структурированный подбор моделей, файлов и построение проверяемого накопительного локального каталога вместо HTML-поиска | REST endpoints `https://huggingface.co/api/models` и `https://huggingface.co/api/models/{repoId}` | Внешний web-сервис Hugging Face; условия Hub/API нужно соблюдать отдельно от лицензий конкретных моделей | `https://huggingface.co/docs/hub/api` | Нет, это внешний HTTPS-запрос | Посевной справочник находится в `Каталоги/huggingface-catalog-seed.json`; синхронизатор сохраняет raw JSON/Model Card, URL источника, SHA ревизии, SHA-256 и JSONL-журнал изменений; радар автоматически допускает только публичные модели с подтверждённым размером `>8B` и отбрасывает чистые quantized-упаковки; metadata считается данными Hub, Model Card — утверждением автора; модели-кандидаты не скачиваются и не поставляются с программой |
 
 ## AI-модели
 

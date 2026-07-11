@@ -7,16 +7,7 @@ namespace AIHub.Services;
 
 public sealed class LlamaCliRuntimeService
 {
-    private const string ReleaseFolder = "b9442";
-    private const string BackendFolder = "win-cuda-12.4-x64";
-    private const string ExecutableName = "llama-cli.exe";
-
-    public string ExpectedExecutablePath { get; } = Path.Combine(
-        AppDataPaths.BackendsDirectory,
-        "llama.cpp",
-        ReleaseFolder,
-        BackendFolder,
-        ExecutableName);
+    public string ExpectedExecutablePath { get; } = LlamaBackendPaths.CliExecutablePath;
 
     public bool IsAvailable => File.Exists(ExpectedExecutablePath);
 

@@ -32,7 +32,8 @@ $excludedDirs = New-Object "System.Collections.Generic.HashSet[string]" ([System
     ".cache",
     ".venv",
     "Runtime",
-    "Модели"
+    "Модели",
+    "Тесты"
 ) | ForEach-Object { [void]$excludedDirs.Add($_) }
 if (-not $IncludeBackups) {
     [void]$excludedDirs.Add("Backups")

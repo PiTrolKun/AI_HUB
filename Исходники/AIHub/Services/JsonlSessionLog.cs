@@ -6,7 +6,7 @@ using AIHub.Models;
 
 namespace AIHub.Services;
 
-public sealed class JsonlSessionLog : IDisposable
+public sealed class JsonlSessionLog : ISessionEventLog
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly JsonSerializerOptions JsonOptions = new()

@@ -30,6 +30,19 @@ public static class AppDataPaths
 
     public static string BackendsDirectory { get; } = Path.Combine(RuntimeDirectory, "Backends");
 
+    public static string HuggingFaceCatalogDirectory { get; } = Path.Combine(
+        RuntimeDirectory,
+        "Каталоги",
+        "HuggingFace");
+
+    public static string HuggingFaceCatalogPath { get; } = Path.Combine(
+        HuggingFaceCatalogDirectory,
+        "catalog.json");
+
+    public static string HuggingFaceCatalogSeedPath { get; } = ProjectRoot is not null
+        ? Path.Combine(ProjectRoot, "Каталоги", "huggingface-catalog-seed.json")
+        : Path.Combine(AppContext.BaseDirectory, "Catalogs", "huggingface-catalog-seed.json");
+
     public static void EnsureBaseDirectory()
     {
         Directory.CreateDirectory(BaseDirectory);
