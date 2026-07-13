@@ -12,13 +12,15 @@ public static class ChoiceModelCandidateSelector
             return false;
         }
 
-        var candidates = toolEvidence
+        var evidenceList = toolEvidence.ToList();
+        var candidates = evidenceList
             .SelectMany(evidence => evidence.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
             .Select(line => line.Trim())
             .SelectMany(ExtractCandidateNames)
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        return candidates.Contains(selectedExecutor.Trim(), StringComparer.OrdinalIgnoreCase);
+        return candidates.Contains(selectedExecutor.Trim(), StringComparer.OrdinalIgnoreCase)
+            || IsRunnableInstalledInventoryChoice(selectedExecutor.Trim(), evidenceList);
     }
 
     public static bool TryGetVerifiedParameterCount(
@@ -172,5 +174,39 @@ public static class ChoiceModelCandidateSelector
             var separator = value.IndexOf(';');
             yield return (separator >= 0 ? value[..separator] : value).Trim();
         }
+    }
+
+    public static bool IsRunnableInstalledInventoryChoice(
+        string selectedExecutor,
+        IEnumerable<string> toolEvidence)
+    {
+        foreach (var evidence in toolEvidence.Where(value =>
+                     value.Contains("Capability inventory:", StringComparison.OrdinalIgnoreCase)))
+        {
+            var lines = evidence.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+            for (var index = 0; index < lines.Length; index++)
+            {
+                var line = lines[index].Trim();
+                if (!line.StartsWith("- executor:", StringComparison.OrdinalIgnoreCase)
+                    || !line.Contains("installed=True", StringComparison.OrdinalIgnoreCase)
+                    || !line.Contains("runnable=True", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var name = lines.Skip(index + 1)
+                    .TakeWhile(value => !value.TrimStart().StartsWith("- ", StringComparison.Ordinal))
+                    .Take(4)
+                    .Select(value => value.Trim())
+                    .FirstOrDefault(value => value.StartsWith("name:", StringComparison.OrdinalIgnoreCase));
+                if (name is not null
+                    && string.Equals(name[5..].Trim(), selectedExecutor, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

@@ -28,6 +28,35 @@ public sealed class ChoiceModelCandidateSelectorTests
     }
 
     [TestMethod]
+    public void IsVerifiedChoice_AcceptsOnlyRunnableInstalledInventoryExecutor()
+    {
+        var runnable = """
+            Capability inventory:
+            - executor: installed; installed=True; runnable=True; format=gguf
+              name: local/VerifiedModel-20B-GGUF
+              path: X:\Models\verified.gguf
+            """;
+        var broken = """
+            Capability inventory:
+            - executor: runtime_incompatible; installed=True; runnable=False; format=gguf
+              name: local/BrokenModel-31B-GGUF
+            """;
+
+        Assert.IsTrue(ChoiceModelCandidateSelector.IsVerifiedChoice(
+            "local/VerifiedModel-20B-GGUF",
+            [runnable]));
+        Assert.IsFalse(ChoiceModelCandidateSelector.IsVerifiedChoice(
+            "local/BrokenModel-31B-GGUF",
+            [broken]));
+        Assert.IsTrue(ChoiceModelCandidateSelector.IsRunnableInstalledInventoryChoice(
+            "local/VerifiedModel-20B-GGUF",
+            [runnable]));
+        Assert.IsFalse(ChoiceModelCandidateSelector.IsRunnableInstalledInventoryChoice(
+            "local/BrokenModel-31B-GGUF",
+            [broken]));
+    }
+
+    [TestMethod]
     public void TryGetVerifiedParameterCount_ReadsLocalCatalogEvidence()
     {
         var evidence = """

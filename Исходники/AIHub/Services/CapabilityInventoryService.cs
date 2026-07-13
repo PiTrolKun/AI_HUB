@@ -7,6 +7,7 @@ public sealed class CapabilityInventoryService
 {
     private readonly CoreModelManager _coreModelManager = new();
     private readonly ToolModelManager _toolModelManager = new();
+    private readonly DebugModelDiscoveryService _modelDiscoveryService = new();
 
     public CapabilityInventoryResponse Create(StorageSettings storageSettings)
     {
@@ -21,12 +22,26 @@ public sealed class CapabilityInventoryService
         };
 
         items.Add(CreateRerankerItem(storageSettings));
+        items.AddRange(_modelDiscoveryService.Discover(storageSettings)
+            .Where(model => string.Equals(model.Role, "executor", StringComparison.OrdinalIgnoreCase))
+            .Select(model => new CapabilityInventoryItem
+            {
+                Role = "executor",
+                Name = model.Name,
+                Status = model.Status,
+                IsInstalled = true,
+                IsRunnable = model.IsRunnable,
+                Format = model.Format,
+                Path = model.Path,
+                Source = "executor-model.json",
+                Details = "Installed model executor available for prepared tasks."
+            }));
         items.Add(CreateMissingRole("embedding", "Embedding model", "Needed later for RAG and semantic document search."));
 
         return new CapabilityInventoryResponse
         {
             Items = items
-                .GroupBy(item => item.Role, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(item => $"{item.Role}|{item.Path}", StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .OrderByDescending(item => item.IsInstalled)
                 .ThenBy(item => item.Role, StringComparer.OrdinalIgnoreCase)

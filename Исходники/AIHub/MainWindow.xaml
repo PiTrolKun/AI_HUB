@@ -2,6 +2,7 @@
         x:Name="RootWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:AIHub.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -1542,16 +1543,247 @@
                                        Foreground="{DynamicResource TextPrimaryBrush}"
                                        FontSize="18"
                                        FontWeight="SemiBold" />
-                            <TextBlock x:Name="ChoiceScenarioSummaryText"
+                             <TextBlock x:Name="ChoiceScenarioSummaryText"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
                                        LineHeight="21"
                                        TextWrapping="Wrap"
                                        Margin="0,10,0,0" />
+                             <StackPanel x:Name="ExecutorCandidateChoicePanel"
+                                         Margin="0,14,0,0"
+                                         Visibility="Collapsed">
+                                 <TextBlock x:Name="ExecutorCandidateChoiceTitleText"
+                                            Text="Выберите исполнителя"
+                                            Foreground="{DynamicResource TextPrimaryBrush}"
+                                            FontSize="15"
+                                            FontWeight="SemiBold" />
+                                 <ItemsControl x:Name="ExecutorCandidateItemsControl"
+                                               Margin="-5,7,-5,0">
+                                     <ItemsControl.ItemsPanel>
+                                         <ItemsPanelTemplate>
+                                             <UniformGrid Columns="2" />
+                                         </ItemsPanelTemplate>
+                                     </ItemsControl.ItemsPanel>
+                                     <ItemsControl.ItemTemplate>
+                                         <DataTemplate>
+                                             <Button Style="{StaticResource ChoiceOptionButtonStyle}"
+                                                     Tag="{Binding Candidate}"
+                                                     MinHeight="170"
+                                                     VerticalContentAlignment="Top"
+                                                     Click="ExecutorCandidateButton_Click">
+                                                 <StackPanel>
+                                                     <TextBlock Text="{Binding Model}"
+                                                                FontSize="15"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                TextWrapping="Wrap" />
+                                                     <TextBlock Text="{Binding Status}"
+                                                                FontSize="12"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                TextWrapping="Wrap"
+                                                                Margin="0,6,0,0" />
+                                                     <TextBlock Text="{Binding Advantage}"
+                                                                FontSize="12"
+                                                                LineHeight="17"
+                                                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                TextWrapping="Wrap"
+                                                                Margin="0,8,0,0" />
+                                                     <TextBlock Text="{Binding Limitation}"
+                                                                FontSize="12"
+                                                                LineHeight="17"
+                                                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                TextWrapping="Wrap"
+                                                                Margin="0,5,0,0" />
+                                                     <TextBlock Text="{Binding Recommendation}"
+                                                                FontSize="12"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="{DynamicResource AccentBrush}"
+                                                                TextWrapping="Wrap"
+                                                                Margin="0,7,0,0" />
+                                                 </StackPanel>
+                                             </Button>
+                                         </DataTemplate>
+                                     </ItemsControl.ItemTemplate>
+                                 </ItemsControl>
+                             </StackPanel>
+                             <Button x:Name="ExecutorPrepareButton"
+                                    Content="Подготовить исполнителя"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="0,16,0,0"
+                                    Visibility="Collapsed"
+                                    Click="ExecutorPrepareButton_Click" />
+                            <StackPanel x:Name="ExecutorDownloadPanel"
+                                        Margin="0,16,0,0"
+                                        Visibility="Collapsed">
+                                <TextBlock x:Name="ExecutorDownloadTitleText"
+                                           Text="Требуется загрузка исполнителя"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="15"
+                                           FontWeight="SemiBold" />
+                                <TextBlock x:Name="ExecutorDownloadDetailsText"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12"
+                                           LineHeight="19"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0" />
+                                <ProgressBar x:Name="ExecutorDownloadProgressBar"
+                                             Height="8"
+                                             Minimum="0"
+                                             Maximum="100"
+                                             Margin="0,12,0,0" />
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Right"
+                                            Margin="0,12,0,0">
+                                    <Button x:Name="ExecutorCancelDownloadButton"
+                                            Content="Отмена"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Click="ExecutorCancelDownloadButton_Click" />
+                                    <Button x:Name="ExecutorConfirmDownloadButton"
+                                            Content="Скачать и запустить"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Margin="10,0,0,0"
+                                            Click="ExecutorConfirmDownloadButton_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel x:Name="ExecutorResultPanel"
+                                         Margin="0,18,0,0"
+                                         Visibility="Collapsed">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="ExecutorResultTitleText"
+                                               Text="Результат исполнителя"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="16"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal">
+                                        <Button x:Name="ExecutorVoiceToggleButton"
+                                                Content="🔊"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Width="42"
+                                                Height="34"
+                                                MinWidth="42"
+                                                Padding="0"
+                                                Click="ExecutorVoiceToggleButton_Click" />
+                                        <Button x:Name="ExecutorFinishSessionButton"
+                                                Content="Завершить сессию"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Height="34"
+                                                Margin="8,0,0,0"
+                                                Click="ExecutorFinishSessionButton_Click" />
+                                    </StackPanel>
+                                </Grid>
+                                <Border x:Name="ExecutorThoughtPanel"
+                                        Background="{DynamicResource StepBadgeBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="12"
+                                        Margin="0,10,0,0"
+                                        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <TextBlock x:Name="ExecutorThoughtTitleText"
+                                                   Text="Мысль исполнителя"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock x:Name="ExecutorThoughtText"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                                   FontSize="13"
+                                                   LineHeight="21"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,6,0,0" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock x:Name="ExecutorResultText"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="13"
+                                           LineHeight="21"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0" />
+                                <ItemsControl x:Name="ExecutorClarificationOptionsItemsControl"
+                                              Margin="0,10,0,0"
+                                              Visibility="Collapsed">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="2" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource ChoiceOptionButtonStyle}"
+                                                    Tag="{Binding}"
+                                                    Click="ExecutorClarificationOptionButton_Click">
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"
+                                                           TextWrapping="Wrap" />
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button x:Name="ExecutorCustomOptionButton"
+                                        Content="Свой вариант"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        HorizontalAlignment="Stretch"
+                                        Margin="5,8,5,0"
+                                        Visibility="Collapsed"
+                                        Click="ExecutorCustomOptionButton_Click" />
+                                <StackPanel x:Name="ExecutorCustomInputPanel"
+                                            Visibility="Collapsed"
+                                            Margin="5,10,5,0">
+                                    <TextBlock x:Name="ExecutorCustomInputHelpText"
+                                               Text="Коротко опишите свой ответ."
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontSize="12"
+                                               Margin="0,0,0,6" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="ExecutorCustomInput"
+                                                 Height="36"
+                                                 MaxLength="240"
+                                                 VerticalContentAlignment="Center" />
+                                        <Button x:Name="ExecutorCustomSubmitButton"
+                                                Grid.Column="1"
+                                                Content="Принять"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                Height="36"
+                                                MinWidth="110"
+                                                Margin="10,0,0,0"
+                                                Click="ExecutorCustomSubmitButton_Click" />
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
                 </StackPanel>
             </Viewbox>
+
+            <Border x:Name="ChoiceAiActivityPanel"
+                    Grid.Row="2"
+                    Panel.ZIndex="20"
+                    MaxWidth="960"
+                    MaxHeight="520"
+                    MinHeight="220"
+                    Margin="20,8"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    Background="#020804"
+                    BorderBrush="#238B45"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    ClipToBounds="True"
+                    Visibility="Collapsed">
+                <controls:MatrixRainControl x:Name="ChoiceMatrixRain" />
+            </Border>
 
             <StackPanel Grid.Row="4"
                         Orientation="Horizontal"

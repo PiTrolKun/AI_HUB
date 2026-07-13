@@ -40,11 +40,23 @@ public sealed class DebugModelDiscoveryService
                     models.Add(toolModel);
                 }
             }
+
+            foreach (var path in Directory.EnumerateFiles(root, "executor-model.json", SearchOption.AllDirectories))
+            {
+                var executorModel = CreateExecutorModelInfo(path);
+                if (executorModel is not null)
+                {
+                    models.Add(executorModel);
+                }
+            }
         }
 
         return models
             .GroupBy(model => model.Path, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+            .Select(group => group
+                .OrderByDescending(model => string.Equals(model.Role, "executor", StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(model => model.IsCoreModel)
+                .First())
             .OrderByDescending(model => model.IsCoreModel)
             .ThenBy(model => model.IsRunnable ? 0 : 1)
             .ThenBy(model => model.Name, StringComparer.OrdinalIgnoreCase)
@@ -112,6 +124,39 @@ public sealed class DebugModelDiscoveryService
             IsCoreModel = false,
             IsRunnable = false
         };
+    }
+
+    private static DebugModelInfo? CreateExecutorModelInfo(string manifestPath)
+    {
+        try
+        {
+            var manifest = JsonSerializer.Deserialize<ExecutorModelManifest>(File.ReadAllText(manifestPath), JsonOptions);
+            var directory = Path.GetDirectoryName(manifestPath);
+            var path = directory is null ? null : Path.Combine(directory, manifest?.File ?? string.Empty);
+            if (manifest is null
+                || path is null
+                || manifest.Status != "installed"
+                || manifest.RuntimeVerifiedAt is null
+                || !File.Exists(path))
+            {
+                return null;
+            }
+
+            return new DebugModelInfo
+            {
+                Name = string.IsNullOrWhiteSpace(manifest.RepoId) ? manifest.RequestedModel : manifest.RepoId,
+                Path = path,
+                SizeBytes = new FileInfo(path).Length,
+                Role = "executor",
+                Status = manifest.Status,
+                Format = "gguf",
+                IsRunnable = true
+            };
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static CoreModelManifest? LoadManifest(string? directory)

@@ -6,11 +6,6 @@ namespace AIHub.Services;
 
 public sealed class ChoiceScenarioService
 {
-    private static readonly HashSet<string> AllowedTools = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "web_search", "web_research", "web_read", "inventory", "model_catalog_search", "hf_find_model", "hf_model_files"
-    };
-
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -328,9 +323,6 @@ public sealed class ChoiceScenarioService
         NormalizeCard(card);
         if (string.IsNullOrWhiteSpace(card.Goal)
             || string.IsNullOrWhiteSpace(card.Area)
-            || string.IsNullOrWhiteSpace(card.RecommendedExecutor)
-            || string.IsNullOrWhiteSpace(card.ExecutorStatus)
-            || string.IsNullOrWhiteSpace(card.ExecutorReason)
             || string.IsNullOrWhiteSpace(card.PromptForExecutor))
         {
             error = "Final task card has empty required fields.";
@@ -340,48 +332,24 @@ public sealed class ChoiceScenarioService
         {
             return false;
         }
-        if (card.ExecutorRole is not ("general_worker" or "specialist_model" or "core_fallback"))
+        var selection = card.ExecutorSelection;
+        if (string.IsNullOrWhiteSpace(selection.InstalledCandidateId)
+            || string.IsNullOrWhiteSpace(selection.AlternativeCandidateId)
+            || string.IsNullOrWhiteSpace(selection.PreferredCandidateId))
         {
-            error = "executorRole must be general_worker, specialist_model, or core_fallback.";
+            error = "Final task card must select installed, alternative and preferred trusted candidate IDs.";
             return false;
         }
-        if (!ChoiceExecutorPolicy.IsKnownCapabilityClass(card.ExecutorCapabilityClass))
+        if (!string.Equals(selection.PreferredCandidateId, selection.InstalledCandidateId, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(selection.PreferredCandidateId, selection.AlternativeCandidateId, StringComparison.OrdinalIgnoreCase))
         {
-            error = "Unknown executorCapabilityClass.";
+            error = "preferredCandidateId must match installedCandidateId or alternativeCandidateId.";
             return false;
         }
-        if (LooksLikeTool(card.RecommendedExecutor))
+        if (!HasCompleteAssessment(selection.InstalledAssessment)
+            || !HasCompleteAssessment(selection.AlternativeAssessment))
         {
-            error = "recommendedExecutor must be a model, not a tool.";
-            return false;
-        }
-        if (card.RequiredTools.Any(tool => !AllowedTools.Contains(tool)))
-        {
-            error = "requiredTools contains an unavailable or forbidden tool.";
-            return false;
-        }
-        var hasWebTool = card.RequiredTools.Any(tool =>
-            tool.StartsWith("web_", StringComparison.OrdinalIgnoreCase));
-        if (card.NeedsWeb && !hasWebTool)
-        {
-            error = "needsWeb=true requires at least one web tool.";
-            return false;
-        }
-        if (!card.NeedsWeb && hasWebTool)
-        {
-            error = "needsWeb=false cannot include web tools in requiredTools.";
-            return false;
-        }
-
-        var explicitlyForbidsExternalData = card.CapabilityProfile.Dimensions.Any(dimension =>
-            string.Equals(dimension.Dimension, ChoiceDecisionDimensions.ToolRequirements, StringComparison.OrdinalIgnoreCase)
-            && dimension.Values.Any(value =>
-                string.Equals(value, "no_external_data", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "offline_only", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "local_only", StringComparison.OrdinalIgnoreCase)));
-        if (explicitlyForbidsExternalData && (card.NeedsWeb || hasWebTool))
-        {
-            error = "The capability profile forbids external data but the final card requests web access.";
+            error = "Both trusted candidate assessments require advantage, limitation and reason.";
             return false;
         }
 
@@ -491,12 +459,48 @@ public sealed class ChoiceScenarioService
         card.RecommendedExecutor ??= string.Empty;
         card.ExecutorStatus ??= string.Empty;
         card.ExecutorReason ??= string.Empty;
+        card.ExecutorCandidates ??= [];
+        foreach (var candidate in card.ExecutorCandidates)
+        {
+            NormalizeExecutorCandidate(candidate);
+        }
         card.PromptForExecutor ??= string.Empty;
         card.Criteria ??= [];
         card.Constraints ??= [];
         card.RequiredTools ??= [];
         card.CapabilityProfile ??= new ChoiceCapabilityProfile();
         card.CapabilityProfile.Dimensions ??= [];
+        card.ExecutorSelection ??= new ChoiceExecutorSelection();
+        card.ExecutorSelection.InstalledCandidateId ??= string.Empty;
+        card.ExecutorSelection.AlternativeCandidateId ??= string.Empty;
+        card.ExecutorSelection.PreferredCandidateId ??= string.Empty;
+        card.ExecutorSelection.InstalledAssessment ??= new ChoiceExecutorAssessment();
+        card.ExecutorSelection.AlternativeAssessment ??= new ChoiceExecutorAssessment();
+        NormalizeAssessment(card.ExecutorSelection.InstalledAssessment);
+        NormalizeAssessment(card.ExecutorSelection.AlternativeAssessment);
+    }
+
+    private static bool HasCompleteAssessment(ChoiceExecutorAssessment assessment) =>
+        !string.IsNullOrWhiteSpace(assessment.Advantage)
+        && !string.IsNullOrWhiteSpace(assessment.Limitation)
+        && !string.IsNullOrWhiteSpace(assessment.Reason);
+
+    private static void NormalizeAssessment(ChoiceExecutorAssessment assessment)
+    {
+        assessment.Advantage ??= string.Empty;
+        assessment.Limitation ??= string.Empty;
+        assessment.Reason ??= string.Empty;
+    }
+
+    private static void NormalizeExecutorCandidate(ChoiceExecutorCandidate candidate)
+    {
+        candidate.Model ??= string.Empty;
+        candidate.Status = candidate.Status?.Trim().ToLowerInvariant() ?? string.Empty;
+        candidate.Role = NormalizeExecutorRole(candidate.Role);
+        candidate.CapabilityClass ??= string.Empty;
+        candidate.Advantage ??= string.Empty;
+        candidate.Limitation ??= string.Empty;
+        candidate.Reason ??= string.Empty;
     }
 
     private static string NormalizeSelectionImpact(string value) => value?.Trim().ToLowerInvariant() switch

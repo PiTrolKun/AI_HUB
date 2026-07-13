@@ -6,7 +6,14 @@ public sealed record CoreSpeechRequest(
     IReadOnlyList<CoreSpeechSegment> Segments,
     string LanguageCode,
     CoreVoiceSettings Settings,
-    string Source);
+    string Source,
+    string VoiceRole = SpeechRoles.Core);
+
+public static class SpeechRoles
+{
+    public const string Core = "core";
+    public const string UncertaintyExecutor = "uncertainty_executor";
+}
 
 public sealed record CoreSpeechProgress(
     IReadOnlyDictionary<string, int> VisibleCharacters,

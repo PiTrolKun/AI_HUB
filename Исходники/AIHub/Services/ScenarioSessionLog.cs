@@ -64,6 +64,15 @@ public sealed class ScenarioSessionLog : ISessionEventLog
         return CreateInDirectory(fallbackDirectory);
     }
 
+    public static ScenarioSessionLog CreateUncertaintyExecutor(StorageSettings storageSettings)
+    {
+        var configuredRoot = GetResultsRoot(storageSettings);
+        var directory = configuredRoot is null
+            ? Path.Combine(AppDataPaths.BaseDirectory, "Scenarios", "Uncertainty", "Executors")
+            : Path.Combine(configuredRoot, "AI_HUB", "Scenarios", "Uncertainty", "Executors");
+        return CreateInDirectory(directory, "executor");
+    }
+
     public void Write(string eventType, object? payload = null)
     {
         if (_disposed)
@@ -111,10 +120,10 @@ public sealed class ScenarioSessionLog : ISessionEventLog
         _writeTask.GetAwaiter().GetResult();
     }
 
-    private static ScenarioSessionLog CreateInDirectory(string directory)
+    private static ScenarioSessionLog CreateInDirectory(string directory, string suffix = "uncertainty")
     {
         Directory.CreateDirectory(directory);
-        var filePath = SessionPathService.CreateSessionFilePath(directory, "uncertainty");
+        var filePath = SessionPathService.CreateSessionFilePath(directory, suffix);
         using (File.Open(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
         {
         }

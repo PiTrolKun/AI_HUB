@@ -7,6 +7,8 @@ public sealed class RhVoiceCoreVoiceEngine : ICoreVoiceEngine
 {
     private const string RussianVoiceName = "Aleksandr";
     private const string EnglishVoiceName = "Slt";
+    private const string ExecutorRussianVoiceName = "Elena";
+    private const string ExecutorEnglishVoiceName = "Bdl";
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _sync = new();
@@ -40,9 +42,18 @@ public sealed class RhVoiceCoreVoiceEngine : ICoreVoiceEngine
                 _activeSynthesizer = synthesizer;
             }
 
-            var voiceName = request.LanguageCode.StartsWith("en", StringComparison.OrdinalIgnoreCase)
-                ? EnglishVoiceName
-                : RussianVoiceName;
+            var isEnglish = request.LanguageCode.StartsWith("en", StringComparison.OrdinalIgnoreCase);
+            var useExecutorVoice = string.Equals(
+                request.VoiceRole,
+                SpeechRoles.UncertaintyExecutor,
+                StringComparison.OrdinalIgnoreCase);
+            var voiceName = (useExecutorVoice, isEnglish) switch
+            {
+                (true, true) => SelectAvailableVoice(ExecutorEnglishVoiceName, EnglishVoiceName),
+                (true, false) => SelectAvailableVoice(ExecutorRussianVoiceName, RussianVoiceName),
+                (false, true) => EnglishVoiceName,
+                _ => RussianVoiceName
+            };
             SelectVoice(synthesizer, voiceName);
             synthesizer.Volume = Math.Clamp(request.Settings.Volume / 2, 0, 100);
             synthesizer.Rate = Math.Clamp((request.Settings.Rate - 120) / 15, -10, 10);
@@ -171,6 +182,9 @@ public sealed class RhVoiceCoreVoiceEngine : ICoreVoiceEngine
             return false;
         }
     }
+
+    private static string SelectAvailableVoice(string preferredVoice, string fallbackVoice) =>
+        HasVoice(preferredVoice) ? preferredVoice : fallbackVoice;
 
     private static async Task RunEstimatedFallbackAsync(
         CoreSpeechComposition composition,

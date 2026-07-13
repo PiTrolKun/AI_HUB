@@ -65,7 +65,7 @@ public sealed class ChoiceScenarioServiceTests
     }
 
     [TestMethod]
-    public void TryParseStep_NormalizesSpecialistExecutorRoleAlias()
+    public void TryParseStep_AcceptsTrustedExecutorSelection()
     {
         const string json = """
             {
@@ -74,17 +74,55 @@ public sealed class ChoiceScenarioServiceTests
               "options":[],"allowCustom":false,"isFinal":true,"summaryLines":[],
               "taskCard":{
                 "goal":"Анализ данных","area":"Технологии","criteria":[],"constraints":[],
-                "needsWeb":false,"requiredTools":[],
                 "capabilityProfile":{"dimensions":[{"dimension":"task_type","status":"resolved","values":["data_analysis"],"evidence":"choice"}]},
-                "executorRole":"data_analyst","executorCapabilityClass":"above_8b",
-                "recommendedExecutor":"lab/AnalysisModel-20B","executorStatus":"not_installed",
-                "executorReason":"Подходит для анализа","promptForExecutor":"Уточни данные и проведи анализ"
+                "executorSelection":{
+                  "installedCandidateId":"installed_1","alternativeCandidateId":"alternative_1","preferredCandidateId":"alternative_1",
+                  "installedAssessment":{"advantage":"Готова сразу","limitation":"Менее специализирована","reason":"Универсальная модель"},
+                  "alternativeAssessment":{"advantage":"Лучше анализирует","limitation":"Нужна загрузка","reason":"Подходит для анализа"}
+                },
+                "promptForExecutor":"Уточни данные и проведи анализ"
               }
             }
             """;
 
         Assert.IsTrue(_service.TryParseStep(json, out var step, out var error), error);
-        Assert.AreEqual("specialist_model", step.TaskCard?.ExecutorRole);
+        Assert.AreEqual("alternative_1", step.TaskCard?.ExecutorSelection.PreferredCandidateId);
+    }
+
+    [TestMethod]
+    public void TryParseStep_RejectsPreferredCandidateOutsideTrustedPair()
+    {
+        var json = ValidFinalJson().Replace(
+            "\"preferredCandidateId\":\"alternative_1\"",
+            "\"preferredCandidateId\":\"alternative_9\"",
+            StringComparison.Ordinal);
+
+        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
+        StringAssert.Contains(error, "preferredCandidateId");
+    }
+
+    [TestMethod]
+    public void TryParseStep_RejectsMissingInstalledCandidateId()
+    {
+        var json = ValidFinalJson().Replace(
+            "\"installedCandidateId\":\"installed_1\"",
+            "\"installedCandidateId\":\"\"",
+            StringComparison.Ordinal);
+
+        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
+        StringAssert.Contains(error, "trusted candidate IDs");
+    }
+
+    [TestMethod]
+    public void TryParseStep_RejectsIncompleteCandidateAssessment()
+    {
+        var json = ValidFinalJson().Replace(
+            "\"limitation\":\"Менее специализирована\"",
+            "\"limitation\":\"\"",
+            StringComparison.Ordinal);
+
+        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
+        StringAssert.Contains(error, "assessments");
     }
 
     [TestMethod]
@@ -127,41 +165,13 @@ public sealed class ChoiceScenarioServiceTests
     }
 
     [TestMethod]
-    public void TryParseStep_RejectsToolAsExecutor()
+    public void ResponseSchema_UsesTrustedSelectionInsteadOfModelFacts()
     {
-        const string json = """
-            {
-              "stepType":"final_task_card",
-              "question":"Готово",
-              "coreThought":"Карточка подготовлена.",
-              "decisionDimension":"",
-              "selectionImpact":[],
-              "profileUpdate":[],
-              "revisitReason":"",
-              "options":[],
-              "allowCustom":false,
-              "isFinal":true,
-              "summaryLines":[],
-              "taskCard":{
-                "goal":"Сделать выбор",
-                "area":"Работа",
-                "criteria":[],
-                "constraints":[],
-                "needsWeb":true,
-                "requiredTools":["web_research"],
-                "capabilityProfile":{"dimensions":[{"dimension":"task_type","status":"resolved","values":["research"],"evidence":"choice"}]},
-                "executorRole":"general_worker",
-                "executorCapabilityClass":"above_8b",
-                "recommendedExecutor":"web_research",
-                "executorStatus":"available",
-                "executorReason":"Свежие данные",
-                "promptForExecutor":"Сравни варианты"
-              }
-            }
-            """;
+        var schema = ChoiceScenarioJsonContract.CreateResponseFormat().ToJsonString();
 
-        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
-        StringAssert.Contains(error, "not a tool");
+        StringAssert.Contains(schema, "executorSelection");
+        Assert.IsFalse(schema.Contains("executorCandidates", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("recommendedExecutor", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -242,23 +252,20 @@ public sealed class ChoiceScenarioServiceTests
     }
 
     [TestMethod]
-    public void TryParseStep_RejectsWebToolsWhenNeedsWebIsFalse()
+    public void TryParseStep_DoesNotRequireCoreToDeclareWebTools()
     {
-        var json = ValidFinalJson()
-            .Replace("\"needsWeb\":true", "\"needsWeb\":false", StringComparison.Ordinal);
-
-        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
-        StringAssert.Contains(error, "needsWeb=false");
+        Assert.IsTrue(_service.TryParseStep(ValidFinalJson(), out var step, out var error), error);
+        Assert.IsFalse(step.TaskCard?.NeedsWeb);
+        Assert.AreEqual(0, step.TaskCard?.RequiredTools.Count);
     }
 
     [TestMethod]
-    public void TryParseStep_RejectsWebWhenProfileForbidsExternalData()
+    public void TryParseStep_AcceptsOfflineCapabilityWithoutTechnicalFields()
     {
         var json = ValidFinalJson()
             .Replace("[\"research\"]", "[\"no_external_data\"]", StringComparison.Ordinal);
 
-        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
-        StringAssert.Contains(error, "forbids external data");
+        Assert.IsTrue(_service.TryParseStep(json, out _, out var error), error);
     }
 
     [TestMethod]
@@ -340,14 +347,16 @@ public sealed class ChoiceScenarioServiceTests
           "options":[],"allowCustom":false,"isFinal":true,"summaryLines":[],
           "taskCard":{
             "goal":"Исследовать вопрос","area":"Знания","criteria":[],"constraints":[],
-            "needsWeb":true,"requiredTools":["web_research"],
             "capabilityProfile":{"dimensions":[
               {"dimension":"task_type","status":"resolved","values":["research"],"evidence":"choice"},
               {"dimension":"tool_requirements","status":"resolved","values":["research"],"evidence":"choice"}
             ]},
-            "executorRole":"general_worker","executorCapabilityClass":"above_8b",
-            "recommendedExecutor":"lab/ResearchModel-20B","executorStatus":"not_installed",
-            "executorReason":"Подходит для исследования","promptForExecutor":"Проведи исследование"
+            "executorSelection":{
+              "installedCandidateId":"installed_1","alternativeCandidateId":"alternative_1","preferredCandidateId":"alternative_1",
+              "installedAssessment":{"advantage":"Готова сразу","limitation":"Менее специализирована","reason":"Универсальная модель"},
+              "alternativeAssessment":{"advantage":"Лучше исследует","limitation":"Нужна загрузка","reason":"Подходит для исследования"}
+            },
+            "promptForExecutor":"Проведи исследование"
           }
         }
         """;

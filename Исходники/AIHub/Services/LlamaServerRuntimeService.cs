@@ -15,7 +15,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
 {
     private readonly HttpClient _httpClient = new()
     {
-        Timeout = TimeSpan.FromSeconds(120)
+        Timeout = Timeout.InfiniteTimeSpan
     };
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -129,7 +129,8 @@ public sealed class LlamaServerRuntimeService : IDisposable
         Action<string> log,
         CancellationToken cancellationToken,
         CoreInteractionMode interactionMode = CoreInteractionMode.StructuredToolAgent,
-        string? requiredToolName = null)
+        string? requiredToolName = null,
+        IProgress<ModelStreamChunk>? streamProgress = null)
     {
         await EnsureStartedAsync(model, log, cancellationToken);
 
@@ -139,7 +140,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
             Tools = tools.ToList(),
             ToolChoice = CreateToolChoice(requiredToolName),
             Temperature = 0.2,
-            Stream = false
+            Stream = streamProgress is not null
         };
 
         var json = JsonSerializer.Serialize(request, _jsonOptions);
@@ -151,10 +152,12 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
-            stream,
-            _jsonOptions,
-            cancellationToken);
+        if (streamProgress is not null)
+        {
+            return await OpenAiSseStreamParser.ReadAsync(stream, streamProgress, cancellationToken);
+        }
+
+        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(stream, _jsonOptions, cancellationToken);
 
         var choice = completion?.Choices.FirstOrDefault();
         var message = choice?.Message;
@@ -164,6 +167,88 @@ public sealed class LlamaServerRuntimeService : IDisposable
             FinishReason = choice?.FinishReason ?? string.Empty,
             ToolCalls = message?.ToolCalls ?? []
         };
+    }
+
+    public async Task<string> GenerateExecutorAsync(
+        DebugModelInfo model,
+        string systemPrompt,
+        string userPrompt,
+        Action<string> log,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+        var request = new ChatCompletionRequest
+        {
+            Messages =
+            [
+                new ChatMessage { Role = "system", Content = systemPrompt },
+                new ChatMessage { Role = "user", Content = userPrompt }
+            ],
+            Temperature = 0.2,
+            Stream = true
+        };
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync($"{Endpoint}/v1/chat/completions", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var result = await OpenAiSseStreamParser.ReadAsync(stream, streamProgress, cancellationToken);
+        return result.Content;
+    }
+
+    public async Task<StructuredChatResult> GenerateExternalWithToolsAsync(
+        DebugModelInfo model,
+        string systemPrompt,
+        IReadOnlyList<StructuredChatMessage> messages,
+        IReadOnlyList<StructuredToolDefinition> tools,
+        Action<string> log,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken,
+        JsonObject? responseFormat = null)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+        var request = new ChatCompletionRequest
+        {
+            Messages =
+            [
+                new ChatMessage { Role = "system", Content = systemPrompt },
+                .. messages.Select(message => new ChatMessage
+                {
+                    Role = message.Role,
+                    Content = message.Content,
+                    Name = message.Name,
+                    ToolCallId = message.ToolCallId,
+                    ToolCalls = message.ToolCalls
+                })
+            ],
+            Tools = tools.Count == 0 ? null : tools.ToList(),
+            ToolChoice = tools.Count == 0 ? null : JsonValue.Create("auto"),
+            ResponseFormat = responseFormat,
+            Temperature = 0.2,
+            Stream = true
+        };
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync($"{Endpoint}/v1/chat/completions", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await OpenAiSseStreamParser.ReadAsync(stream, streamProgress, cancellationToken);
+    }
+
+    public async Task ProbeModelAsync(
+        DebugModelInfo model,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EnsureStartedAsync(model, log, cancellationToken);
+        }
+        finally
+        {
+            Stop();
+        }
     }
 
     public void Stop()
@@ -220,6 +305,23 @@ public sealed class LlamaServerRuntimeService : IDisposable
         }
 
         Stop();
+        StartProcess(model, gpuLayers: 99, log);
+        try
+        {
+            await WaitForHealthAsync(log, cancellationToken);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException
+                                   && !cancellationToken.IsCancellationRequested)
+        {
+            log($"Full GPU model startup failed ({ex.Message}). Retrying with CPU/RAM fallback.");
+            Stop();
+            StartProcess(model, gpuLayers: 0, log);
+            await WaitForHealthAsync(log, cancellationToken);
+        }
+    }
+
+    private void StartProcess(DebugModelInfo model, int gpuLayers, Action<string> log)
+    {
         _port = FindFreeLoopbackPort();
         _currentModelPath = model.Path;
 
@@ -244,24 +346,22 @@ public sealed class LlamaServerRuntimeService : IDisposable
         AddArgument(startInfo, "--ctx-size");
         AddArgument(startInfo, CoreContextRuntimeLimits.CurrentBackendContextLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
         AddArgument(startInfo, "--n-gpu-layers");
-        AddArgument(startInfo, "99");
+        AddArgument(startInfo, gpuLayers.ToString(System.Globalization.CultureInfo.InvariantCulture));
         AddArgument(startInfo, "--jinja");
         AddArgument(startInfo, "--reasoning");
         AddArgument(startInfo, "off");
         AddArgument(startInfo, "--no-webui");
 
         _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
-        log($"Starting llama-server: {Path.GetFileName(model.Path)} on {Endpoint}");
+        log($"Starting llama-server: {Path.GetFileName(model.Path)} on {Endpoint}; gpu-layers={gpuLayers}");
         _process.Start();
         _ = PumpOutputAsync(_process.StandardOutput, log);
         _ = PumpOutputAsync(_process.StandardError, log);
-
-        await WaitForHealthAsync(log, cancellationToken);
     }
 
     private async Task WaitForHealthAsync(Action<string> log, CancellationToken cancellationToken)
     {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(90);
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(5);
         while (DateTimeOffset.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();

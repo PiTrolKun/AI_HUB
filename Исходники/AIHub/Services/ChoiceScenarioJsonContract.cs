@@ -79,24 +79,44 @@ public static class ChoiceScenarioJsonContract
             ["area"] = String(),
             ["criteria"] = StringArray(),
             ["constraints"] = StringArray(),
-            ["needsWeb"] = Boolean(),
-            ["requiredTools"] = new JsonObject
-            {
-                ["type"] = "array",
-                ["items"] = StringEnum("web_search", "web_research", "web_read", "inventory", "model_catalog_search", "hf_find_model", "hf_model_files")
-            },
             ["capabilityProfile"] = CreateCapabilityProfileSchema(),
-            ["executorRole"] = StringEnum("general_worker", "specialist_model", "core_fallback"),
-            ["executorCapabilityClass"] = StringEnum(
-                ChoiceExecutorPolicy.Above8B,
-                ChoiceExecutorPolicy.EightBOrLess,
-                ChoiceExecutorPolicy.NonLlmSpecialist),
-            ["recommendedExecutor"] = String(),
-            ["executorStatus"] = String(),
-            ["executorReason"] = String(),
+            ["executorSelection"] = CreateExecutorSelectionSchema(),
             ["promptForExecutor"] = String()
         },
-        ["required"] = new JsonArray("goal", "area", "criteria", "constraints", "needsWeb", "requiredTools", "capabilityProfile", "executorRole", "executorCapabilityClass", "recommendedExecutor", "executorStatus", "executorReason", "promptForExecutor")
+        ["required"] = new JsonArray("goal", "area", "criteria", "constraints", "capabilityProfile", "executorSelection", "promptForExecutor")
+    };
+
+    private static JsonObject CreateExecutorSelectionSchema() => new()
+    {
+        ["type"] = "object",
+        ["additionalProperties"] = false,
+        ["properties"] = new JsonObject
+        {
+            ["installedCandidateId"] = String(),
+            ["alternativeCandidateId"] = String(),
+            ["preferredCandidateId"] = String(),
+            ["installedAssessment"] = CreateExecutorAssessmentSchema(),
+            ["alternativeAssessment"] = CreateExecutorAssessmentSchema()
+        },
+        ["required"] = new JsonArray(
+            "installedCandidateId",
+            "alternativeCandidateId",
+            "preferredCandidateId",
+            "installedAssessment",
+            "alternativeAssessment")
+    };
+
+    private static JsonObject CreateExecutorAssessmentSchema() => new()
+    {
+        ["type"] = "object",
+        ["additionalProperties"] = false,
+        ["properties"] = new JsonObject
+        {
+            ["advantage"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 },
+            ["limitation"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 },
+            ["reason"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 }
+        },
+        ["required"] = new JsonArray("advantage", "limitation", "reason")
     };
 
     private static JsonObject CreateCapabilityProfileSchema() => new()

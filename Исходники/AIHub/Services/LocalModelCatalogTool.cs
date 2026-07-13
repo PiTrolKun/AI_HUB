@@ -72,7 +72,7 @@ public sealed class LocalModelCatalogTool
         var scored = eligible
             .Select(record => new
             {
-                Scored = Score(record, request),
+                Scored = Score(record, request, enforceDirectionMatch: true),
                 Hardware = ModelHardwareCompatibilityService.Assess(record.Entry.ParameterCount, passport, request.LoadLevel)
             })
             .Where(item => item.Scored.IsEligible)
@@ -103,6 +103,42 @@ public sealed class LocalModelCatalogTool
             .Take(request.Limit)
             .Select(item => item.Candidate)
             .ToList();
+
+        if (ranked.Count == 0 && request.Directions.Count > 0)
+        {
+            var broadened = eligible
+                .Select(record => new
+                {
+                    Scored = Score(record, request, enforceDirectionMatch: false),
+                    Hardware = ModelHardwareCompatibilityService.Assess(record.Entry.ParameterCount, passport, request.LoadLevel)
+                })
+                .Where(item => item.Scored.IsEligible && item.Hardware.IsCompatible != false)
+                .Select(item => new
+                {
+                    item.Scored,
+                    item.Hardware,
+                    Candidate = CreateCandidate(
+                        item.Scored.Record,
+                        item.Scored.Reasons,
+                        request.LoadLevel,
+                        item.Hardware)
+                })
+                .Where(item => ChoiceExecutorPolicy.IsCandidateLineageAllowed(item.Candidate, currentCoreName))
+                .OrderByDescending(item => item.Scored.Score)
+                .ThenByDescending(item => item.Scored.Record.LastSuccessfulCheckUtc ?? DateTimeOffset.MinValue)
+                .ThenByDescending(item => item.Scored.Record.Entry.Likes ?? 0)
+                .ThenByDescending(item => item.Scored.Record.Entry.Downloads ?? 0)
+                .ThenBy(item => item.Scored.Record.Entry.RepoId, StringComparer.OrdinalIgnoreCase)
+                .Take(request.Limit)
+                .Select(item => item.Candidate)
+                .ToList();
+            if (broadened.Count > 0)
+            {
+                ranked = broadened;
+                response.Warnings.Add(
+                    "The exact catalog direction was empty, so the program returned a broader capability-matched candidate set. The core still chooses the executor.");
+            }
+        }
 
         response.Candidates = ranked;
         response.RequiresLiveSearch = ranked.Count == 0;
@@ -149,7 +185,10 @@ public sealed class LocalModelCatalogTool
         return request;
     }
 
-    private static ScoredRecord Score(HuggingFaceCatalogRecord record, ModelCatalogSearchRequest request)
+    private static ScoredRecord Score(
+        HuggingFaceCatalogRecord record,
+        ModelCatalogSearchRequest request,
+        bool enforceDirectionMatch)
     {
         var reasons = new List<string>();
         var score = 0d;
@@ -160,7 +199,7 @@ public sealed class LocalModelCatalogTool
         var directionMatches = request.Directions
             .Where(direction => directions.Contains(direction, StringComparer.OrdinalIgnoreCase))
             .ToList();
-        if (request.Directions.Count > 0 && directionMatches.Count == 0)
+        if (enforceDirectionMatch && request.Directions.Count > 0 && directionMatches.Count == 0)
         {
             return new ScoredRecord(record, false, 0, reasons);
         }
@@ -181,6 +220,15 @@ public sealed class LocalModelCatalogTool
 
             score += inferred ? 18 : 30;
             reasons.Add($"load: {request.LoadLevel}" + (inferred ? " (inferred)" : string.Empty));
+        }
+        if (!string.Equals(request.LoadLevel, "light", StringComparison.OrdinalIgnoreCase)
+            && record.Entry.ParameterCount is <= 8_000_000_000)
+        {
+            return new ScoredRecord(record, false, 0, reasons);
+        }
+        if (!enforceDirectionMatch && request.Directions.Count > 0 && directionMatches.Count == 0)
+        {
+            reasons.Add("broadened beyond exact direction");
         }
 
         var searchable = string.Join(' ', new[]

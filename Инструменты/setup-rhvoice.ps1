@@ -15,6 +15,16 @@ $packages = @(
         Name = 'RHVoice-voice-English-Slt-v4.1.2017.22-setup.exe'
         Url = 'https://github.com/RHVoice/slt-eng/releases/download/4.1/RHVoice-voice-English-Slt-v4.1.2017.22-setup.exe'
         Sha256 = 'BB7198123FBD29E45BCFB08A4C3C7783360BAF5B04DB1D6D18CC20C834DFA962'
+    },
+    @{
+        Name = 'RHVoice-voice-Russian-Elena-v4.3.2017.22-setup.exe'
+        Url = 'https://github.com/RHVoice/elena-rus/releases/download/v4.3/RHVoice-voice-Russian-Elena-v4.3.2017.22-setup.exe'
+        Sha256 = '23E1301869E842F8F91FE64CC34533F9996724EC609962A24E6D5DEE7828B643'
+    },
+    @{
+        Name = 'RHVoice-voice-English-Bdl-v4.1.2017.22-setup.exe'
+        Url = 'https://github.com/RHVoice/bdl-eng/releases/download/4.1/RHVoice-voice-English-Bdl-v4.1.2017.22-setup.exe'
+        Sha256 = 'F9C51B0ED0C63E8DF1F9CD7C29D9F076220451B8A4EFAD822E03FFBA07ED4847'
     }
 )
 
@@ -43,10 +53,10 @@ for ($index = 0; $index -lt $sapi.GetVoices().Count; $index++) {
     $installed += $sapi.GetVoices().Item($index).GetDescription()
 }
 
-foreach ($required in @('Aleksandr', 'Slt')) {
+foreach ($required in @('Aleksandr', 'Slt', 'Elena', 'Bdl')) {
     if ($installed -notcontains $required) {
         throw "RHVoice setup completed, but SAPI voice '$required' is not available."
     }
 }
 
-Write-Host 'RHVoice is ready: Aleksandr (Russian) and Slt (English).'
+Write-Host 'RHVoice is ready: core Aleksandr/Slt and uncertainty executor Elena/Bdl.'

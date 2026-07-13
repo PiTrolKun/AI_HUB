@@ -43,37 +43,38 @@ public sealed class HuggingFaceProviderTool
             MaxSizeBytes = maxSizeBytes
         };
 
-        var searchUri = new Uri($"https://huggingface.co/api/models?search={Uri.EscapeDataString(query)}&limit=10&full=true&config=false");
-        using var request = new HttpRequestMessage(HttpMethod.Get, searchUri);
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
-        using var searchResponse = await _httpClient.SendAsync(request, cancellationToken);
-        searchResponse.EnsureSuccessStatusCode();
-
-        var json = await searchResponse.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(json);
-        foreach (var model in document.RootElement.EnumerateArray())
+        response.Candidates = await SearchCandidatesAsync(
+            query,
+            format,
+            license,
+            maxSizeBytes,
+            cancellationToken);
+        if (!string.IsNullOrWhiteSpace(format))
         {
-            var repoId = ReadString(model, "id");
-            if (string.IsNullOrWhiteSpace(repoId))
+            response.Candidates = response.Candidates
+                .Where(candidate => candidate.Files.Count > 0)
+                .ToList();
+        }
+
+        var fallbackQuery = BuildDefaultQuery(role, format);
+        if (response.Candidates.Count == 0
+            && !string.Equals(query, fallbackQuery, StringComparison.OrdinalIgnoreCase))
+        {
+            response.Warnings.Add(
+                $"The literal query '{query}' returned no runnable {format} artifacts; a broad model-repository fallback was used.");
+            response.Query = fallbackQuery;
+            response.Candidates = await SearchCandidatesAsync(
+                fallbackQuery,
+                format,
+                license,
+                maxSizeBytes,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(format))
             {
-                continue;
+                response.Candidates = response.Candidates
+                    .Where(candidate => candidate.Files.Count > 0)
+                    .ToList();
             }
-
-            var candidate = CreateCandidateFromSearch(model);
-            await EnrichFilesAsync(candidate, format, maxSizeBytes, cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(license)
-                && !string.Equals(candidate.License, license, StringComparison.OrdinalIgnoreCase))
-            {
-                candidate.Warnings.Add($"License differs from requested: {candidate.License}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(format) && candidate.Files.Count == 0)
-            {
-                candidate.Warnings.Add($"No matching {format} files found in repository metadata.");
-            }
-
-            response.Candidates.Add(candidate);
         }
 
         response.Candidates = response.Candidates
@@ -183,10 +184,57 @@ public sealed class HuggingFaceProviderTool
         }
 
         candidate.Files = files
-            .OrderBy(file => file.SizeBytes ?? long.MaxValue)
+            .Where(file => !file.FileName.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)
+                || (!file.FileName.Contains("-of-", StringComparison.OrdinalIgnoreCase)
+                    && !ExecutorModelArtifactResolver.IsAuxiliaryFile(file.FileName)
+                    && ExecutorModelArtifactResolver.IsPlausibleMainWeight(repoId, repoId, file)))
+            .OrderBy(file => file.FileName.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)
+                ? ExecutorModelArtifactResolver.QuantizationRank(file.FileName)
+                : int.MaxValue)
+            .ThenBy(file => file.SizeBytes ?? long.MaxValue)
             .ThenBy(file => file.FileName, StringComparer.OrdinalIgnoreCase)
             .Take(10)
             .ToList();
+    }
+
+    private async Task<List<HuggingFaceModelCandidate>> SearchCandidatesAsync(
+        string query,
+        string format,
+        string license,
+        long? maxSizeBytes,
+        CancellationToken cancellationToken)
+    {
+        var candidates = new List<HuggingFaceModelCandidate>();
+        var searchUri = new Uri($"https://huggingface.co/api/models?search={Uri.EscapeDataString(query)}&limit=10&full=true&config=false");
+        using var request = new HttpRequestMessage(HttpMethod.Get, searchUri);
+        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        using var searchResponse = await _httpClient.SendAsync(request, cancellationToken);
+        searchResponse.EnsureSuccessStatusCode();
+        var json = await searchResponse.Content.ReadAsStringAsync(cancellationToken);
+        using var document = JsonDocument.Parse(json);
+        foreach (var model in document.RootElement.EnumerateArray())
+        {
+            if (string.IsNullOrWhiteSpace(ReadString(model, "id")))
+            {
+                continue;
+            }
+
+            var candidate = CreateCandidateFromSearch(model);
+            await EnrichFilesAsync(candidate, format, maxSizeBytes, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(license)
+                && !string.Equals(candidate.License, license, StringComparison.OrdinalIgnoreCase))
+            {
+                candidate.Warnings.Add($"License differs from requested: {candidate.License}");
+            }
+            if (!string.IsNullOrWhiteSpace(format) && candidate.Files.Count == 0)
+            {
+                candidate.Warnings.Add($"No matching {format} files found in repository metadata.");
+            }
+
+            candidates.Add(candidate);
+        }
+
+        return candidates;
     }
 
     private static HuggingFaceModelCandidate CreateCandidateFromSearch(JsonElement model)
@@ -211,11 +259,15 @@ public sealed class HuggingFaceProviderTool
         {
             "embedding" => "embedding text retrieval",
             "reranker" => "reranker cross encoder",
-            "core" => "instruction gguf qwen",
-            _ => role
+            "core" => "instruct GGUF",
+            "general" or "general_worker" or "specialist_model" => "GGUF",
+            _ => string.IsNullOrWhiteSpace(role) ? "GGUF" : role
         };
 
-        return string.IsNullOrWhiteSpace(format) ? baseQuery : baseQuery + " " + format;
+        return string.IsNullOrWhiteSpace(format)
+            || baseQuery.Contains(format, StringComparison.OrdinalIgnoreCase)
+                ? baseQuery
+                : baseQuery + " " + format;
     }
 
     private static Dictionary<string, string> ParseOptions(string argument)

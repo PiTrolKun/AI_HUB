@@ -21,7 +21,10 @@ public sealed class CoreSpeechPresentationCoordinator(ICoreVoiceEngine engine) :
     {
         var presentationId = Interlocked.Increment(ref _nextPresentationId);
         var stopwatch = Stopwatch.StartNew();
-        sessionLog?.Write("core_voice_prepare_started", new
+        var eventPrefix = string.Equals(request.VoiceRole, SpeechRoles.Core, StringComparison.OrdinalIgnoreCase)
+            ? "core_voice"
+            : "executor_voice";
+        sessionLog?.Write(eventPrefix + "_prepare_started", new
         {
             PresentationId = presentationId,
             request.Source,
@@ -32,7 +35,7 @@ public sealed class CoreSpeechPresentationCoordinator(ICoreVoiceEngine engine) :
         try
         {
             var result = await _engine.SpeakAsync(request, progress, cancellationToken).ConfigureAwait(false);
-            sessionLog?.Write(result.Skipped ? "core_voice_skipped" : "core_voice_completed", new
+            sessionLog?.Write(result.Skipped ? eventPrefix + "_skipped" : eventPrefix + "_completed", new
             {
                 PresentationId = presentationId,
                 request.Source,
@@ -44,7 +47,7 @@ public sealed class CoreSpeechPresentationCoordinator(ICoreVoiceEngine engine) :
         }
         catch (CoreVoiceException ex)
         {
-            sessionLog?.Write("core_voice_failed", new
+            sessionLog?.Write(eventPrefix + "_failed", new
             {
                 PresentationId = presentationId,
                 request.Source,
@@ -56,7 +59,7 @@ public sealed class CoreSpeechPresentationCoordinator(ICoreVoiceEngine engine) :
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
-            sessionLog?.Write("core_voice_failed", new
+            sessionLog?.Write(eventPrefix + "_failed", new
             {
                 PresentationId = presentationId,
                 request.Source,

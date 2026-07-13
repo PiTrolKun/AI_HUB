@@ -68,6 +68,40 @@ public sealed class LocalModelCatalogToolTests
     }
 
     [TestMethod]
+    public async Task Search_BroadensUnknownDirectionWithoutSelectingWinner()
+    {
+        var root = CreateTemporaryDirectory();
+        try
+        {
+            var catalogPath = Path.Combine(root, "catalog.json");
+            await WriteCatalogAsync(catalogPath, 3);
+            var tool = new LocalModelCatalogTool(
+                catalogPath,
+                computerPassport: ModelHardwareCompatibilityTests.CreatePassport());
+
+            var result = tool.Search("""
+                {
+                  "directions": ["atypical_user_direction"],
+                  "taskType": "analysis",
+                  "requiredCapabilities": ["reasoning"],
+                  "loadLevel": "optimal",
+                  "limit": 3
+                }
+                """);
+
+            Assert.AreEqual("ready", result.Status);
+            Assert.AreEqual(3, result.Candidates.Count);
+            Assert.IsFalse(result.RequiresLiveSearch);
+            Assert.IsTrue(result.Warnings.Any(value => value.Contains("broader", StringComparison.OrdinalIgnoreCase)));
+            Assert.IsTrue(result.Candidates.All(candidate => candidate.ParameterCount > 8_000_000_000));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [TestMethod]
     public void ScenarioToolCatalog_BuildsIndependentCatalogCommand()
     {
         var call = new StructuredToolCall
