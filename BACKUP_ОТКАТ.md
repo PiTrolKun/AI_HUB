@@ -3118,3 +3118,6 @@
 - Пользовательский файл `Данные_для_внедрения\Фото\I want to believe llm.png` не включать в commit.
 - Финальные проверки: restore, Debug/Release build без предупреждений, Debug/Release tests `119/119`, format, UTF-8 scanner `257` файлов, локализации `551/551`, `git diff --check`, NuGet vulnerability check без известных проблем.
 - Установщик не пересобирался, модели не скачивались, UI автоматически не управлялся.
+- Основной коммит закрытия: `121908a` (`Add session file manifests`).
+- Push выполнен успешно: `origin/main` обновлён с `7db6089` до `121908a`, включая накопленные локальные коммиты.
+- Перед записью результата публикации создан backup `H:\AI_HUB\Backups\20260723_2323_record_file_manifest_publication`.
