@@ -40,6 +40,8 @@ public static class ExecutorResultParser
             parsed.Thought = parsed.Thought.Trim();
             parsed.Question = parsed.Question.Trim();
             parsed.CurrentResultSummary = ExecutorResultSummaryPolicy.Clamp(parsed.CurrentResultSummary);
+            parsed.WorkingResultFragment = ExecutorWorkingResultPolicy.Clamp(parsed.WorkingResultFragment);
+            parsed.CompletionReason = parsed.CompletionReason.Trim();
             parsed.Result = parsed.Result.Trim();
             parsed.Options = NormalizeList(parsed.Options, 6);
             parsed.RequestedTools = NormalizeList(parsed.RequestedTools, 6);
@@ -64,6 +66,11 @@ public static class ExecutorResultParser
                     ExecutorTurnActions.AskUser => !string.IsNullOrWhiteSpace(parsed.Question)
                         && (parsed.Options.Count > 0 || parsed.AllowCustom),
                     ExecutorTurnActions.RequestTool => parsed.RequestedTools.Count > 0,
+                    ExecutorTurnActions.SuggestFinalization =>
+                        parsed.CanFinalize
+                        &&
+                        !string.IsNullOrWhiteSpace(parsed.CompletionReason)
+                        && !string.IsNullOrWhiteSpace(parsed.CurrentResultSummary),
                     _ => false
                 },
                 ExecutorTurnStatuses.StageReady => !string.IsNullOrWhiteSpace(parsed.StageSummary)
@@ -73,7 +80,7 @@ public static class ExecutorResultParser
                     && !string.IsNullOrWhiteSpace(parsed.Thought),
                 _ => false
             };
-            if (!valid)
+            if (!valid || !ExecutorTurnSemanticPolicy.IsAllowed(parsed))
             {
                 return false;
             }
@@ -88,6 +95,12 @@ public static class ExecutorResultParser
             if (parsed.Status == ExecutorTurnStatuses.StageReady)
             {
                 parsed.Options.Clear();
+            }
+            else if (parsed.Action == ExecutorTurnActions.SuggestFinalization)
+            {
+                parsed.Question = string.Empty;
+                parsed.Options.Clear();
+                parsed.AllowCustom = false;
             }
 
             result = parsed;
@@ -116,6 +129,8 @@ public static class ExecutorResultParser
             "await_user" => ExecutorTurnActions.AskUser,
             "confirm" => ExecutorTurnActions.ConfirmBrief,
             "tool" => ExecutorTurnActions.RequestTool,
+            "suggest_finish" => ExecutorTurnActions.SuggestFinalization,
+            "ready_for_finalization" => ExecutorTurnActions.SuggestFinalization,
             var value => value
         };
         if (normalized == ExecutorTurnActions.AskUser

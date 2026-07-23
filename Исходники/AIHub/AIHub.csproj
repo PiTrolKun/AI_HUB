@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageReference Include="System.Speech" Version="10.0.9" />
   </ItemGroup>
 
@@ -29,18 +30,13 @@
     <Content Include="Tools\*.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\Каталоги\huggingface-catalog-seed.json"
-             Link="Catalogs\huggingface-catalog-seed.json">
+    <Content Include="..\..\Каталоги\huggingface-catalog-seed.json" Link="Catalogs\huggingface-catalog-seed.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\libespeak-ng.dll"
-             Link="VoiceRuntime\eSpeakNG\libespeak-ng.dll"
-             Condition="Exists('..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\libespeak-ng.dll')">
+    <Content Include="..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\libespeak-ng.dll" Link="VoiceRuntime\eSpeakNG\libespeak-ng.dll" Condition="Exists('..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\libespeak-ng.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\espeak-ng-data\**\*"
-             Link="VoiceRuntime\eSpeakNG\espeak-ng-data\%(RecursiveDir)%(Filename)%(Extension)"
-             Condition="Exists('..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\espeak-ng-data')">
+    <Content Include="..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\espeak-ng-data\**\*" Link="VoiceRuntime\eSpeakNG\espeak-ng-data\%(RecursiveDir)%(Filename)%(Extension)" Condition="Exists('..\..\Runtime\Voice\eSpeakNG\1.52.0\extracted\eSpeak NG\espeak-ng-data')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="..\..\LICENSE" Link="LICENSE">

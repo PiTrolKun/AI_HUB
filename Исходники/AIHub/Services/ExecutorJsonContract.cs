@@ -29,6 +29,7 @@ public static class ExecutorJsonContract
                             "ask_user",
                             "confirm_brief",
                             "request_tool",
+                            "suggest_finalization",
                             "blocked")
                     },
                     ["stageSummary"] = StringSchema(),
@@ -46,6 +47,13 @@ public static class ExecutorJsonContract
                         ["type"] = "string",
                         ["maxLength"] = ExecutorResultSummaryPolicy.MaximumCharacters
                     },
+                    ["workingResultFragment"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["maxLength"] = ExecutorWorkingResultPolicy.MaximumCharacters
+                    },
+                    ["canFinalize"] = new JsonObject { ["type"] = "boolean" },
+                    ["completionReason"] = StringSchema(),
                     ["requestedTools"] = StringArraySchema(),
                     ["missingCriticalInputs"] = StringArraySchema(),
                     ["assumptions"] = StringArraySchema(),
@@ -62,6 +70,9 @@ public static class ExecutorJsonContract
                     "options",
                     "allowCustom",
                     "currentResultSummary",
+                    "workingResultFragment",
+                    "canFinalize",
+                    "completionReason",
                     "requestedTools",
                     "missingCriticalInputs",
                     "assumptions",

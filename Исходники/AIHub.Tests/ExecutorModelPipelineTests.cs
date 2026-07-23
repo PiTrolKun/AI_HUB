@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using AIHub.Models;
@@ -140,6 +141,7 @@ public sealed class ExecutorModelPipelineTests
               "options":["Деловой","Нейтральный","Реши самостоятельно"],
               "allowCustom":true,
               "currentResultSummary":"Сейчас доступен нейтральный черновик рекомендации с двумя основными вариантами.",
+              "workingResultFragment":"Первый вариант снижает стоимость запуска, а второй даёт больше возможностей для будущего расширения.",
               "requestedTools":[],
               "missingCriticalInputs":[],
               "assumptions":[],
@@ -154,6 +156,7 @@ public sealed class ExecutorModelPipelineTests
         Assert.IsTrue(parsed);
         Assert.AreEqual(ExecutorTurnActions.AskUser, turn.Action);
         StringAssert.Contains(turn.CurrentResultSummary, "нейтральный черновик");
+        StringAssert.Contains(turn.WorkingResultFragment, "Первый вариант");
         Assert.IsTrue(turn.AllowCustom);
     }
 
@@ -254,9 +257,280 @@ public sealed class ExecutorModelPipelineTests
         var schema = ExecutorJsonContract.CreateResponseFormat().ToJsonString();
 
         StringAssert.Contains(schema, "currentResultSummary");
+        StringAssert.Contains(schema, "workingResultFragment");
+        StringAssert.Contains(schema, "canFinalize");
+        StringAssert.Contains(schema, "completionReason");
+        StringAssert.Contains(schema, ExecutorTurnActions.SuggestFinalization);
         Assert.IsFalse(schema.Contains("continue_work", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("present_result", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("result_ready", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ResultParser_AcceptsNonTerminalFinalizationSuggestion()
+    {
+        const string response = """
+            {
+              "status":"working",
+              "action":"suggest_finalization",
+              "stageId":"practical_clarification",
+              "stageSummary":"Все существенные требования подтверждены.",
+              "thought":"Проверяю полноту результата.",
+              "question":"",
+              "options":[],
+              "allowCustom":false,
+              "currentResultSummary":"Собран содержательный ответ с учётом выбранных ограничений.",
+              "workingResultFragment":"Сравнение вариантов завершено, риски и практические шаги включены в рабочий результат.",
+              "canFinalize":true,
+              "completionReason":"Критических пробелов больше нет.",
+              "requestedTools":[],
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(ExecutorTurnActions.SuggestFinalization, turn.Action);
+        Assert.AreEqual(0, turn.Options.Count);
+        Assert.IsFalse(turn.AllowCustom);
+        Assert.IsTrue(turn.CanFinalize);
+        StringAssert.Contains(turn.CompletionReason, "Критических пробелов");
+    }
+
+    [TestMethod]
+    public void ResultParser_AcceptsOptionalQuestionWhenCurrentResultIsUsable()
+    {
+        const string response = """
+            {
+              "status":"working",
+              "action":"ask_user",
+              "stageId":"practical_clarification",
+              "stageSummary":"Основной разбор завершён.",
+              "thought":"Предлагаю необязательное практическое дополнение.",
+              "question":"Добавить краткие практические советы?",
+              "options":["Да, добавить","Нет, оставить как есть"],
+              "allowCustom":true,
+              "currentResultSummary":"Готов научный разбор вопроса с основными выводами и оговорками.",
+              "workingResultFragment":"Основные тезисы разобраны, альтернативные объяснения сопоставлены, а итоговый вывод уже сформулирован.",
+              "canFinalize":true,
+              "completionReason":"Текущий ответ уже самодостаточен; следующий вопрос касается только необязательного дополнения.",
+              "requestedTools":[],
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(ExecutorTurnActions.AskUser, turn.Action);
+        Assert.IsTrue(turn.CanFinalize);
+        Assert.AreEqual(2, turn.Options.Count);
+        StringAssert.Contains(turn.CompletionReason, "самодостаточен");
+    }
+
+    [TestMethod]
+    public void ResultParser_RejectsReadinessWithoutReason()
+    {
+        const string response = """
+            {
+              "status":"working",
+              "action":"ask_user",
+              "stageId":"practical_clarification",
+              "stageSummary":"Основной разбор завершён.",
+              "thought":"Проверяю необязательное дополнение.",
+              "question":"Добавить пример?",
+              "options":["Да","Нет"],
+              "allowCustom":true,
+              "currentResultSummary":"Доступен самодостаточный рабочий результат.",
+              "workingResultFragment":"Ключевые выводы уже раскрыты и подкреплены содержательными аргументами.",
+              "canFinalize":true,
+              "completionReason":"",
+              "requestedTools":[],
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out _);
+
+        Assert.IsFalse(parsed);
+    }
+
+    [TestMethod]
+    public void TurnSemanticPolicy_RejectsProgramCommandsAsAnswers()
+    {
+        var turn = new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            Question = "Как продолжить?",
+            Options = ["Сохранить результат", "Уточнить аудиторию"]
+        };
+
+        Assert.IsFalse(ExecutorTurnSemanticPolicy.IsAllowed(turn));
+    }
+
+    [TestMethod]
+    public void DocxExporter_WritesReadableOpenXmlPackage()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "aihub-docx-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "result.docx");
+        try
+        {
+            ExecutorDocxExporter.Export(
+                new ExecutorResultSnapshot
+                {
+                    Version = 1,
+                    IsFinal = true,
+                    Markdown = """
+                        # Итоговый результат
+
+                        Проверяемый текст документа.
+
+                        - Первый пункт
+                        - Второй пункт
+                        """
+                },
+                path);
+
+            Assert.IsTrue(File.Exists(path));
+            using var archive = ZipFile.OpenRead(path);
+            Assert.IsNotNull(archive.GetEntry("[Content_Types].xml"));
+            var documentEntry = archive.GetEntry("word/document.xml");
+            Assert.IsNotNull(documentEntry);
+            using var reader = new StreamReader(documentEntry.Open());
+            var documentXml = reader.ReadToEnd();
+            StringAssert.Contains(documentXml, "Итоговый результат");
+            StringAssert.Contains(documentXml, "Проверяемый текст документа");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void WorkingResultPolicy_DistinguishesAnswerFromFuturePlan()
+    {
+        Assert.IsFalse(ExecutorWorkingResultPolicy.IsSubstantive(
+            "Формируется обзор, который будет включать сравнение основных подходов и выводы."));
+        Assert.IsTrue(ExecutorWorkingResultPolicy.IsSubstantive(
+            "Радиопоиск остаётся основным методом SETI: он проверяет узкие диапазоны на искусственные сигналы, но результат зависит от времени наблюдения."));
+        Assert.IsTrue(ExecutorWorkingResultPolicy.LooksLikeTaskSpecification(
+            "# Техническое задание: обзор теорий\n\nНужно написать статью."));
+        Assert.IsTrue(ExecutorWorkingResultPolicy.TaskSpecificationWasRequested(
+            "Пользователь просит создать техническое задание для статьи."));
+    }
+
+    [TestMethod]
+    public void SessionKnowledgeTree_RecordsSelectedAndInactiveBranches()
+    {
+        var tree = new SessionKnowledgeTree();
+        tree.Initialize(new ExecutorHandoffPackage
+        {
+            SuggestedDirection = "Исследование",
+            Goal = "Сравнить подходы",
+            LanguageCode = "ru"
+        });
+        tree.RecordTurn(new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            StageId = ExecutorStageIds.TaskDefinition,
+            StageSummary = "Нужно определить аудиторию.",
+            Question = "Для кого готовится материал?",
+            Options = ["Новички", "Специалисты", "Широкая аудитория"],
+            AllowCustom = true
+        });
+
+        tree.RecordAnswer("Специалисты");
+        var snapshot = tree.GetSnapshot();
+        var question = snapshot.Nodes.Single(node =>
+            node.Type == SessionKnowledgeNodeTypes.OpenQuestion
+            && node.Content == "Для кого готовится материал?");
+        var branches = snapshot.Nodes
+            .Where(node => node.ParentId == question.Id)
+            .ToList();
+
+        Assert.IsTrue(question.IsResolved);
+        Assert.AreEqual(3, branches.Count);
+        Assert.AreEqual(1, branches.Count(node => node.IsActive));
+        Assert.AreEqual("Специалисты", branches.Single(node => node.IsActive).Content);
+        Assert.AreEqual(2, branches.Count(node => !node.IsActive));
+        StringAssert.Contains(tree.BuildModelContext(), "Специалисты");
+        Assert.IsFalse(tree.BuildModelContext().Contains("Новички", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void SessionKnowledgeTree_StoresSubstantiveResultFragments()
+    {
+        var tree = new SessionKnowledgeTree();
+        tree.Initialize(new ExecutorHandoffPackage
+        {
+            SuggestedDirection = "Исследование",
+            LanguageCode = "ru"
+        });
+        tree.RecordTurn(new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            StageId = ExecutorStageIds.PracticalClarification,
+            StageSummary = "Формат подтверждён.",
+            Question = "Нужны ли примеры?",
+            Options = ["Да", "Нет"],
+            CurrentResultSummary = "Доступен первый вывод о сравнении методов.",
+            WorkingResultFragment = "Метод A быстрее на малых данных, тогда как метод B устойчивее при росте объёма."
+        });
+
+        var snapshot = tree.GetSnapshot();
+
+        Assert.IsTrue(snapshot.Nodes.Any(node =>
+            node.Type == SessionKnowledgeNodeTypes.ResultFragment
+            && !node.IsStructural
+            && node.Content.Contains("Метод A", StringComparison.Ordinal)));
+        StringAssert.Contains(tree.BuildModelContext(), "Метод A");
+    }
+
+    [TestMethod]
+    public void SessionTreeLayout_CollapseRemovesDescendants()
+    {
+        var tree = new SessionKnowledgeTree();
+        tree.Initialize(new ExecutorHandoffPackage { LanguageCode = "ru" });
+        tree.RecordTurn(new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            StageId = ExecutorStageIds.TaskDefinition,
+            Question = "Какой формат?",
+            Options = ["Статья", "Список"],
+            AllowCustom = true
+        });
+        tree.RecordAnswer("Статья");
+        var snapshot = tree.GetSnapshot();
+        var question = snapshot.Nodes.Single(node => node.Content == "Какой формат?");
+        var full = SessionTreeLayoutEngine.Calculate(snapshot);
+        var collapsed = SessionTreeLayoutEngine.Calculate(
+            snapshot,
+            new HashSet<string>(StringComparer.Ordinal) { question.Id });
+
+        Assert.IsTrue(full.Nodes.Count > collapsed.Nodes.Count);
+        Assert.IsTrue(full.Width >= SessionTreeLayoutEngine.CardWidth);
+        Assert.IsTrue(full.Height >= SessionTreeLayoutEngine.CardHeight);
     }
 
     [TestMethod]

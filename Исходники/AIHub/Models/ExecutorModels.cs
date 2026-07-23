@@ -92,6 +92,7 @@ public static class ExecutorTurnActions
     public const string AskUser = "ask_user";
     public const string ConfirmBrief = "confirm_brief";
     public const string RequestTool = "request_tool";
+    public const string SuggestFinalization = "suggest_finalization";
     public const string Blocked = "blocked";
 }
 
@@ -106,6 +107,9 @@ public sealed class ExecutorTurnResult
     public List<string> Options { get; set; } = [];
     public bool AllowCustom { get; set; } = true;
     public string CurrentResultSummary { get; set; } = string.Empty;
+    public string WorkingResultFragment { get; set; } = string.Empty;
+    public bool CanFinalize { get; set; }
+    public string CompletionReason { get; set; } = string.Empty;
     public List<string> RequestedTools { get; set; } = [];
     public List<string> MissingCriticalInputs { get; set; } = [];
     public List<string> Assumptions { get; set; } = [];
@@ -122,5 +126,6 @@ public sealed class ExecutorResultSnapshot
     public string StageId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Markdown { get; set; } = string.Empty;
+    public bool IsFinal { get; set; }
     public string DisplayName => $"v{Version} - {Title}";
 }

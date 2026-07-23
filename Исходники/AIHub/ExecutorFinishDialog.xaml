@@ -1,0 +1,121 @@
+<Window x:Class="AIHub.ExecutorFinishDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="600"
+        Height="390"
+        MinWidth="520"
+        MinHeight="350"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#111827"
+        Icon="Assets/AppIcon.ico"
+        FontFamily="Segoe UI Variable Display, Segoe UI"
+        UseLayoutRounding="True">
+    <Window.Resources>
+        <Style x:Key="DialogButtonStyle"
+               TargetType="Button">
+            <Setter Property="MinHeight" Value="48" />
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="Background" Value="#172033" />
+            <Setter Property="BorderBrush" Value="#657086" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver"
+                                     Value="True">
+                                <Setter TargetName="Border"
+                                        Property="BorderBrush"
+                                        Value="#2F6DF6" />
+                            </Trigger>
+                            <Trigger Property="IsPressed"
+                                     Value="True">
+                                <Setter TargetName="Border"
+                                        Property="Opacity"
+                                        Value="0.82" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryDialogButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource DialogButtonStyle}">
+            <Setter Property="Background" Value="#2F6DF6" />
+            <Setter Property="BorderBrush" Value="#2F6DF6" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock x:Name="HeadingText"
+                       Foreground="#F8FAFC"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap" />
+            <TextBlock x:Name="DescriptionText"
+                       Foreground="#AAB4C4"
+                       FontSize="13"
+                       LineHeight="20"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+        </StackPanel>
+
+        <Grid Grid.Row="1"
+              Margin="0,24,0,20">
+            <StackPanel x:Name="FinishChoicePanel"
+                        VerticalAlignment="Center">
+                <Button x:Name="GenerateResultButton"
+                        Style="{StaticResource PrimaryDialogButtonStyle}"
+                        Click="GenerateResultButton_Click" />
+                <Button x:Name="FinishWithoutResultButton"
+                        Style="{StaticResource DialogButtonStyle}"
+                        Margin="0,12,0,0"
+                        Click="FinishWithoutResultButton_Click" />
+            </StackPanel>
+
+            <StackPanel x:Name="OutputChoicePanel"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                <Button x:Name="ShowInAppButton"
+                        Style="{StaticResource PrimaryDialogButtonStyle}"
+                        Click="ShowInAppButton_Click" />
+                <Button x:Name="ExportDocxButton"
+                        Style="{StaticResource DialogButtonStyle}"
+                        Margin="0,12,0,0"
+                        Click="ExportDocxButton_Click" />
+            </StackPanel>
+        </Grid>
+
+        <Button x:Name="BackButton"
+                Grid.Row="2"
+                Style="{StaticResource DialogButtonStyle}"
+                HorizontalAlignment="Right"
+                MinWidth="120"
+                IsCancel="True"
+                Click="BackButton_Click" />
+    </Grid>
+</Window>

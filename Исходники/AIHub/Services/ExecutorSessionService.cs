@@ -13,6 +13,7 @@ public sealed class ExecutorSessionService : IDisposable
     private readonly ToolGateway _toolGateway = new();
     private readonly List<StructuredChatMessage> _messages = [];
     private readonly List<ExecutorResultSnapshot> _snapshots = [];
+    private readonly SessionKnowledgeTree _knowledgeTree = new();
     private DebugModelInfo? _model;
     private string _systemPrompt = string.Empty;
     private string _languageCode = "ru";
@@ -21,6 +22,7 @@ public sealed class ExecutorSessionService : IDisposable
     private ISessionEventLog? _sessionLog;
     private ExecutorTurnResult? _lastTurn;
     private string _currentStageId = ExecutorStageIds.TaskDefinition;
+    private string _confirmedBriefCheckpoint = string.Empty;
     private bool _briefConfirmed;
     private int _snapshotVersion;
     private bool _disposed;
@@ -28,6 +30,7 @@ public sealed class ExecutorSessionService : IDisposable
     public ExecutorSessionService(UserContextService userContextService)
     {
         _runtime = new LlamaServerRuntimeService(userContextService);
+        _knowledgeTree.Changed += KnowledgeTree_Changed;
     }
 
     public string CurrentStageId => _currentStageId;
@@ -37,6 +40,8 @@ public sealed class ExecutorSessionService : IDisposable
     public bool BriefConfirmed => _briefConfirmed;
 
     public IReadOnlyList<ExecutorResultSnapshot> Snapshots => _snapshots;
+
+    public SessionKnowledgeTree KnowledgeTree => _knowledgeTree;
 
     public async Task<ExecutorTurnResult> ExecuteAsync(
         ExecutorModelArtifact artifact,
@@ -66,7 +71,9 @@ public sealed class ExecutorSessionService : IDisposable
         _languageCode = handoff.LanguageCode;
         _storageSettings = storageSettings;
         _sessionLog = sessionLog;
+        _knowledgeTree.Initialize(handoff);
         _currentStageId = ExecutorStageIds.TaskDefinition;
+        _confirmedBriefCheckpoint = string.Empty;
         _lastTurn = null;
         _briefConfirmed = false;
         _snapshotVersion = 0;
@@ -75,7 +82,10 @@ public sealed class ExecutorSessionService : IDisposable
         _messages.Add(new StructuredChatMessage
         {
             Role = "user",
-            Content = BuildUserPrompt(handoff, _currentStageId)
+            Content = string.Join(
+                Environment.NewLine,
+                BuildUserPrompt(handoff, _currentStageId),
+                BuildTreeContextMessage())
         });
         sessionLog.Write("executor_session_start", new
         {
@@ -105,6 +115,7 @@ public sealed class ExecutorSessionService : IDisposable
             throw new InvalidOperationException("Executor session has not been started.");
         }
 
+        _knowledgeTree.RecordAnswer(userResponse);
         var responseMessageIndex = _messages.Count;
         _messages.Add(new StructuredChatMessage
         {
@@ -115,8 +126,9 @@ public sealed class ExecutorSessionService : IDisposable
                 $"Current stage: {_currentStageId}",
                 "User selected or entered this response:",
                 userResponse.Trim(),
+                BuildTreeContextMessage(),
                 _briefConfirmed
-                    ? "Use this answer to improve the current result summary, then ask exactly one next useful practical question."
+                    ? "Use this answer to add a substantive workingResultFragment, improve currentResultSummary, then ask exactly one next useful practical question."
                     : "Use this answer only to improve the technical task definition.",
                 "Do not change stages. Do not create a full result unless AI HUB sends a separate result snapshot request.")
         });
@@ -159,7 +171,9 @@ public sealed class ExecutorSessionService : IDisposable
         }
 
         var checkpoint = BuildStageCheckpoint(_lastTurn);
+        _confirmedBriefCheckpoint = checkpoint;
         _briefConfirmed = true;
+        _knowledgeTree.RecordBriefConfirmation(checkpoint);
         _sessionLog!.Write("executor_brief_confirmed", new
         {
             Stage = _currentStageId,
@@ -177,6 +191,7 @@ public sealed class ExecutorSessionService : IDisposable
         catch
         {
             _briefConfirmed = false;
+            _confirmedBriefCheckpoint = string.Empty;
             _sessionLog.Write("executor_brief_confirmation_rolled_back", new
             {
                 Stage = _currentStageId
@@ -230,7 +245,8 @@ public sealed class ExecutorSessionService : IDisposable
                 $"Current stage: {_currentStageId}",
                 $"Enabled safe tools: {string.Join(", ", enabled.Select(tool => tool.Function.Name))}.",
                 "Use a tool only when it is genuinely required.",
-                "After tool use, update currentResultSummary and return exactly one practical question to the user.")
+                BuildTreeContextMessage(),
+                "After tool use, add a substantive workingResultFragment, update currentResultSummary and return exactly one practical question to the user.")
         });
         try
         {
@@ -275,7 +291,8 @@ public sealed class ExecutorSessionService : IDisposable
                 $"The user confirmed the technical brief. AI HUB moved the session from {previousStageId} to {targetStageId}.",
                 $"Previous stage checkpoint: {checkpoint}",
                 BuildStageInstruction(targetStageId),
-                "Ask the first practical question and create the first compact currentResultSummary.",
+                BuildTreeContextMessage(),
+                "Create the first substantive workingResultFragment, derive a compact currentResultSummary from actual answer content, and ask the first practical question.",
                 "This is the final persistent stage. Never request another stage change.")
         };
         _messages.Add(controlMessage);
@@ -309,7 +326,18 @@ public sealed class ExecutorSessionService : IDisposable
         }
     }
 
-    public async Task<ExecutorResultSnapshot> CreateResultSnapshotAsync(
+    public Task<ExecutorResultSnapshot> CreateResultSnapshotAsync(
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken) =>
+        CreateResultDocumentAsync(isFinal: false, streamProgress, cancellationToken);
+
+    public Task<ExecutorResultSnapshot> CreateFinalResultAsync(
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken) =>
+        CreateResultDocumentAsync(isFinal: true, streamProgress, cancellationToken);
+
+    private async Task<ExecutorResultSnapshot> CreateResultDocumentAsync(
+        bool isFinal,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
@@ -327,11 +355,21 @@ public sealed class ExecutorSessionService : IDisposable
             Role = "user",
             Content = string.Join(
                 Environment.NewLine,
-                "[AI_HUB_RESULT_SNAPSHOT_REQUEST]",
+                isFinal
+                    ? "[AI_HUB_FINAL_RESULT_REQUEST]"
+                    : "[AI_HUB_RESULT_SNAPSHOT_REQUEST]",
                 $"Current stage: {_currentStageId}",
                 $"Latest compact available result: {_lastTurn?.CurrentResultSummary ?? string.Empty}",
-                "Create the best useful full document available right now from all confirmed data and current work.",
+                BuildTreeContextMessage(),
+                isFinal
+                    ? "Create the complete final artifact from the confirmed active branch and all useful current work."
+                    : "Execute the confirmed user task now and create the requested artifact itself from all confirmed data and current work.",
+                "If the user requested an article, write the article. If the user requested a comparison, provide the comparison. If the user requested an answer, answer it.",
+                "Never substitute a technical brief, task specification, content plan, outline, writing instructions or a promise of future work unless that is exactly what the user requested.",
                 "Include important assumptions, limitations and sources when present.",
+                isFinal
+                    ? "Resolve available fragments into one coherent detailed document. Do not mention saving, exporting, snapshots, session controls or future refinement."
+                    : "This is an on-demand preliminary version. Keep it useful even if some details remain open.",
                 "Do not ask a question, do not end the session and do not describe future work.",
                 "Return Markdown only. Start with one level-one heading.")
         };
@@ -346,23 +384,67 @@ public sealed class ExecutorSessionService : IDisposable
             })
             .Append(request)
             .ToList();
-        sessionLog.Write("executor_snapshot_requested", new
+        sessionLog.Write(
+            isFinal
+                ? "executor_final_result_requested"
+                : "executor_snapshot_requested",
+            new
+            {
+                Stage = _currentStageId,
+                NextVersion = _snapshotVersion + 1
+            });
+        var markdown = string.Empty;
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            Stage = _currentStageId,
-            NextVersion = _snapshotVersion + 1
-        });
-        var response = await _runtime.GenerateExternalWithToolsAsync(
-            model,
-            BuildSnapshotSystemPrompt(_languageCode),
-            snapshotMessages,
-            [],
-            message => sessionLog.Write("executor_runtime", new { Message = message }),
-            streamProgress,
-            cancellationToken);
-        var markdown = response.Content.Trim();
+            var response = await _runtime.GenerateExternalWithToolsAsync(
+                model,
+                isFinal
+                    ? BuildFinalResultSystemPrompt(_languageCode)
+                    : BuildSnapshotSystemPrompt(_languageCode),
+                snapshotMessages,
+                [],
+                message => sessionLog.Write("executor_runtime", new { Message = message }),
+                streamProgress,
+                cancellationToken);
+            markdown = response.Content.Trim();
+            var specificationWasRequested =
+                ExecutorWorkingResultPolicy.TaskSpecificationWasRequested(_confirmedBriefCheckpoint);
+            if (!ExecutorWorkingResultPolicy.LooksLikeTaskSpecification(markdown)
+                || specificationWasRequested)
+            {
+                break;
+            }
+
+            sessionLog.Write("executor_snapshot_semantic_repair_requested", new
+            {
+                Attempt = attempt,
+                Stage = _currentStageId
+            });
+            snapshotMessages.Add(new StructuredChatMessage
+            {
+                Role = "assistant",
+                Content = markdown
+            });
+            snapshotMessages.Add(new StructuredChatMessage
+            {
+                Role = "user",
+                Content = string.Join(
+                    Environment.NewLine,
+                    "[AI_HUB_RESULT_SEMANTIC_REPAIR]",
+                    "The previous document was rejected because it described a technical brief, plan or instructions instead of performing the confirmed task.",
+                    "Produce the requested artifact itself now. Preserve confirmed constraints, but do not describe them as a task specification.")
+            });
+        }
+
         if (string.IsNullOrWhiteSpace(markdown))
         {
             throw new InvalidOperationException("Executor returned an empty result snapshot.");
+        }
+
+        if (ExecutorWorkingResultPolicy.LooksLikeTaskSpecification(markdown)
+            && !ExecutorWorkingResultPolicy.TaskSpecificationWasRequested(_confirmedBriefCheckpoint))
+        {
+            throw new InvalidOperationException("Executor returned a task specification instead of the requested result.");
         }
 
         var version = ++_snapshotVersion;
@@ -373,7 +455,8 @@ public sealed class ExecutorSessionService : IDisposable
             CreatedAt = DateTimeOffset.Now,
             StageId = _currentStageId,
             Title = ExtractSnapshotTitle(markdown, version, _languageCode),
-            Markdown = markdown
+            Markdown = markdown,
+            IsFinal = isFinal
         };
         _snapshots.Add(snapshot);
         _messages.Add(request);
@@ -382,10 +465,17 @@ public sealed class ExecutorSessionService : IDisposable
             Role = "assistant",
             Content = string.Join(
                 Environment.NewLine,
-                $"[AI_HUB_RESULT_SNAPSHOT id={snapshot.Id} version={snapshot.Version}]",
+                isFinal
+                    ? $"[AI_HUB_FINAL_RESULT id={snapshot.Id} version={snapshot.Version}]"
+                    : $"[AI_HUB_RESULT_SNAPSHOT id={snapshot.Id} version={snapshot.Version}]",
                 snapshot.Markdown)
         });
-        sessionLog.Write("executor_snapshot_saved", snapshot);
+        sessionLog.Write(
+            isFinal
+                ? "executor_final_result_saved"
+                : "executor_snapshot_saved",
+            snapshot);
+        _knowledgeTree.RecordSnapshot(snapshot);
         return snapshot;
     }
 
@@ -408,9 +498,11 @@ public sealed class ExecutorSessionService : IDisposable
             Options = [],
             AllowCustom = true,
             CurrentResultSummary = _lastTurn?.CurrentResultSummary ?? string.Empty,
+            WorkingResultFragment = string.Empty,
             Warnings = [reason]
         };
         _lastTurn = turn;
+        _knowledgeTree.RecordTurn(turn);
         _sessionLog?.Write("executor_safety_pause", new
         {
             Stage = _currentStageId,
@@ -534,8 +626,35 @@ public sealed class ExecutorSessionService : IDisposable
     {
         turn.StageId = _currentStageId;
         turn.CurrentResultSummary = ExecutorResultSummaryPolicy.Clamp(turn.CurrentResultSummary);
+        turn.WorkingResultFragment = ExecutorWorkingResultPolicy.Clamp(turn.WorkingResultFragment);
+        if (_briefConfirmed
+            && ExecutorWorkingResultPolicy.LooksLikeMetaDescription(turn.CurrentResultSummary)
+            && ExecutorWorkingResultPolicy.IsSubstantive(turn.WorkingResultFragment))
+        {
+            turn.CurrentResultSummary = ExecutorResultSummaryPolicy.Clamp(turn.WorkingResultFragment);
+            sessionLog.Write("executor_result_summary_replaced_from_fragment", new
+            {
+                Stage = _currentStageId
+            });
+        }
+
         _lastTurn = turn;
+        _knowledgeTree.RecordTurn(turn);
         sessionLog.Write(eventType, turn);
+        if (turn.CanFinalize)
+        {
+            sessionLog.Write(
+                turn.Action == ExecutorTurnActions.SuggestFinalization
+                    ? "executor_finalization_suggested"
+                    : "executor_finalization_available",
+                new
+                {
+                    Stage = _currentStageId,
+                    turn.Action,
+                    turn.CompletionReason
+                });
+        }
+
         if (!string.IsNullOrWhiteSpace(turn.CurrentResultSummary))
         {
             sessionLog.Write("executor_result_summary_updated", new
@@ -562,8 +681,9 @@ public sealed class ExecutorSessionService : IDisposable
             return _currentStageId == ExecutorStageIds.TaskDefinition
                 && turn.Status is ExecutorTurnStatuses.Working
                     or ExecutorTurnStatuses.Blocked
-                && turn.Action is ExecutorTurnActions.AskUser
-                    or ExecutorTurnActions.Blocked;
+                && (turn.Action is ExecutorTurnActions.AskUser
+                    or ExecutorTurnActions.Blocked)
+                && !turn.CanFinalize;
         }
 
         if (_currentStageId != ExecutorStageIds.PracticalClarification
@@ -578,10 +698,21 @@ public sealed class ExecutorSessionService : IDisposable
                 && turn.RequestedTools.Count > 0;
         }
 
+        if (turn.Action == ExecutorTurnActions.SuggestFinalization)
+        {
+            return turn.Status == ExecutorTurnStatuses.Working
+                && turn.CanFinalize
+                && !string.IsNullOrWhiteSpace(turn.CompletionReason)
+                && !string.IsNullOrWhiteSpace(turn.CurrentResultSummary)
+                && ExecutorWorkingResultPolicy.IsSubstantive(turn.WorkingResultFragment)
+                && turn.MissingCriticalInputs.Count == 0;
+        }
+
         if (turn.Action == ExecutorTurnActions.AskUser)
         {
             return turn.Status == ExecutorTurnStatuses.Working
-                && !string.IsNullOrWhiteSpace(turn.CurrentResultSummary);
+                && !string.IsNullOrWhiteSpace(turn.CurrentResultSummary)
+                && ExecutorWorkingResultPolicy.IsSubstantive(turn.WorkingResultFragment);
         }
 
         return turn.Status == ExecutorTurnStatuses.Blocked
@@ -623,7 +754,7 @@ public sealed class ExecutorSessionService : IDisposable
                 "Create a compact, factual execution checkpoint.",
                 $"The current user-controlled stage is {_currentStageId}; do not change it.",
                 $"The task brief is {(_briefConfirmed ? "confirmed" : "not confirmed")}.",
-                "Preserve the goal, decisions, confirmed data, evidence, sources, tool results, full result snapshots, current result versions, the latest currentResultSummary, unfinished questions and risks.",
+                "Preserve the goal, decisions, confirmed data, evidence, sources, tool results, workingResultFragment values, full result snapshots, current result versions, the latest currentResultSummary, unfinished questions and risks.",
                 "Keep provisional core hypotheses marked as provisional. Do not solve the task again."),
             transcript,
             message => sessionLog.Write("executor_runtime", new { Message = message }),
@@ -640,6 +771,7 @@ public sealed class ExecutorSessionService : IDisposable
                 BuildStageInstruction(_currentStageId),
                 $"The task brief is {(_briefConfirmed ? "confirmed" : "not confirmed")}.",
                 $"Latest compact available result: {_lastTurn?.CurrentResultSummary ?? string.Empty}",
+                BuildTreeContextMessage(),
                 "The session remains open until the user presses the program's Finish session button.")
         });
         sessionLog.Write("executor_context_checkpoint", new
@@ -661,16 +793,22 @@ public sealed class ExecutorSessionService : IDisposable
             "Ask exactly one useful decision at a time. Do not run a silent autonomous content loop and do not decide that enough information has been collected.",
             "When asking, offer 2-6 short options and allow a custom answer. Offer equivalents of Not important, Decide yourself, or Skip only when they are genuinely safe.",
             "Never offer stage names, transition commands, result commands or session commands as answer options.",
-            "Actions: ask_user waits for the user; confirm_brief asks AI HUB to show the completed technical brief; request_tool asks for safe web tools; blocked explains why work cannot continue.",
+            "Actions: ask_user waits for the user; confirm_brief asks AI HUB to show the completed technical brief; request_tool asks for safe web tools; suggest_finalization recommends a user-controlled finish; blocked explains why work cannot continue.",
             "Use confirm_brief only with status stage_ready in task_definition. Put the complete actionable task formulation in stageSummary and leave options empty.",
-            "After task confirmation, every ordinary response must return working + ask_user, one practical question, and an updated currentResultSummary.",
-            $"currentResultSummary is a concise retelling of the useful answer available right now, not a fact inventory. Keep it within {ExecutorResultSummaryPolicy.MaximumCharacters} characters.",
-            "Prioritize the present answer, key recommendations, important caveats and gaps that materially affect it. Never write a promise to prepare the answer later.",
+            "After task confirmation, an ordinary response returns working + ask_user, one practical question, a substantive workingResultFragment, and an updated currentResultSummary.",
+            $"workingResultFragment is new content that directly performs part of the confirmed task. Keep it within {ExecutorWorkingResultPolicy.MaximumCharacters} characters.",
+            "A workingResultFragment must contain the answer itself: facts, analysis, prose, comparison, recommendation, calculation or another requested artifact fragment. It must not be a plan, technical brief, task specification, production instruction or promise.",
+            $"currentResultSummary is a concise retelling derived from the actual answer fragments available right now. Keep it within {ExecutorResultSummaryPolicy.MaximumCharacters} characters.",
+            "Prioritize present answer content, key recommendations, important caveats and gaps that materially affect it. Never write that an answer is being prepared or will be created later.",
             "Use request_tool only after the task is confirmed and list only web_search, web_research or web_read in requestedTools.",
             "Fill missingCriticalInputs and assumptions honestly; do not invent a precise readiness percentage.",
-            "Statuses: working asks the next question or requests a tool; stage_ready is only for the first brief confirmation; blocked explains what prevents progress.",
+            "Set canFinalize true as soon as the active branch contains a useful result that can be delivered now, missingCriticalInputs is empty, and the next question would only improve, expand or polish that result. You may still use ask_user with canFinalize true for one genuinely useful optional question.",
+            "When canFinalize is true, explain why the current result is already usable in completionReason. Otherwise set canFinalize false and leave completionReason empty.",
+            "Use suggest_finalization only when the current result is usable and no meaningful optional question remains. For suggest_finalization set canFinalize true, leave question and options empty, set allowCustom false, and include the latest substantive workingResultFragment and currentResultSummary.",
+            "suggest_finalization is only advice to AI HUB. It does not save, export, show a result or end the session.",
+            "Statuses: working asks the next question, requests a tool or recommends finalization; stage_ready is only for the first brief confirmation; blocked explains what prevents progress.",
             "The session never ends from your response. A full result is created only by a separate AI HUB snapshot request initiated by the user.",
-            "Keep result empty for working and stage_ready. Update stageSummary every turn with a compact factual checkpoint of confirmed information.",
+            "Keep result empty for working and stage_ready. Update stageSummary with the technical checkpoint and workingResultFragment with actual useful output. Never mix these roles.",
             "Use only tools exposed by the application. Never claim that an unavailable tool was used.",
             "Every non-tool response must follow the JSON response schema. Never return continue_work, present_result, result_ready, final_result, completed, session_ended, or another terminal status.",
             "Keep thought to one short user-facing sentence. It is not hidden chain-of-thought.",
@@ -684,16 +822,16 @@ public sealed class ExecutorSessionService : IDisposable
         builder.AppendLine();
         builder.AppendLine("Important: Goal and Executor prompt are provisional core hypotheses, not a confirmed user request.");
         builder.AppendLine(BuildStageInstruction(stageId));
-        builder.AppendLine("Begin with status working and action ask_user. Ask the first broad technical question. Keep currentResultSummary empty until the brief is confirmed.");
+        builder.AppendLine("Begin with status working and action ask_user. Ask the first broad technical question. Keep currentResultSummary and workingResultFragment empty until the brief is confirmed.");
         return builder.ToString();
     }
 
     private static string BuildStageInstruction(string stageId) => stageId switch
     {
         ExecutorStageIds.TaskDefinition =>
-            "Current stage task_definition: clarify the real subject, actionable desired outcome, audience, constraints and success criteria. Ask only critical non-repeating technical questions. Keep currentResultSummary empty. When the task is actionable, return status stage_ready and action confirm_brief with the complete brief in stageSummary, no transition options, and no result.",
+            "Current stage task_definition: clarify the real subject, actionable desired outcome, audience, constraints and success criteria. Ask only critical non-repeating technical questions. Keep currentResultSummary and workingResultFragment empty, set canFinalize false and leave completionReason empty. When the task is actionable, return status stage_ready and action confirm_brief with the complete brief in stageSummary, no transition options, and no result.",
         ExecutorStageIds.PracticalClarification =>
-            $"Current stage practical_clarification: stay in this stage. Improve the answer through practical questions about approach, missing data, preferences, edge cases, risks and validation. Every ordinary turn must return working + ask_user with exactly one useful question and an updated currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters. Do not prepare a full document and never declare the work finished.",
+            $"Current stage practical_clarification: stay in this stage. Progressively perform the confirmed task while asking practical questions about approach, missing data, preferences, edge cases, risks and validation. An ordinary turn returns working + ask_user with exactly one useful question, a substantive new workingResultFragment of at most {ExecutorWorkingResultPolicy.MaximumCharacters} characters, and an updated currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters derived from actual answer content. Build useful answer fragments, not a full final document, technical brief, outline or promise. Set canFinalize true when the current branch already contains a useful deliverable and there are no critical missing inputs, even if one optional improvement question remains; explain that readiness in completionReason. Keep canFinalize false and completionReason empty while the answer would still be materially incomplete. Use working + suggest_finalization only when the result is usable and no meaningful optional question remains. This recommends the program's finish flow but never performs it.",
         _ => throw new ArgumentOutOfRangeException(nameof(stageId), stageId, "Unknown executor stage.")
     };
 
@@ -704,11 +842,11 @@ public sealed class ExecutorSessionService : IDisposable
             "Your previous response was rejected because its structure or meaning was invalid.",
             BuildStageInstruction(stageId),
             "Return JSON only using working, stage_ready or blocked.",
-            "Return one action: ask_user, confirm_brief, request_tool or blocked.",
+            "Return one action: ask_user, confirm_brief, request_tool, suggest_finalization or blocked.",
             _briefConfirmed
-                ? $"The task brief is already confirmed. Return working + ask_user and include a useful currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters."
+                ? $"The task brief is already confirmed. Return working + ask_user with one useful practical question, or working + suggest_finalization when no useful question remains. In both cases include a substantive workingResultFragment of at most {ExecutorWorkingResultPolicy.MaximumCharacters} characters and a useful currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters. Set canFinalize true with a non-empty completionReason whenever that current result can already be delivered and missingCriticalInputs is empty, including ask_user turns with only optional improvements left. Otherwise set canFinalize false and leave completionReason empty. Write actual answer content, not a technical brief or future plan."
                 : "The task brief is not confirmed. Use confirm_brief only when task_definition is actionable.",
-            "Never put stage transitions or result commands into options.",
+            "Never put stage transitions, saving, exporting, result display or session commands into options. Use suggest_finalization instead when appropriate.",
             "Never return continue_work, present_result or result_ready.",
             "Keep the session open. Do not change stages and do not claim that the session ended.");
 
@@ -742,12 +880,26 @@ public sealed class ExecutorSessionService : IDisposable
         string.Join(
             Environment.NewLine,
             "You are producing an on-demand preliminary document from an active executor session.",
-            "Use all confirmed facts, decisions, tool results, the latest currentResultSummary and current work available in the conversation.",
+            "Execute the confirmed user task now. Use all confirmed facts, decisions, tool results, workingResultFragment values, the latest currentResultSummary and current work available in the conversation.",
+            "Return the requested artifact itself. Never substitute a task specification, technical brief, outline, content plan, writing instructions or future-work promise unless the user explicitly requested that artifact.",
             "Do not ask questions, do not output JSON, do not end the session and do not claim unsupported facts.",
             "If important information is missing, state the limitation and still provide the most useful current document.",
             "Return clean Markdown with one level-one title, useful sections, paragraphs, lists and code blocks when appropriate.",
             "The document may be long. Do not replace it with a plan or a promise.",
             "Creating this document does not complete the session. The executor will continue practical clarification afterwards.",
+            $"Document language: {languageCode}.");
+
+    private static string BuildFinalResultSystemPrompt(string languageCode) =>
+        string.Join(
+            Environment.NewLine,
+            "You are producing the final user-requested document from an executor session that the user chose to finish.",
+            "Perform the confirmed task itself using the active knowledge-tree branch, confirmed decisions, useful working fragments, tool results, sources and stated limitations.",
+            "Create one coherent, detailed and self-contained artifact. Resolve repetition and contradictions in favor of the latest confirmed active-branch decision.",
+            "Never return a task specification, outline, production plan, promise, readiness message or instructions for another author unless that artifact was explicitly requested.",
+            "Do not ask questions, output JSON, mention AI HUB controls, saving, exporting, snapshots or future work.",
+            "If information remains uncertain, state the limitation inside the result without replacing the result.",
+            "Return clean Markdown with one level-one title, useful sections, paragraphs, lists, tables or code blocks when appropriate.",
+            "The document may be long. Preserve substantive detail instead of summarizing it away.",
             $"Document language: {languageCode}.");
 
     private static string ExtractSnapshotTitle(string markdown, int version, string languageCode)
@@ -764,6 +916,28 @@ public sealed class ExecutorSessionService : IDisposable
         return languageCode.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
             ? $"Текущий результат {version}"
             : $"Current result {version}";
+    }
+
+    private string BuildTreeContextMessage() =>
+        string.Join(
+            Environment.NewLine,
+            "[AI_HUB_SESSION_TREE_ACTIVE_CONTEXT]",
+            _knowledgeTree.BuildModelContext(),
+            "This program-owned context is authoritative for confirmed decisions. Do not rewrite its structure or revive inactive alternatives.");
+
+    private void KnowledgeTree_Changed(
+        object? sender,
+        SessionKnowledgeTreeChangedEventArgs e)
+    {
+        var node = e.Snapshot.Nodes.FirstOrDefault(item =>
+            string.Equals(item.Id, e.NodeId, StringComparison.Ordinal));
+        _sessionLog?.Write("executor_tree_changed", new
+        {
+            e.ChangeType,
+            e.NodeId,
+            e.Snapshot.Version,
+            Node = node
+        });
     }
 
     private void EnsureActive()

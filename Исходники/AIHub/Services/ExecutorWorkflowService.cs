@@ -17,10 +17,15 @@ public sealed class ExecutorWorkflowService : IDisposable
         _userContextService = userContextService;
     }
 
+    public event EventHandler<SessionKnowledgeTreeChangedEventArgs>? KnowledgeTreeChanged;
+
     public bool BriefConfirmed => _session?.BriefConfirmed ?? false;
 
     public IReadOnlyList<ExecutorResultSnapshot> Snapshots =>
         _session?.Snapshots ?? [];
+
+    public SessionKnowledgeTreeSnapshot? KnowledgeTreeSnapshot =>
+        _session?.KnowledgeTree.GetSnapshot();
 
     public Task<ExecutorModelArtifact> ResolveAsync(
         string requestedModel,
@@ -84,6 +89,7 @@ public sealed class ExecutorWorkflowService : IDisposable
         Stop("replaced");
         _sessionLog = ScenarioSessionLog.CreateUncertaintyExecutor(storageSettings);
         _session = new ExecutorSessionService(_userContextService);
+        _session.KnowledgeTree.Changed += SessionKnowledgeTree_Changed;
         return await _session.ExecuteAsync(
             artifact,
             handoff,
@@ -130,6 +136,15 @@ public sealed class ExecutorWorkflowService : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _session?.CreateResultSnapshotAsync(streamProgress, cancellationToken)
+            ?? throw new InvalidOperationException("Executor session is not active.");
+    }
+
+    public Task<ExecutorResultSnapshot> CreateFinalResultAsync(
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _session?.CreateFinalResultAsync(streamProgress, cancellationToken)
             ?? throw new InvalidOperationException("Executor session is not active.");
     }
 
@@ -192,9 +207,19 @@ public sealed class ExecutorWorkflowService : IDisposable
         });
         _sessionLog?.Dispose();
         _sessionLog = null;
+        if (_session is not null)
+        {
+            _session.KnowledgeTree.Changed -= SessionKnowledgeTree_Changed;
+        }
+
         _session?.Dispose();
         _session = null;
     }
+
+    private void SessionKnowledgeTree_Changed(
+        object? sender,
+        SessionKnowledgeTreeChangedEventArgs e) =>
+        KnowledgeTreeChanged?.Invoke(this, e);
 
     public void Dispose()
     {

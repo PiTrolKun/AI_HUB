@@ -62,6 +62,7 @@
 | Название | Назначение | Версия | Лицензия | Источник | Ограничения |
 |---|---|---|---|---|---|
 | System.Speech | Доступ к установленным Windows SAPI-голосам RHVoice и событиям произнесённых слов | 10.0.9 | MIT | NuGet `System.Speech`, Microsoft | Windows-only; библиотека включается в publish, сами RHVoice-голоса остаются внешней установкой |
+| DocumentFormat.OpenXml | Формирование итогового результата executor-сессии в формате DOCX | 3.5.1 | MIT | NuGet `DocumentFormat.OpenXml`, Microsoft | Runtime-зависимость включается в publish; создаёт файл только по явной команде и выбранному пользователем пути |
 
 ## Правило
 
