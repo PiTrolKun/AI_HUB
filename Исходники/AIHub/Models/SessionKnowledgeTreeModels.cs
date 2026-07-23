@@ -40,8 +40,20 @@ public sealed class SessionKnowledgeNode
 public sealed class SessionKnowledgeTreeSnapshot
 {
     public int Version { get; set; }
+    public int Sequence { get; set; }
+    public string LanguageCode { get; set; } = "ru";
     public string RootId { get; set; } = string.Empty;
     public string ActiveNodeId { get; set; } = string.Empty;
+    public string RequirementsRootId { get; set; } = string.Empty;
+    public string DecisionsRootId { get; set; } = string.Empty;
+    public string KnowledgeRootId { get; set; } = string.Empty;
+    public string ResultRootId { get; set; } = string.Empty;
+    public string QuestionsRootId { get; set; } = string.Empty;
+    public string AssumptionsRootId { get; set; } = string.Empty;
+    public string SourcesRootId { get; set; } = string.Empty;
+    public string ActiveConversationParentId { get; set; } = string.Empty;
+    public string? PendingQuestionId { get; set; }
+    public List<string> PendingOptions { get; set; } = [];
     public List<SessionKnowledgeNode> Nodes { get; set; } = [];
 
     public bool HasNodes => Nodes.Count > 0;

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
@@ -39,10 +40,12 @@ public partial class MainWindow : Window
     private readonly CoreSpeechPresentationCoordinator _coreSpeechCoordinator;
     private readonly CoreSpeechPresentationCoordinator _executorSpeechCoordinator;
     private readonly ExecutorWorkflowService _executorWorkflowService;
+    private readonly ScenarioSessionArchiveService _sessionArchiveService = new();
     private readonly DispatcherTimer _profileBlinkTimer = new();
     private readonly ObservableCollection<ChoiceScenarioOption> _choiceScenarioOptions = [];
     private readonly ObservableCollection<ChoiceScenarioOption> _executorClarificationOptions = [];
     private readonly ObservableCollection<ChoiceExecutorCandidateDisplay> _executorCandidateOptions = [];
+    private readonly ObservableCollection<ResumableSessionCardViewModel> _previousSessionCards = [];
 
     private AppSettings _appSettings = new();
     private AppState _appState = new();
@@ -83,6 +86,9 @@ public partial class MainWindow : Window
     private string _executorCurrentResultSummary = string.Empty;
     private ExecutorTurnResult? _currentExecutorTurn;
     private string _executorCurrentStageId = ExecutorStageIds.TaskDefinition;
+    private ResumableScenarioSession? _activeResumableSession;
+    private SessionRestorationContext? _sessionRestorationContext;
+    private bool _resumeExecutorAfterDownload;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
 
@@ -97,6 +103,7 @@ public partial class MainWindow : Window
         _userContextService = new UserContextService(_userProfileStore, new IpLocationService());
         _executorWorkflowService = new ExecutorWorkflowService(_userContextService);
         _executorWorkflowService.KnowledgeTreeChanged += ExecutorWorkflowService_KnowledgeTreeChanged;
+        _executorWorkflowService.CheckpointChanged += ExecutorWorkflowService_CheckpointChanged;
         _choiceScenarioOrchestrator = new ChoiceScenarioOrchestrator(_choiceScenarioService);
         InitializeComponent();
         Title = $"AI HUB {GetAppVersion()}";
@@ -119,7 +126,9 @@ public partial class MainWindow : Window
         ChoiceOptionsItemsControl.ItemsSource = _choiceScenarioOptions;
         ExecutorClarificationOptionsItemsControl.ItemsSource = _executorClarificationOptions;
         ExecutorCandidateItemsControl.ItemsSource = _executorCandidateOptions;
+        PreviousWorkItemsControl.ItemsSource = _previousSessionCards;
         InitializeAppData();
+        RefreshPreviousSessions();
         LoadCoreVoiceSettingsIntoControls();
         UpdateCoreVoiceControls();
         _ = RefreshModelCatalogOnStartupAsync();
@@ -544,11 +553,9 @@ public partial class MainWindow : Window
         ReasoningModeDescriptionText.Text = L("WorkStart.ReasoningDescription");
         SelectReasoningModeButton.Content = L("WorkStart.SelectMode");
         PreviousWorkHeaderText.Text = L("WorkStart.PreviousWork");
-        PreviousWorkExampleTitleText.Text = L("WorkStart.PreviousExampleTitle");
-        PreviousWorkExampleNameText.Text = L("WorkStart.PreviousExampleName");
-        PreviousWorkExampleDateText.Text = L("WorkStart.PreviousExampleDate");
-        ContinuePreviousWorkButton.Content = L("WorkStart.Continue");
-        ContinuePreviousWorkButton.ToolTip = L("WorkStart.ContinueTooltip");
+        PreviousWorkEmptyText.Text = L("WorkStart.Empty");
+        ClearPreviousWorkSelectionButton.Content = L("WorkStart.ClearSelection");
+        DeletePreviousWorkSelectionButton.Content = L("WorkStart.DeleteSelected");
         BackFromWorkStartButton.Content = L("Settings.Back");
         ChoiceScenarioTitleText.Text = L("ChoiceScenario.Title");
         ChoiceScenarioDescriptionText.Text = L("ChoiceScenario.Description");
@@ -625,6 +632,7 @@ public partial class MainWindow : Window
         _localizationService.Load(language.Code);
         PopulateLanguageComboBox();
         ApplyLocalization();
+        RefreshPreviousSessions();
         StatusText.Text = L("Status.LanguageSaved");
     }
 
@@ -807,6 +815,7 @@ public partial class MainWindow : Window
             _choiceScenarioCts?.Cancel();
             _catalogStartupCts.Cancel();
             _choiceScenarioRuntimeService?.Dispose();
+            PauseActiveSession("app_closed");
             CancelExecutorSession("app_closed");
             _executorWorkflowService.Dispose();
             _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "app_closed" });
@@ -1108,6 +1117,9 @@ public partial class MainWindow : Window
             _choiceScenarioState.AddStep(domainStep, consumedAnswer: false);
             RenderChoiceScenarioStep(domainStep);
             _choiceScenarioLog?.Write("scenario_parsed_step", domainStep);
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
             StatusText.Text = LF("Status.ChoiceScenarioBudgetSelected", option.Title);
             return;
         }
@@ -1131,6 +1143,9 @@ public partial class MainWindow : Window
             _choiceScenarioLog?.Write("scenario_resolved_dimension", effect);
         }
         StatusText.Text = LF("Status.ChoiceScenarioSelected", option.Title);
+        SaveActiveSessionCheckpoint(
+            pendingCoreRequest: true,
+            pendingCoreRequestFinal: false);
         _ = RequestNextChoiceScenarioStepAsync(requestFinal: false);
     }
 
@@ -1178,6 +1193,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        SaveActiveSessionCheckpoint();
         CancelExecutorSession("scenario_back");
 
         if (_choiceScenarioState.TryGoBack(out var previousStep) && previousStep is not null)
@@ -1194,10 +1210,14 @@ public partial class MainWindow : Window
                 AnswerCount = _choiceScenarioState.Answers.Count,
                 CapabilityProfile = _choiceScenarioState.CapabilityProfile
             });
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
             StatusText.Text = L("Status.ChoiceScenarioBack");
             return;
         }
 
+        PauseActiveSession("back_to_modes");
         _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "back_to_modes" });
         _choiceScenarioLog?.Dispose();
         _choiceScenarioLog = null;
@@ -1208,6 +1228,7 @@ public partial class MainWindow : Window
     private void CancelChoiceScenarioButton_Click(object sender, RoutedEventArgs e)
     {
         _choiceScenarioCts?.Cancel();
+        PauseActiveSession("cancelled");
         CancelExecutorSession("scenario_cancelled");
         _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "cancelled" });
         _choiceScenarioLog?.Dispose();
@@ -1228,12 +1249,512 @@ public partial class MainWindow : Window
 
     private void PreviousWorkExpander_Expanded(object sender, RoutedEventArgs e)
     {
+        RefreshPreviousSessions();
         StatusText.Text = L("Status.PreviousWorkExpanded");
     }
 
     private void PreviousWorkExpander_Collapsed(object sender, RoutedEventArgs e)
     {
         StatusText.Text = L("Status.WorkStartOpened");
+    }
+
+    private void RefreshPreviousSessions()
+    {
+        var selectedIds = _previousSessionCards
+            .Where(card => card.IsSelected)
+            .Select(card => card.Session.SessionId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _previousSessionCards.Clear();
+        IReadOnlyList<ResumableScenarioSession> sessions;
+        try
+        {
+            sessions = _sessionArchiveService.LoadAll(_storageSettings);
+        }
+        catch
+        {
+            sessions = [];
+        }
+
+        var culture = _appSettings.LanguageCode.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
+            ? CultureInfo.GetCultureInfo("ru-RU")
+            : CultureInfo.GetCultureInfo("en-US");
+        foreach (var session in sessions)
+        {
+            var canResume = session.Status != ResumableSessionStatuses.Unavailable;
+            var requiresDownload = HasExecutorSelection(session)
+                && FindInstalledExecutorArtifact(session) is null;
+            _previousSessionCards.Add(new ResumableSessionCardViewModel
+            {
+                Session = session,
+                DisplayTitle = canResume
+                    ? string.IsNullOrWhiteSpace(session.CustomTitle)
+                        ? L("ChoiceScenario.Title")
+                        : session.CustomTitle
+                    : L("ChoiceScenario.Title"),
+                CreatedText = LF(
+                    "WorkStart.CreatedAt",
+                    session.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", culture)),
+                UpdatedText = LF(
+                    "WorkStart.UpdatedAt",
+                    session.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", culture)),
+                StatusText = GetPreviousSessionStatusText(session),
+                PrimaryActionText = !canResume
+                    ? L("WorkStart.Unavailable")
+                    : requiresDownload
+                        ? L("WorkStart.DownloadExecutor")
+                        : L("WorkStart.Continue"),
+                RenameTooltip = L("WorkStart.Rename"),
+                RequiresExecutorDownload = requiresDownload,
+                CanResume = canResume,
+                IsSelected = selectedIds.Contains(session.SessionId)
+            });
+        }
+
+        PreviousWorkHeaderText.Text = LF("WorkStart.PreviousWorkCount", sessions.Count);
+        PreviousWorkEmptyText.Visibility = sessions.Count == 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PreviousWorkScrollViewer.Visibility = sessions.Count == 0
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        UpdatePreviousWorkSelectionPanel();
+    }
+
+    private string GetPreviousSessionStatusText(ResumableScenarioSession session)
+    {
+        if (session.IsRunOpen)
+        {
+            return L("WorkStart.StatusInterrupted");
+        }
+
+        return session.Status switch
+        {
+            ResumableSessionStatuses.Completed => L("WorkStart.StatusCompleted"),
+            ResumableSessionStatuses.Recovered => L("WorkStart.StatusRecovered"),
+            ResumableSessionStatuses.Unavailable => L("WorkStart.StatusUnavailable"),
+            _ => L("WorkStart.StatusPaused")
+        };
+    }
+
+    private static bool HasExecutorSelection(ResumableScenarioSession session) =>
+        !string.IsNullOrWhiteSpace(session.SelectedExecutorModel)
+        || session.ExecutorArtifact is not null
+        || session.Executor is not null;
+
+    private ExecutorModelArtifact? FindInstalledExecutorArtifact(ResumableScenarioSession session)
+    {
+        var saved = session.Executor?.Artifact ?? session.ExecutorArtifact;
+        if (saved is { IsInstalled: true }
+            && !string.IsNullOrWhiteSpace(saved.InstalledPath)
+            && File.Exists(saved.InstalledPath))
+        {
+            return saved;
+        }
+
+        var requestedNames = new[]
+            {
+                session.SelectedExecutorModel,
+                saved?.RepoId,
+                saved?.RequestedModel,
+                session.Executor?.Handoff.ProgramFacts
+                    .FirstOrDefault(item => item.Name == "selected_executor")?.Value
+            }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
+            .ToArray();
+        var discovered = _choiceModelDiscoveryService.Discover(_storageSettings)
+            .FirstOrDefault(model =>
+                string.Equals(model.Role, "executor", StringComparison.OrdinalIgnoreCase)
+                && model.IsRunnable
+                && requestedNames.Any(requested =>
+                    string.Equals(model.Name, requested, StringComparison.OrdinalIgnoreCase)
+                    || requested.Contains(model.Name, StringComparison.OrdinalIgnoreCase)
+                    || model.Name.Contains(requested, StringComparison.OrdinalIgnoreCase)));
+        if (discovered is null)
+        {
+            return null;
+        }
+
+        return new ExecutorModelArtifact
+        {
+            RequestedModel = saved?.RequestedModel ?? session.SelectedExecutorModel,
+            RepoId = string.IsNullOrWhiteSpace(saved?.RepoId) ? discovered.Name : saved.RepoId,
+            FileName = Path.GetFileName(discovered.Path),
+            Quantization = saved?.Quantization ?? string.Empty,
+            License = saved?.License ?? string.Empty,
+            Architecture = saved?.Architecture ?? string.Empty,
+            SizeBytes = discovered.SizeBytes,
+            IsInstalled = true,
+            InstalledPath = discovered.Path
+        };
+    }
+
+    private void PreviousWorkSelectionCheckBox_Click(object sender, RoutedEventArgs e) =>
+        UpdatePreviousWorkSelectionPanel();
+
+    private void UpdatePreviousWorkSelectionPanel()
+    {
+        var selectedCount = _previousSessionCards.Count(card => card.IsSelected);
+        PreviousWorkSelectionPanel.Visibility = selectedCount > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        PreviousWorkSelectionCountText.Text = LF("WorkStart.SelectedCount", selectedCount);
+    }
+
+    private void ClearPreviousWorkSelectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        foreach (var card in _previousSessionCards)
+        {
+            card.IsSelected = false;
+        }
+
+        UpdatePreviousWorkSelectionPanel();
+    }
+
+    private void DeletePreviousWorkSelectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        var selected = _previousSessionCards
+            .Where(card => card.IsSelected)
+            .ToList();
+        if (selected.Count == 0)
+        {
+            return;
+        }
+
+        if (_activeResumableSession is { IsRunOpen: true } active
+            && selected.Any(card => string.Equals(
+                card.Session.SessionId,
+                active.SessionId,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusText.Text = L("Status.PreviousWorkActiveDeleteBlocked");
+            return;
+        }
+
+        var confirmed = System.Windows.MessageBox.Show(
+            LF("WorkStart.DeleteConfirmation", selected.Count),
+            L("WorkStart.DeleteTitle"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No) == MessageBoxResult.Yes;
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            _sessionArchiveService.Delete(
+                _storageSettings,
+                selected.Select(card => card.Session.SessionId));
+            RefreshPreviousSessions();
+            StatusText.Text = LF("Status.PreviousWorkDeleted", selected.Count);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = LF("Status.PreviousWorkDeleteFailed", ex.Message);
+        }
+    }
+
+    private void RenamePreviousWorkButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: ResumableSessionCardViewModel card })
+        {
+            return;
+        }
+
+        card.IsEditing = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            var textBox = FindVisualDescendant<System.Windows.Controls.TextBox>(
+                PreviousWorkItemsControl,
+                control => ReferenceEquals(control.Tag, card));
+            if (textBox is null)
+            {
+                return;
+            }
+
+            textBox.Focus();
+            textBox.SelectAll();
+        }, DispatcherPriority.Input);
+    }
+
+    private void PreviousWorkTitleTextBox_KeyDown(
+        object sender,
+        System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.TextBox
+            {
+                Tag: ResumableSessionCardViewModel card
+            } textBox)
+        {
+            return;
+        }
+
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            CommitPreviousWorkTitle(card, textBox.Text);
+            e.Handled = true;
+        }
+        else if (e.Key == System.Windows.Input.Key.Escape)
+        {
+            card.DisplayTitle = card.Session.DisplayTitle;
+            card.IsEditing = false;
+            e.Handled = true;
+        }
+    }
+
+    private void PreviousWorkTitleTextBox_LostKeyboardFocus(
+        object sender,
+        System.Windows.Input.KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.TextBox
+            {
+                Tag: ResumableSessionCardViewModel { IsEditing: true } card
+            } textBox)
+        {
+            CommitPreviousWorkTitle(card, textBox.Text);
+        }
+    }
+
+    private void CommitPreviousWorkTitle(ResumableSessionCardViewModel card, string title)
+    {
+        var normalized = title.Trim();
+        if (normalized.Length > 100)
+        {
+            normalized = normalized[..100].TrimEnd();
+        }
+
+        try
+        {
+            _sessionArchiveService.Rename(_storageSettings, card.Session, normalized);
+            card.DisplayTitle = card.Session.DisplayTitle;
+            card.IsEditing = false;
+            RefreshPreviousSessions();
+            StatusText.Text = L("Status.PreviousWorkRenamed");
+        }
+        catch (Exception ex)
+        {
+            card.DisplayTitle = card.Session.DisplayTitle;
+            card.IsEditing = false;
+            StatusText.Text = LF("Status.PreviousWorkRenameFailed", ex.Message);
+        }
+    }
+
+    private async void PreviousWorkPrimaryActionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button
+            {
+                Tag: ResumableSessionCardViewModel card
+            })
+        {
+            return;
+        }
+
+        var session = _sessionArchiveService.Load(_storageSettings, card.Session.SessionId);
+        if (session is null || session.Status == ResumableSessionStatuses.Unavailable)
+        {
+            StatusText.Text = L("Status.PreviousWorkUnavailable");
+            RefreshPreviousSessions();
+            return;
+        }
+
+        await ResumeScenarioSessionAsync(session, card.RequiresExecutorDownload);
+    }
+
+    private async Task ResumeScenarioSessionAsync(
+        ResumableScenarioSession session,
+        bool requestExecutorDownload)
+    {
+        PauseActiveSession("another_session_opened");
+        _choiceScenarioCts?.Cancel();
+        CancelExecutorSession("restoring_archived_session");
+        _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "restored_another_session" });
+        _choiceScenarioLog?.Dispose();
+        _choiceScenarioLog = null;
+        try
+        {
+            _sessionRestorationContext = _sessionArchiveService.BeginRestoredRun(
+                _storageSettings,
+                session);
+            _activeResumableSession = session;
+            _resumeExecutorAfterDownload = false;
+            _choiceScenarioInvalidJsonCount = 0;
+            _choiceScenarioRequestInProgress = false;
+            _choiceScenarioState.Restore(session.Core);
+            _choiceScenarioLog = ScenarioSessionLog.CreateUncertainty(
+                _storageSettings,
+                session.SessionId,
+                session.CurrentRunId);
+            session.CoreLogPath = _choiceScenarioLog.FilePath;
+            _choiceScenarioLog.Write("scenario_session_restored", new
+            {
+                AppVersion = GetAppVersion(),
+                session.SessionId,
+                session.CurrentRunId,
+                session.ResumeCount,
+                _sessionRestorationContext.PreviousStopKind,
+                _sessionRestorationContext.PreviousStopReason,
+                _sessionRestorationContext.LostUncommittedTurn,
+                _choiceScenarioLog.FilePath
+            });
+            _choiceScenarioLog.Write("scenario_context_snapshot", _userContextService.CreateSnapshot());
+
+            ChoiceCustomInput.Clear();
+            ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
+            ChoiceScenarioPreparationViewbox.Visibility = Visibility.Visible;
+            ExecutorResultPanel.Visibility = Visibility.Collapsed;
+            _executorPracticalLayoutActive = false;
+            var restoredStep = _choiceScenarioState.CurrentStep
+                ?? throw new InvalidOperationException("The archived session has no stable scenario step.");
+            RenderChoiceScenarioStep(restoredStep);
+            RestoreSavedExecutorSelection(session);
+            WelcomePage.Visibility = Visibility.Collapsed;
+            SetupPage.Visibility = Visibility.Collapsed;
+            SettingsPage.Visibility = Visibility.Collapsed;
+            ProfilePage.Visibility = Visibility.Collapsed;
+            ProfileReminderPage.Visibility = Visibility.Collapsed;
+            WorkStartPage.Visibility = Visibility.Collapsed;
+            ChoiceScenarioPage.Visibility = Visibility.Visible;
+            SaveActiveSessionCheckpoint();
+
+            if (session.Executor is { } executorCheckpoint)
+            {
+                var installedArtifact = FindInstalledExecutorArtifact(session);
+                if (installedArtifact is not null)
+                {
+                    RestoreExecutorFromArchive(
+                        installedArtifact,
+                        executorCheckpoint,
+                        _sessionRestorationContext);
+                    return;
+                }
+
+                _resumeExecutorAfterDownload = true;
+                _pendingExecutorArtifact = executorCheckpoint.Artifact;
+                StatusText.Text = L("Status.PreviousWorkExecutorMissing");
+                if (requestExecutorDownload)
+                {
+                    ExecutorPrepareButton_Click(
+                        ExecutorPrepareButton,
+                        new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                }
+
+                return;
+            }
+
+            if (session.Core.PendingCoreRequest)
+            {
+                CancelCoreSpeech(revealFullText: true, "restored_pending_request");
+                await RequestNextChoiceScenarioStepAsync(session.Core.PendingCoreRequestFinal);
+                return;
+            }
+
+            if (requestExecutorDownload)
+            {
+                _resumeExecutorAfterDownload = false;
+                ExecutorPrepareButton_Click(
+                    ExecutorPrepareButton,
+                    new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                return;
+            }
+
+            StatusText.Text = L("Status.PreviousWorkRestored");
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PauseActiveSession("restore_failed");
+            }
+            catch
+            {
+                // The original restore error is more useful to the user.
+            }
+
+            _choiceScenarioLog?.Write("scenario_restore_failed", new
+            {
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+            _choiceScenarioLog?.Dispose();
+            _choiceScenarioLog = null;
+            _activeResumableSession = null;
+            _sessionRestorationContext = null;
+            ShowWorkStartPage();
+            StatusText.Text = LF("Status.PreviousWorkRestoreFailed", ex.Message);
+        }
+    }
+
+    private void RestoreSavedExecutorSelection(ResumableScenarioSession session)
+    {
+        if (_currentChoiceScenarioStep?.TaskCard is not { } card)
+        {
+            return;
+        }
+
+        var requestedModel = session.SelectedExecutorModel;
+        if (string.IsNullOrWhiteSpace(requestedModel))
+        {
+            requestedModel = session.Executor?.Artifact.RepoId
+                ?? session.ExecutorArtifact?.RepoId
+                ?? card.RecommendedExecutor;
+        }
+
+        var candidate = card.ExecutorCandidates.FirstOrDefault(item =>
+            ModelNamesReferToSameExecutor(item.Model, requestedModel));
+        if (candidate is null)
+        {
+            return;
+        }
+
+        candidate.Status = FindInstalledExecutorArtifact(session) is null
+            ? ChoiceExecutorCandidateStatuses.NotInstalled
+            : ChoiceExecutorCandidateStatuses.Installed;
+        _selectedExecutorCandidate = candidate;
+        card.RecommendedExecutor = candidate.Model;
+        card.ExecutorStatus = candidate.Status;
+        card.ExecutorRole = candidate.Role;
+        card.ExecutorCapabilityClass = candidate.CapabilityClass;
+        card.ExecutorReason = candidate.Reason;
+        RenderExecutorCandidates(card);
+        ExecutorPrepareButton.Visibility = Visibility.Visible;
+        ExecutorPrepareButton.IsEnabled = true;
+    }
+
+    private static bool ModelNamesReferToSameExecutor(string left, string right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        return string.Equals(left, right, StringComparison.OrdinalIgnoreCase)
+            || left.Contains(right, StringComparison.OrdinalIgnoreCase)
+            || right.Contains(left, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static T? FindVisualDescendant<T>(
+        DependencyObject root,
+        Func<T, bool> predicate)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < Media.VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = Media.VisualTreeHelper.GetChild(root, index);
+            if (child is T match && predicate(match))
+            {
+                return match;
+            }
+
+            var nested = FindVisualDescendant(child, predicate);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     private async void DownloadCoreModelButton_Click(object sender, RoutedEventArgs e)
@@ -1646,32 +2167,17 @@ public partial class MainWindow : Window
         ProfileReminderPage.Visibility = Visibility.Collapsed;
         ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         WorkStartPage.Visibility = Visibility.Visible;
+        RefreshPreviousSessions();
     }
 
     private void StartChoiceScenario()
     {
+        PauseActiveSession("new_scenario_started");
         _choiceScenarioLog?.Write("scenario_session_end", new { Reason = "restart" });
         _choiceScenarioLog?.Dispose();
-        try
-        {
-            _choiceScenarioLog = ScenarioSessionLog.CreateUncertainty(_storageSettings);
-        }
-        catch (Exception ex)
-        {
-            _choiceScenarioLog = new NullSessionEventLog();
-            _choiceScenarioLog.Write("scenario_log_unavailable", new
-            {
-                ErrorType = ex.GetType().FullName,
-                ex.Message
-            });
-        }
-
-        _choiceScenarioLog.Write("scenario_session_start", new
-        {
-            AppVersion = GetAppVersion(),
-            _choiceScenarioLog.FilePath
-        });
-        _choiceScenarioLog.Write("scenario_context_snapshot", _userContextService.CreateSnapshot());
+        _choiceScenarioLog = null;
+        _sessionRestorationContext = null;
+        _resumeExecutorAfterDownload = false;
         _choiceScenarioInvalidJsonCount = 0;
         _choiceScenarioRequestInProgress = false;
         ChoiceScenarioPreparationViewbox.Visibility = Visibility.Visible;
@@ -1681,6 +2187,36 @@ public partial class MainWindow : Window
         ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
         var startStep = _choiceScenarioService.CreateBudgetStep(L);
         _choiceScenarioState.Reset(startStep);
+        try
+        {
+            _activeResumableSession = _sessionArchiveService.Create(
+                _storageSettings,
+                L("ChoiceScenario.Title"),
+                _choiceScenarioState.CreateCheckpoint());
+            _choiceScenarioLog = ScenarioSessionLog.CreateUncertainty(
+                _storageSettings,
+                _activeResumableSession.SessionId,
+                _activeResumableSession.CurrentRunId);
+            _activeResumableSession.CoreLogPath = _choiceScenarioLog.FilePath;
+            _sessionArchiveService.Save(_storageSettings, _activeResumableSession);
+        }
+        catch (Exception ex)
+        {
+            _activeResumableSession = null;
+            _choiceScenarioLog?.Dispose();
+            _choiceScenarioLog = null;
+            StatusText.Text = LF("Status.SessionArchiveCreateFailed", ex.Message);
+            return;
+        }
+
+        _choiceScenarioLog.Write("scenario_session_start", new
+        {
+            AppVersion = GetAppVersion(),
+            _choiceScenarioLog.FilePath,
+            _activeResumableSession.SessionId,
+            _activeResumableSession.CurrentRunId
+        });
+        _choiceScenarioLog.Write("scenario_context_snapshot", _userContextService.CreateSnapshot());
         RenderChoiceScenarioStep(startStep);
         _choiceScenarioLog.Write("scenario_parsed_step", _currentChoiceScenarioStep);
         WelcomePage.Visibility = Visibility.Collapsed;
@@ -1691,6 +2227,158 @@ public partial class MainWindow : Window
         WorkStartPage.Visibility = Visibility.Collapsed;
         ChoiceScenarioPage.Visibility = Visibility.Visible;
     }
+
+    private void SaveActiveSessionCheckpoint(
+        bool? pendingCoreRequest = null,
+        bool? pendingCoreRequestFinal = null)
+    {
+        if (_activeResumableSession is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var core = _choiceScenarioState.CreateCheckpoint();
+            core.PendingCoreRequest = pendingCoreRequest
+                ?? _activeResumableSession.Core.PendingCoreRequest;
+            core.PendingCoreRequestFinal = pendingCoreRequestFinal
+                ?? _activeResumableSession.Core.PendingCoreRequestFinal;
+            _activeResumableSession.Core = core;
+            if (_currentChoiceScenarioStep?.TaskCard is { } card)
+            {
+                _activeResumableSession.SelectedExecutorModel =
+                    _selectedExecutorCandidate?.Model
+                    ?? card.RecommendedExecutor;
+            }
+
+            if (_pendingExecutorArtifact is not null)
+            {
+                _activeResumableSession.ExecutorArtifact = _pendingExecutorArtifact;
+            }
+
+            var executorCheckpoint = _executorWorkflowService.CreateCheckpoint();
+            if (executorCheckpoint is not null)
+            {
+                _activeResumableSession.Executor = executorCheckpoint;
+                _activeResumableSession.ExecutorArtifact = executorCheckpoint.Artifact;
+                _activeResumableSession.ExecutorHandoff = executorCheckpoint.Handoff;
+                _activeResumableSession.ExecutorLogPath = _executorWorkflowService.ActiveLogPath;
+            }
+
+            _sessionArchiveService.Save(_storageSettings, _activeResumableSession);
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog?.Write("session_checkpoint_failed", new
+            {
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+            StatusText.Text = LF("Status.SessionCheckpointFailed", ex.Message);
+        }
+    }
+
+    private void ExecutorWorkflowService_CheckpointChanged(object? sender, EventArgs e)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => ExecutorWorkflowService_CheckpointChanged(sender, e));
+            return;
+        }
+
+        try
+        {
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog?.Write("session_checkpoint_failed", new
+            {
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+            StatusText.Text = LF("Status.SessionCheckpointFailed", ex.Message);
+        }
+    }
+
+    private void PauseActiveSession(string reason)
+    {
+        if (_activeResumableSession is not { IsRunOpen: true } session)
+        {
+            return;
+        }
+
+        try
+        {
+            SaveActiveSessionCheckpoint();
+            _sessionArchiveService.MarkStopped(
+                _storageSettings,
+                session,
+                ResumableSessionStopKinds.Normal,
+                reason,
+                ResumableSessionStatuses.Paused);
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog?.Write("session_pause_checkpoint_failed", new
+            {
+                Reason = reason,
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+        }
+    }
+
+    private void CompleteActiveSessionArchive(string reason)
+    {
+        if (_activeResumableSession is null)
+        {
+            return;
+        }
+
+        try
+        {
+            SaveActiveSessionCheckpoint();
+            _sessionArchiveService.MarkStopped(
+                _storageSettings,
+                _activeResumableSession,
+                ResumableSessionStopKinds.Completed,
+                reason,
+                ResumableSessionStatuses.Completed);
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog?.Write("session_completion_checkpoint_failed", new
+            {
+                Reason = reason,
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+            StatusText.Text = LF("Status.SessionCheckpointFailed", ex.Message);
+        }
+    }
+
+    private static string BuildCoreRestorationPrompt(SessionRestorationContext restoration) =>
+        string.Join(
+            Environment.NewLine,
+            "[AI_HUB_SESSION_RESTORED]",
+            $"Stable session id: {restoration.SessionId}.",
+            $"Current restored run id: {restoration.RunId}.",
+            $"Resume count: {restoration.ResumeCount}.",
+            $"Original session created at: {restoration.OriginalCreatedAt:O}.",
+            $"Restored at: {restoration.RestoredAt:O}.",
+            $"Previous stop kind: {restoration.PreviousStopKind}.",
+            $"Previous stop reason: {restoration.PreviousStopReason}.",
+            $"Last stable stage: {restoration.LastStableStage}.",
+            $"An uncommitted interrupted turn was lost: {restoration.LostUncommittedTurn}.",
+            "This is a restored run loaded from the AI HUB archive, not the original live run and not a new task.",
+            "Continue from the saved confirmed checkpoint. Do not restart the scenario, repeat completed questions or claim uninterrupted process memory.",
+            restoration.LostUncommittedTurn
+                ? "The interrupted unfinished request did not complete. Recreate only that next step from the stable checkpoint."
+                : "All restored scenario steps in the checkpoint were fully committed by AI HUB.");
 
     private async Task RequestNextChoiceScenarioStepAsync(bool requestFinal)
     {
@@ -1719,6 +2407,9 @@ public partial class MainWindow : Window
 
         try
         {
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: true,
+                pendingCoreRequestFinal: effectiveRequestFinal);
             var model = _choiceModelDiscoveryService
                 .Discover(_storageSettings)
                 .FirstOrDefault(item => item.IsCoreModel && item.IsRunnable)
@@ -1736,11 +2427,17 @@ public partial class MainWindow : Window
                     }
                     ChoiceScenarioStatusText.Text = L("ChoiceScenario.CoreUnavailableStop");
                     StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
+                    SaveActiveSessionCheckpoint(
+                        pendingCoreRequest: false,
+                        pendingCoreRequestFinal: false);
                     return;
                 }
 
                 _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: !requestFinal);
                 RenderChoiceScenarioStep(fallbackStep);
+                SaveActiveSessionCheckpoint(
+                    pendingCoreRequest: false,
+                    pendingCoreRequestFinal: false);
                 StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
                 return;
             }
@@ -1751,6 +2448,14 @@ public partial class MainWindow : Window
                 Environment.NewLine,
                 inventory.Items.Select(item => $"{item.Role}: installed={item.IsInstalled}; runnable={item.IsRunnable}; name={item.Name}"));
             var systemPrompt = _choiceScenarioService.BuildSystemPrompt();
+            if (_sessionRestorationContext is not null)
+            {
+                systemPrompt = string.Join(
+                    Environment.NewLine,
+                    systemPrompt,
+                    string.Empty,
+                    BuildCoreRestorationPrompt(_sessionRestorationContext));
+            }
             var userPrompt = _choiceScenarioService.BuildUserPrompt(
                 _choiceScenarioState.Answers,
                 requestFinal,
@@ -1873,6 +2578,9 @@ public partial class MainWindow : Window
                             }
                             ChoiceScenarioStatusText.Text = L("ChoiceScenario.RepeatedStepError");
                             StatusText.Text = L("Status.ChoiceScenarioRepeatedStep");
+                            SaveActiveSessionCheckpoint(
+                                pendingCoreRequest: false,
+                                pendingCoreRequestFinal: false);
                             return;
                         }
                     }
@@ -1892,6 +2600,9 @@ public partial class MainWindow : Window
                     });
                 }
                 _choiceScenarioLog?.Write(step.IsFinal ? "scenario_final_task_card" : "scenario_parsed_step", step);
+                SaveActiveSessionCheckpoint(
+                    pendingCoreRequest: false,
+                    pendingCoreRequestFinal: false);
                 StatusText.Text = step.IsFinal
                     ? L("Status.ChoiceScenarioTaskCardReady")
                     : L("Status.ChoiceScenarioStepReady");
@@ -1911,6 +2622,9 @@ public partial class MainWindow : Window
             });
             ChoiceScenarioStatusText.Text = L("ChoiceScenario.StructureError");
             StatusText.Text = L("Status.ChoiceScenarioStructureError");
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
         }
         catch (OperationCanceledException)
         {
@@ -1933,11 +2647,17 @@ public partial class MainWindow : Window
                 }
                 ChoiceScenarioStatusText.Text = L("ChoiceScenario.CoreUnavailableStop");
                 StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
+                SaveActiveSessionCheckpoint(
+                    pendingCoreRequest: false,
+                    pendingCoreRequestFinal: false);
                 return;
             }
 
             _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: !requestFinal);
             RenderChoiceScenarioStep(fallbackStep);
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
             StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
         }
         finally
@@ -2262,6 +2982,9 @@ public partial class MainWindow : Window
         ExecutorPrepareButton.IsEnabled = true;
         StatusText.Text = LF("Status.ExecutorCandidateSelected", candidate.Model);
         _choiceScenarioLog?.Write("executor_candidate_selected", candidate);
+        SaveActiveSessionCheckpoint(
+            pendingCoreRequest: false,
+            pendingCoreRequestFinal: false);
     }
 
     private async void ExecutorPrepareButton_Click(object sender, RoutedEventArgs e)
@@ -2287,6 +3010,9 @@ public partial class MainWindow : Window
                 _storageSettings,
                 _executorCts.Token);
             _choiceScenarioLog?.Write("executor_artifact_resolved", _pendingExecutorArtifact);
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
             if (_pendingExecutorArtifact.IsInstalled)
             {
                 await RunExecutorAsync(_pendingExecutorArtifact, card);
@@ -2354,6 +3080,15 @@ public partial class MainWindow : Window
                 _executorCts.Token);
             _choiceScenarioLog?.Write("executor_download_completed", installed);
             ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
+            if (_resumeExecutorAfterDownload
+                && _activeResumableSession?.Executor is { } checkpoint
+                && _sessionRestorationContext is { } restoration)
+            {
+                _resumeExecutorAfterDownload = false;
+                RestoreExecutorFromArchive(installed, checkpoint, restoration);
+                return;
+            }
+
             await RunExecutorAsync(installed, card);
         }
         catch (OperationCanceledException)
@@ -2402,6 +3137,80 @@ public partial class MainWindow : Window
         };
     }
 
+    private void RestoreExecutorFromArchive(
+        ExecutorModelArtifact artifact,
+        ExecutorSessionCheckpoint checkpoint,
+        SessionRestorationContext restoration)
+    {
+        PrepareExecutorWorkspaceForRestoredRun();
+        try
+        {
+            _pendingExecutorArtifact = artifact;
+            if (_activeResumableSession is not null)
+            {
+                _activeResumableSession.SelectedExecutorModel = artifact.RepoId;
+                _activeResumableSession.ExecutorArtifact = artifact;
+            }
+
+            var turn = _executorWorkflowService.Restore(
+                checkpoint,
+                artifact,
+                _storageSettings,
+                restoration);
+            DisplayExecutorResponse(turn, speak: false);
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false);
+            StatusText.Text = L("Status.PreviousWorkExecutorRestored");
+        }
+        catch
+        {
+            ExecutorResultPanel.Visibility = Visibility.Collapsed;
+            ChoiceScenarioPreparationViewbox.Visibility = Visibility.Visible;
+            ExecutorPrepareButton.Visibility = Visibility.Visible;
+            ExecutorPrepareButton.IsEnabled = true;
+            throw;
+        }
+        finally
+        {
+            BackFromChoiceScenarioButton.IsEnabled = true;
+            SetExecutorInteractionEnabled(true);
+        }
+    }
+
+    private void PrepareExecutorWorkspaceForRestoredRun()
+    {
+        _executorResultWindow?.Close();
+        _executorResultWindow = null;
+        CloseSessionTreeWindow();
+        _executorCts?.Dispose();
+        _executorCts = new CancellationTokenSource();
+        _choiceScenarioRuntimeService?.Stop();
+        ExecutorCandidateChoicePanel.Visibility = Visibility.Collapsed;
+        ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
+        ExecutorPrepareButton.Visibility = Visibility.Collapsed;
+        ChoiceScenarioPreparationViewbox.Visibility = Visibility.Collapsed;
+        ExecutorResultPanel.Visibility = Visibility.Visible;
+        ExecutorLivePreviewPanel.Visibility = Visibility.Collapsed;
+        ExecutorResponseDock.Visibility = Visibility.Collapsed;
+        ExecutorThoughtPanel.Visibility = Visibility.Collapsed;
+        ExecutorClarificationOptionsItemsControl.Visibility = Visibility.Collapsed;
+        ExecutorCustomInputPanel.Visibility = Visibility.Collapsed;
+        ExecutorRequestResultButton.Visibility = Visibility.Collapsed;
+        ExecutorStageRecommendationText.Visibility = Visibility.Collapsed;
+        _currentExecutorTurn = null;
+        _executorSessionFinishedByUser = false;
+        _executorFinalizationSuggested = false;
+        _executorCurrentResultSummary = string.Empty;
+        _executorCurrentStageId = ExecutorStageIds.TaskDefinition;
+        _executorPracticalLayoutActive = false;
+        ApplyExecutorWorkspaceLayout(animate: false);
+        SetExecutorFinalizationSuggested(suggested: false, animate: false);
+        UpdateExecutorStageControls();
+        SetExecutorInteractionEnabled(false);
+        BackFromChoiceScenarioButton.IsEnabled = false;
+    }
+
     private async Task RunExecutorAsync(ExecutorModelArtifact artifact, ChoiceTaskCard card)
     {
         _executorResultWindow?.Close();
@@ -2443,6 +3252,16 @@ public partial class MainWindow : Window
         var handoff = BuildExecutorHandoff(artifact, card);
         try
         {
+            if (_activeResumableSession is not null)
+            {
+                _activeResumableSession.SelectedExecutorModel = artifact.RepoId;
+                _activeResumableSession.ExecutorArtifact = artifact;
+                _activeResumableSession.ExecutorHandoff = handoff;
+                SaveActiveSessionCheckpoint(
+                    pendingCoreRequest: false,
+                    pendingCoreRequestFinal: false);
+            }
+
             var result = await _executorWorkflowService.ExecuteAsync(
                 artifact,
                 handoff,
@@ -2597,7 +3416,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void DisplayExecutorResponse(ExecutorTurnResult turn)
+    private void DisplayExecutorResponse(ExecutorTurnResult turn, bool speak = true)
     {
         _currentExecutorTurn = turn;
         if (ExecutorStageFlow.IsKnown(turn.StageId))
@@ -2710,7 +3529,8 @@ public partial class MainWindow : Window
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         ExecutorResultPanel.Visibility = Visibility.Visible;
-        if (_executorVoiceEnabled
+        if (speak
+            && _executorVoiceEnabled
             && _executorSpeechCoordinator.IsAvailable
             && ShouldSpeakExecutorTurn(turn))
         {
@@ -2734,6 +3554,7 @@ public partial class MainWindow : Window
             WorkloadMode = _userProfile.WorkloadMode,
             AnswerPreferences = _userProfile.AnswerPreferences,
             ParentCoreSessionId = _choiceScenarioLog?.SessionId ?? string.Empty,
+            ParentRunId = _activeResumableSession?.CurrentRunId ?? string.Empty,
             Unknowns =
             [
                 "The exact subject or object of the user's work",
@@ -3381,6 +4202,7 @@ public partial class MainWindow : Window
             Reason = reason,
             SuggestedByExecutor = _executorFinalizationSuggested
         });
+        CompleteActiveSessionArchive(reason);
         CancelExecutorSession(reason);
         ExecutorClarificationOptionsItemsControl.Visibility = Visibility.Collapsed;
         ExecutorCustomInputPanel.Visibility = Visibility.Collapsed;

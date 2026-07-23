@@ -91,6 +91,44 @@ public sealed class SessionKnowledgeTree
         RaiseChanged("initialized", _rootId, snapshot);
     }
 
+    public void Restore(SessionKnowledgeTreeSnapshot source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (!source.HasNodes
+            || string.IsNullOrWhiteSpace(source.RootId)
+            || source.Nodes.All(node => !string.Equals(node.Id, source.RootId, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("The saved session knowledge tree is incomplete.");
+        }
+
+        SessionKnowledgeTreeSnapshot snapshot;
+        lock (_sync)
+        {
+            _nodes.Clear();
+            _nodes.AddRange(source.Nodes.Select(CloneNode));
+            _version = source.Version;
+            _sequence = source.Sequence > 0
+                ? source.Sequence
+                : _nodes.Max(node => node.Sequence);
+            _languageCode = source.LanguageCode;
+            _rootId = source.RootId;
+            _activeNodeId = source.ActiveNodeId;
+            _requirementsRootId = source.RequirementsRootId;
+            _decisionsRootId = source.DecisionsRootId;
+            _knowledgeRootId = source.KnowledgeRootId;
+            _resultRootId = source.ResultRootId;
+            _questionsRootId = source.QuestionsRootId;
+            _assumptionsRootId = source.AssumptionsRootId;
+            _sourcesRootId = source.SourcesRootId;
+            _activeConversationParentId = source.ActiveConversationParentId;
+            _pendingQuestionId = source.PendingQuestionId;
+            _pendingOptions = [.. source.PendingOptions];
+            snapshot = CreateSnapshotCore();
+        }
+
+        RaiseChanged("restored", _activeNodeId, snapshot);
+    }
+
     public void RecordAnswer(string answer)
     {
         if (string.IsNullOrWhiteSpace(answer))
@@ -465,8 +503,20 @@ public sealed class SessionKnowledgeTree
         new()
         {
             Version = _version,
+            Sequence = _sequence,
+            LanguageCode = _languageCode,
             RootId = _rootId,
             ActiveNodeId = _activeNodeId,
+            RequirementsRootId = _requirementsRootId,
+            DecisionsRootId = _decisionsRootId,
+            KnowledgeRootId = _knowledgeRootId,
+            ResultRootId = _resultRootId,
+            QuestionsRootId = _questionsRootId,
+            AssumptionsRootId = _assumptionsRootId,
+            SourcesRootId = _sourcesRootId,
+            ActiveConversationParentId = _activeConversationParentId,
+            PendingQuestionId = _pendingQuestionId,
+            PendingOptions = [.. _pendingOptions],
             Nodes = _nodes.Select(CloneNode).ToList()
         };
 

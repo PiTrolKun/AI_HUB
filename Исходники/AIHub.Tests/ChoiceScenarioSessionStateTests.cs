@@ -134,6 +134,31 @@ public sealed class ChoiceScenarioSessionStateTests
         Assert.IsTrue(state.IsSubjectMatterOverreach(second));
     }
 
+    [TestMethod]
+    public void Checkpoint_RestoresCurrentStepAnswersBudgetAndBackHistory()
+    {
+        var state = new ChoiceScenarioSessionState();
+        var start = Step("budget_setup", "Глубина", "budget_4");
+        state.Reset(start);
+        ChoiceScenarioStepBudget.TryCreate("budget_4", out var budget);
+        state.ConfigureStepBudget(budget);
+        var domain = Step("start_fixed_step", "Область", "knowledge");
+        state.AddStep(domain, consumedAnswer: false);
+        state.TryAddAnswer(domain.Options[0]);
+        var next = Step("question_step", "Тип работы", "research");
+        state.AddStep(next);
+
+        var restored = new ChoiceScenarioSessionState();
+        restored.Restore(state.CreateCheckpoint());
+
+        Assert.AreEqual("Тип работы", restored.CurrentStep?.Question);
+        Assert.AreEqual(1, restored.Answers.Count);
+        Assert.AreEqual(4, restored.StepBudget?.MaximumSteps);
+        Assert.IsTrue(restored.TryGoBack(out var previous));
+        Assert.AreEqual("Область", previous?.Question);
+        Assert.AreEqual(0, restored.Answers.Count);
+    }
+
     private static ChoiceScenarioStep Step(string type, string question, string optionId) => new()
     {
         StepType = type,

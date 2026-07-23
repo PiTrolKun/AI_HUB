@@ -507,6 +507,52 @@ public sealed class ExecutorModelPipelineTests
     }
 
     [TestMethod]
+    public void SessionKnowledgeTree_RestoreKeepsActiveBranchAndAcceptsNextAnswer()
+    {
+        var original = new SessionKnowledgeTree();
+        original.Initialize(new ExecutorHandoffPackage
+        {
+            SuggestedDirection = "Исследование",
+            Goal = "Собрать обзор",
+            LanguageCode = "ru"
+        });
+        original.RecordTurn(new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            StageId = ExecutorStageIds.PracticalClarification,
+            Question = "Какой объём нужен?",
+            Options = ["Краткий", "Подробный"],
+            AllowCustom = true
+        });
+        original.RecordAnswer("Подробный");
+        original.RecordTurn(new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            StageId = ExecutorStageIds.PracticalClarification,
+            Question = "Добавить таблицу?",
+            Options = ["Да", "Нет"],
+            AllowCustom = true
+        });
+
+        var restored = new SessionKnowledgeTree();
+        restored.Restore(original.GetSnapshot());
+        restored.RecordAnswer("Да");
+        var snapshot = restored.GetSnapshot();
+
+        var secondQuestion = snapshot.Nodes.Single(node => node.Content == "Добавить таблицу?");
+        Assert.IsTrue(secondQuestion.IsResolved);
+        Assert.AreEqual(
+            "Да",
+            snapshot.Nodes.Single(node =>
+                node.ParentId == secondQuestion.Id
+                && node.IsActive).Content);
+        StringAssert.Contains(restored.BuildModelContext(), "Подробный");
+        StringAssert.Contains(restored.BuildModelContext(), "Да");
+    }
+
+    [TestMethod]
     public void SessionTreeLayout_CollapseRemovesDescendants()
     {
         var tree = new SessionKnowledgeTree();

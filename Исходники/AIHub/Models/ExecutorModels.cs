@@ -61,6 +61,8 @@ public sealed class ExecutorHandoffPackage
     public string WorkloadMode { get; set; } = UserWorkloadModes.Balanced;
     public UserAnswerPreferences AnswerPreferences { get; set; } = new();
     public string ParentCoreSessionId { get; set; } = string.Empty;
+
+    public string ParentRunId { get; set; } = string.Empty;
 }
 
 public sealed class ExecutorHandoffItem

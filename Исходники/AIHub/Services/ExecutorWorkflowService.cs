@@ -19,6 +19,8 @@ public sealed class ExecutorWorkflowService : IDisposable
 
     public event EventHandler<SessionKnowledgeTreeChangedEventArgs>? KnowledgeTreeChanged;
 
+    public event EventHandler? CheckpointChanged;
+
     public bool BriefConfirmed => _session?.BriefConfirmed ?? false;
 
     public IReadOnlyList<ExecutorResultSnapshot> Snapshots =>
@@ -26,6 +28,11 @@ public sealed class ExecutorWorkflowService : IDisposable
 
     public SessionKnowledgeTreeSnapshot? KnowledgeTreeSnapshot =>
         _session?.KnowledgeTree.GetSnapshot();
+
+    public string ActiveLogPath => _sessionLog?.FilePath ?? string.Empty;
+
+    public ExecutorSessionCheckpoint? CreateCheckpoint() =>
+        _session?.CreateCheckpoint();
 
     public Task<ExecutorModelArtifact> ResolveAsync(
         string requestedModel,
@@ -87,26 +94,57 @@ public sealed class ExecutorWorkflowService : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         Stop("replaced");
-        _sessionLog = ScenarioSessionLog.CreateUncertaintyExecutor(storageSettings);
+        _sessionLog = ScenarioSessionLog.CreateUncertaintyExecutor(
+            storageSettings,
+            handoff.ParentCoreSessionId,
+            handoff.ParentRunId);
         _session = new ExecutorSessionService(_userContextService);
         _session.KnowledgeTree.Changed += SessionKnowledgeTree_Changed;
-        return await _session.ExecuteAsync(
+        var turn = await _session.ExecuteAsync(
             artifact,
             handoff,
             storageSettings,
             _sessionLog,
             streamProgress,
             cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
     }
 
-    public Task<ExecutorTurnResult> ContinueAsync(
+    public ExecutorTurnResult Restore(
+        ExecutorSessionCheckpoint checkpoint,
+        ExecutorModelArtifact installedArtifact,
+        StorageSettings storageSettings,
+        SessionRestorationContext restoration)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Stop("replaced_by_restored_session");
+        _sessionLog = ScenarioSessionLog.CreateUncertaintyExecutor(
+            storageSettings,
+            restoration.SessionId,
+            restoration.RunId);
+        _session = new ExecutorSessionService(_userContextService);
+        _session.KnowledgeTree.Changed += SessionKnowledgeTree_Changed;
+        var turn = _session.Restore(
+            checkpoint,
+            installedArtifact,
+            storageSettings,
+            _sessionLog,
+            restoration);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
+    }
+
+    public async Task<ExecutorTurnResult> ContinueAsync(
         string userResponse,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _session?.ContinueAsync(userResponse, streamProgress, cancellationToken)
-            ?? throw new InvalidOperationException("Executor session is not active.");
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ContinueAsync(userResponse, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
     }
 
     public async Task<ExecutorTurnResult> ContinueAndRunAsync(
@@ -117,7 +155,9 @@ public sealed class ExecutorWorkflowService : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
         var turn = await session.ContinueAsync(userResponse, streamProgress, cancellationToken);
-        return await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        turn = await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
     }
 
     public async Task<ExecutorTurnResult> ConfirmBriefAndRunAsync(
@@ -127,25 +167,31 @@ public sealed class ExecutorWorkflowService : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
         var turn = await session.ConfirmBriefAsync(streamProgress, cancellationToken);
-        return await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        turn = await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
     }
 
-    public Task<ExecutorResultSnapshot> CreateResultSnapshotAsync(
+    public async Task<ExecutorResultSnapshot> CreateResultSnapshotAsync(
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _session?.CreateResultSnapshotAsync(streamProgress, cancellationToken)
-            ?? throw new InvalidOperationException("Executor session is not active.");
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var snapshot = await session.CreateResultSnapshotAsync(streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return snapshot;
     }
 
-    public Task<ExecutorResultSnapshot> CreateFinalResultAsync(
+    public async Task<ExecutorResultSnapshot> CreateFinalResultAsync(
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _session?.CreateFinalResultAsync(streamProgress, cancellationToken)
-            ?? throw new InvalidOperationException("Executor session is not active.");
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var snapshot = await session.CreateFinalResultAsync(streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return snapshot;
     }
 
     public void Write(string eventType, object? payload = null) => _sessionLog?.Write(eventType, payload);

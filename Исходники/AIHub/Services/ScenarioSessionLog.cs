@@ -26,10 +26,12 @@ public sealed class ScenarioSessionLog : ISessionEventLog
     private readonly Task _writeTask;
     private bool _disposed;
 
-    private ScenarioSessionLog(string filePath)
+    private ScenarioSessionLog(string filePath, string? sessionId = null)
     {
         FilePath = filePath;
-        SessionId = Path.GetFileNameWithoutExtension(filePath);
+        SessionId = string.IsNullOrWhiteSpace(sessionId)
+            ? Path.GetFileNameWithoutExtension(filePath)
+            : sessionId;
         _writeTask = Task.Run(WriteLoopAsync);
     }
 
@@ -37,8 +39,18 @@ public sealed class ScenarioSessionLog : ISessionEventLog
 
     public string SessionId { get; }
 
-    public static ScenarioSessionLog CreateUncertainty(StorageSettings storageSettings)
+    public static ScenarioSessionLog CreateUncertainty(
+        StorageSettings storageSettings,
+        string? sessionId = null,
+        string? runId = null)
     {
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            var directory = new ScenarioSessionArchiveService()
+                .GetLogsDirectory(storageSettings, sessionId);
+            return CreateInDirectory(directory, "core", sessionId, runId);
+        }
+
         var configuredRoot = GetResultsRoot(storageSettings);
         var configuredDirectory = configuredRoot is null
             ? null
@@ -64,8 +76,18 @@ public sealed class ScenarioSessionLog : ISessionEventLog
         return CreateInDirectory(fallbackDirectory);
     }
 
-    public static ScenarioSessionLog CreateUncertaintyExecutor(StorageSettings storageSettings)
+    public static ScenarioSessionLog CreateUncertaintyExecutor(
+        StorageSettings storageSettings,
+        string? sessionId = null,
+        string? runId = null)
     {
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            var projectDirectory = new ScenarioSessionArchiveService()
+                .GetLogsDirectory(storageSettings, sessionId);
+            return CreateInDirectory(projectDirectory, "executor", sessionId, runId);
+        }
+
         var configuredRoot = GetResultsRoot(storageSettings);
         var directory = configuredRoot is null
             ? Path.Combine(AppDataPaths.BaseDirectory, "Scenarios", "Uncertainty", "Executors")
@@ -120,15 +142,36 @@ public sealed class ScenarioSessionLog : ISessionEventLog
         _writeTask.GetAwaiter().GetResult();
     }
 
-    private static ScenarioSessionLog CreateInDirectory(string directory, string suffix = "uncertainty")
+    private static ScenarioSessionLog CreateInDirectory(
+        string directory,
+        string suffix = "uncertainty",
+        string? sessionId = null,
+        string? runId = null)
     {
         Directory.CreateDirectory(directory);
-        var filePath = SessionPathService.CreateSessionFilePath(directory, suffix);
+        var filePath = string.IsNullOrWhiteSpace(runId)
+            ? SessionPathService.CreateSessionFilePath(directory, suffix)
+            : CreateRunLogPath(directory, suffix, runId);
         using (File.Open(filePath, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
         {
         }
 
-        return new ScenarioSessionLog(filePath);
+        return new ScenarioSessionLog(filePath, sessionId);
+    }
+
+    private static string CreateRunLogPath(string directory, string suffix, string runId)
+    {
+        var safeRunId = string.Concat(runId.Select(character =>
+            Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
+        var basePath = Path.Combine(directory, $"{safeRunId}_{suffix}.jsonl");
+        if (!File.Exists(basePath))
+        {
+            return basePath;
+        }
+
+        return Path.Combine(
+            directory,
+            $"{safeRunId}_{suffix}_{Guid.NewGuid():N}.jsonl");
     }
 
     private static string? GetResultsRoot(StorageSettings storageSettings)

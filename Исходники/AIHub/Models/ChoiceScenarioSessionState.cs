@@ -27,6 +27,49 @@ public sealed class ChoiceScenarioSessionState
 
     public bool IsStepBudgetExhausted => StepBudget is not null && StepsRemaining == 0;
 
+    public ChoiceScenarioStateCheckpoint CreateCheckpoint() => new()
+    {
+        Steps = CloneList(_steps),
+        StepConsumesAnswer = [.. _stepConsumesAnswer],
+        Answers = CloneList(_answers),
+        ProfileSnapshots = CloneList(_profileSnapshots),
+        StepBudget = CloneObject(StepBudget),
+        CapabilityProfile = CapabilityProfile.Clone()
+    };
+
+    public void Restore(ChoiceScenarioStateCheckpoint checkpoint)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        if (checkpoint.Steps.Count == 0
+            || checkpoint.StepConsumesAnswer.Count != checkpoint.Steps.Count
+            || checkpoint.ProfileSnapshots.Count != checkpoint.Steps.Count)
+        {
+            throw new InvalidOperationException("The saved choice scenario checkpoint is incomplete.");
+        }
+
+        _steps.Clear();
+        _steps.AddRange(CloneList(checkpoint.Steps));
+        _stepConsumesAnswer.Clear();
+        _stepConsumesAnswer.AddRange(checkpoint.StepConsumesAnswer);
+        _answers.Clear();
+        _answers.AddRange(CloneList(checkpoint.Answers));
+        _profileSnapshots.Clear();
+        _profileSnapshots.AddRange(CloneList(checkpoint.ProfileSnapshots));
+        _stepFingerprints.Clear();
+        _semanticPatterns.Clear();
+        StepBudget = CloneObject(checkpoint.StepBudget);
+        CapabilityProfile.ReplaceWith(checkpoint.CapabilityProfile);
+        foreach (var step in _steps)
+        {
+            var fingerprint = CreateFingerprint(step);
+            _stepFingerprints.TryGetValue(fingerprint, out var fingerprintCount);
+            _stepFingerprints[fingerprint] = fingerprintCount + 1;
+            var semanticPattern = CreateSemanticPattern(step.Question);
+            _semanticPatterns.TryGetValue(semanticPattern, out var semanticCount);
+            _semanticPatterns[semanticPattern] = semanticCount + 1;
+        }
+    }
+
     public void Reset(ChoiceScenarioStep startStep)
     {
         _steps.Clear();
@@ -214,5 +257,23 @@ public sealed class ChoiceScenarioSessionState
             .Where(word => word.Length > 0)
             .Take(3);
         return string.Join(' ', normalizedWords);
+    }
+
+    private static List<T> CloneList<T>(IEnumerable<T> values)
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(values);
+        return System.Text.Json.JsonSerializer.Deserialize<List<T>>(json) ?? [];
+    }
+
+    private static T? CloneObject<T>(T? value)
+        where T : class
+    {
+        if (value is null)
+        {
+            return default;
+        }
+
+        var json = System.Text.Json.JsonSerializer.Serialize(value);
+        return System.Text.Json.JsonSerializer.Deserialize<T>(json);
     }
 }

@@ -1150,8 +1150,8 @@
               Margin="56,44,56,36"
               Visibility="Collapsed">
             <Grid.RowDefinitions>
+                <RowDefinition Height="24" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -1277,6 +1277,7 @@
             <Expander x:Name="PreviousWorkExpander"
                       Grid.Row="4"
                       IsExpanded="False"
+                      VerticalAlignment="Stretch"
                       Expanded="PreviousWorkExpander_Expanded"
                       Collapsed="PreviousWorkExpander_Collapsed">
                 <Expander.Header>
@@ -1287,48 +1288,182 @@
                                FontWeight="SemiBold" />
                 </Expander.Header>
 
-                <Border Background="{DynamicResource PanelBrush}"
-                        BorderBrush="{DynamicResource LineBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="20"
-                        MaxWidth="720"
-                        HorizontalAlignment="Left"
-                        Margin="0,12,0,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                <Grid Margin="0,12,0,0"
+                      MaxWidth="960"
+                      HorizontalAlignment="Left">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                        <StackPanel>
-                            <TextBlock x:Name="PreviousWorkExampleTitleText"
-                                       Text="Пример будущей записи"
-                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="16"
-                                       FontWeight="SemiBold" />
-                            <TextBlock x:Name="PreviousWorkExampleNameText"
-                                       Text="Изучение: &quot;Как выбрать локальную AI-модель&quot;"
+                    <Border x:Name="PreviousWorkSelectionPanel"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource LineBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="12,8"
+                            Margin="0,0,0,8"
+                            Visibility="Collapsed">
+                        <DockPanel LastChildFill="False">
+                            <TextBlock x:Name="PreviousWorkSelectionCountText"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="13"
-                                       TextWrapping="Wrap"
-                                       Margin="0,8,16,0" />
-                            <TextBlock x:Name="PreviousWorkExampleDateText"
-                                       Text="Последнее открытие: сегодня"
-                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                       FontSize="13"
-                                       Margin="0,4,16,0" />
-                        </StackPanel>
+                                       VerticalAlignment="Center"
+                                       DockPanel.Dock="Left" />
+                            <Button x:Name="ClearPreviousWorkSelectionButton"
+                                    Content="Снять выбор"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    MinWidth="104"
+                                    Padding="12,0"
+                                    Margin="12,0,0,0"
+                                    DockPanel.Dock="Right"
+                                    Click="ClearPreviousWorkSelectionButton_Click" />
+                            <Button x:Name="DeletePreviousWorkSelectionButton"
+                                    Content="Удалить"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Height="32"
+                                    MinWidth="92"
+                                    Padding="12,0"
+                                    Margin="8,0,0,0"
+                                    DockPanel.Dock="Right"
+                                    Click="DeletePreviousWorkSelectionButton_Click" />
+                        </DockPanel>
+                    </Border>
 
-                        <Button x:Name="ContinuePreviousWorkButton"
-                                Grid.Column="1"
-                                Content="Продолжить"
-                                Style="{StaticResource SecondaryButtonStyle}"
-                                MinWidth="116"
-                                VerticalAlignment="Bottom"
-                                IsEnabled="False" />
-                    </Grid>
-                </Border>
+                    <TextBlock x:Name="PreviousWorkEmptyText"
+                               Grid.Row="1"
+                               Text="Сохранённых сессий пока нет."
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="14"
+                               Margin="4,12,0,0"
+                               Visibility="Collapsed" />
+
+                    <ScrollViewer x:Name="PreviousWorkScrollViewer"
+                                  Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  PanningMode="VerticalOnly">
+                        <ItemsControl x:Name="PreviousWorkItemsControl">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource PanelBrush}"
+                                            BorderBrush="{DynamicResource LineBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="16"
+                                            Margin="0,0,0,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <CheckBox Grid.Column="0"
+                                                      IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      VerticalAlignment="Top"
+                                                      Margin="0,4,12,0"
+                                                      Click="PreviousWorkSelectionCheckBox_Click" />
+
+                                            <Grid Grid.Column="1">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <Grid Grid.Row="0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Text="{Binding DisplayTitle, UpdateSourceTrigger=PropertyChanged}"
+                                                             IsReadOnly="{Binding IsTitleReadOnly}"
+                                                             Tag="{Binding}"
+                                                             Foreground="{DynamicResource TextPrimaryBrush}"
+                                                             Background="Transparent"
+                                                             BorderThickness="0"
+                                                             Padding="0"
+                                                             FontSize="16"
+                                                             FontWeight="SemiBold"
+                                                             MaxLength="100"
+                                                             VerticalContentAlignment="Center"
+                                                             KeyDown="PreviousWorkTitleTextBox_KeyDown"
+                                                             LostKeyboardFocus="PreviousWorkTitleTextBox_LostKeyboardFocus" />
+                                                    <Button Grid.Column="1"
+                                                            Content="✎"
+                                                            Tag="{Binding}"
+                                                            IsEnabled="{Binding CanResume}"
+                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                            Width="32"
+                                                            Height="32"
+                                                            MinWidth="32"
+                                                            Padding="0"
+                                                            Margin="8,-4,8,0"
+                                                            FontFamily="Segoe UI Symbol, Segoe UI"
+                                                            ToolTip="{Binding RenameTooltip}"
+                                                            Click="RenamePreviousWorkButton_Click" />
+                                                </Grid>
+                                                <TextBlock Grid.Row="1"
+                                                           Text="{Binding CreatedText}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontSize="12"
+                                                           Margin="0,7,16,0" />
+                                                <StackPanel Grid.Row="2"
+                                                            Orientation="Horizontal"
+                                                            Margin="0,3,16,0">
+                                                    <TextBlock Text="{Binding UpdatedText}"
+                                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               FontSize="12" />
+                                                    <TextBlock Text="{Binding StatusText}"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               FontSize="12"
+                                                               FontWeight="SemiBold"
+                                                               Margin="14,0,0,0" />
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Button Grid.Column="2"
+                                                    Tag="{Binding}"
+                                                    Content="{Binding PrimaryActionText}"
+                                                    IsEnabled="{Binding CanResume}"
+                                                    MinWidth="136"
+                                                    Margin="16,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Click="PreviousWorkPrimaryActionButton_Click">
+                                                <Button.Style>
+                                                    <Style TargetType="Button"
+                                                           BasedOn="{StaticResource SecondaryButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding RequiresExecutorDownload}"
+                                                                         Value="True">
+                                                                <Setter Property="Foreground"
+                                                                        Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="BorderBrush"
+                                                                        Value="{DynamicResource AccentBrush}" />
+                                                                <DataTrigger.EnterActions>
+                                                                    <BeginStoryboard>
+                                                                        <Storyboard RepeatBehavior="Forever"
+                                                                                    AutoReverse="True">
+                                                                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                             From="1"
+                                                                                             To="0.62"
+                                                                                             Duration="0:0:0.85" />
+                                                                        </Storyboard>
+                                                                    </BeginStoryboard>
+                                                                </DataTrigger.EnterActions>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
             </Expander>
 
             <StackPanel Grid.Row="6"

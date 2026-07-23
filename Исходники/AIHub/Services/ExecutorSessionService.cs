@@ -14,8 +14,11 @@ public sealed class ExecutorSessionService : IDisposable
     private readonly List<StructuredChatMessage> _messages = [];
     private readonly List<ExecutorResultSnapshot> _snapshots = [];
     private readonly SessionKnowledgeTree _knowledgeTree = new();
+    private ExecutorModelArtifact? _artifact;
+    private ExecutorHandoffPackage? _handoff;
     private DebugModelInfo? _model;
     private string _systemPrompt = string.Empty;
+    private string _restorationPrompt = string.Empty;
     private string _languageCode = "ru";
     private List<StructuredToolDefinition> _tools = [];
     private StorageSettings? _storageSettings;
@@ -43,6 +46,30 @@ public sealed class ExecutorSessionService : IDisposable
 
     public SessionKnowledgeTree KnowledgeTree => _knowledgeTree;
 
+    public ExecutorTurnResult? LastTurn => _lastTurn;
+
+    public ExecutorSessionCheckpoint CreateCheckpoint()
+    {
+        EnsureActive();
+        return new ExecutorSessionCheckpoint
+        {
+            Artifact = Clone(_artifact!),
+            Handoff = Clone(_handoff!),
+            Messages = Clone(_messages),
+            LastTurn = Clone(_lastTurn),
+            CurrentStageId = _currentStageId,
+            ConfirmedBriefCheckpoint = _confirmedBriefCheckpoint,
+            BriefConfirmed = _briefConfirmed,
+            SnapshotVersion = _snapshotVersion,
+            Snapshots = Clone(_snapshots),
+            KnowledgeTree = _knowledgeTree.GetSnapshot(),
+            EnabledTools = _tools
+                .Select(tool => tool.Function.Name)
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
+        };
+    }
+
     public async Task<ExecutorTurnResult> ExecuteAsync(
         ExecutorModelArtifact artifact,
         ExecutorHandoffPackage handoff,
@@ -57,6 +84,8 @@ public sealed class ExecutorSessionService : IDisposable
             throw new FileNotFoundException("The executor model is not installed.", artifact.InstalledPath);
         }
 
+        _artifact = Clone(artifact);
+        _handoff = Clone(handoff);
         _model = new DebugModelInfo
         {
             Name = artifact.RepoId,
@@ -68,6 +97,7 @@ public sealed class ExecutorSessionService : IDisposable
             IsRunnable = true
         };
         _systemPrompt = BuildSystemPrompt(handoff);
+        _restorationPrompt = string.Empty;
         _languageCode = handoff.LanguageCode;
         _storageSettings = storageSettings;
         _sessionLog = sessionLog;
@@ -102,6 +132,75 @@ public sealed class ExecutorSessionService : IDisposable
                 .ToList()
             : [];
         return await RunLoopAsync(streamProgress, cancellationToken);
+    }
+
+    public ExecutorTurnResult Restore(
+        ExecutorSessionCheckpoint checkpoint,
+        ExecutorModelArtifact installedArtifact,
+        StorageSettings storageSettings,
+        ISessionEventLog sessionLog,
+        SessionRestorationContext restoration)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        ArgumentNullException.ThrowIfNull(restoration);
+        if (!installedArtifact.IsInstalled || !File.Exists(installedArtifact.InstalledPath))
+        {
+            throw new FileNotFoundException(
+                "The executor model required by the saved session is not installed.",
+                installedArtifact.InstalledPath);
+        }
+
+        _artifact = Clone(installedArtifact);
+        _handoff = Clone(checkpoint.Handoff);
+        _model = new DebugModelInfo
+        {
+            Name = installedArtifact.RepoId,
+            Path = installedArtifact.InstalledPath,
+            SizeBytes = installedArtifact.SizeBytes,
+            Role = "executor",
+            Status = "installed",
+            Format = "gguf",
+            IsRunnable = true
+        };
+        _restorationPrompt = BuildRestorationPrompt(restoration);
+        _systemPrompt = string.Join(
+            Environment.NewLine,
+            BuildSystemPrompt(checkpoint.Handoff),
+            string.Empty,
+            _restorationPrompt);
+        _languageCode = checkpoint.Handoff.LanguageCode;
+        _storageSettings = storageSettings;
+        _sessionLog = sessionLog;
+        _currentStageId = checkpoint.CurrentStageId;
+        _confirmedBriefCheckpoint = checkpoint.ConfirmedBriefCheckpoint;
+        _briefConfirmed = checkpoint.BriefConfirmed;
+        _snapshotVersion = checkpoint.SnapshotVersion;
+        _lastTurn = Clone(checkpoint.LastTurn);
+        _messages.Clear();
+        _messages.AddRange(Clone(checkpoint.Messages));
+        _snapshots.Clear();
+        _snapshots.AddRange(Clone(checkpoint.Snapshots));
+        _tools = ScenarioToolCatalog.CreateDefinitions()
+            .Where(tool => checkpoint.EnabledTools.Contains(
+                tool.Function.Name,
+                StringComparer.Ordinal))
+            .ToList();
+        _knowledgeTree.Restore(checkpoint.KnowledgeTree);
+        sessionLog.Write("executor_session_restored", new
+        {
+            restoration.SessionId,
+            restoration.RunId,
+            restoration.ResumeCount,
+            restoration.PreviousStopKind,
+            restoration.PreviousStopReason,
+            restoration.LostUncommittedTurn,
+            Stage = _currentStageId,
+            Model = installedArtifact.RepoId
+        });
+
+        return _lastTurn
+            ?? throw new InvalidOperationException("The saved executor session has no stable turn.");
     }
 
     public async Task<ExecutorTurnResult> ContinueAsync(
@@ -398,9 +497,12 @@ public sealed class ExecutorSessionService : IDisposable
         {
             var response = await _runtime.GenerateExternalWithToolsAsync(
                 model,
-                isFinal
-                    ? BuildFinalResultSystemPrompt(_languageCode)
-                    : BuildSnapshotSystemPrompt(_languageCode),
+                string.Join(
+                    Environment.NewLine,
+                    isFinal
+                        ? BuildFinalResultSystemPrompt(_languageCode)
+                        : BuildSnapshotSystemPrompt(_languageCode),
+                    _restorationPrompt),
                 snapshotMessages,
                 [],
                 message => sessionLog.Write("executor_runtime", new { Message = message }),
@@ -902,6 +1004,27 @@ public sealed class ExecutorSessionService : IDisposable
             "The document may be long. Preserve substantive detail instead of summarizing it away.",
             $"Document language: {languageCode}.");
 
+    private static string BuildRestorationPrompt(SessionRestorationContext restoration) =>
+        string.Join(
+            Environment.NewLine,
+            "[AI_HUB_SESSION_RESTORED]",
+            $"Stable session id: {restoration.SessionId}.",
+            $"Current restored run id: {restoration.RunId}.",
+            $"Resume count: {restoration.ResumeCount}.",
+            $"Original session created at: {restoration.OriginalCreatedAt:O}.",
+            $"Restored at: {restoration.RestoredAt:O}.",
+            $"Previous stop kind: {restoration.PreviousStopKind}.",
+            $"Previous stop reason: {restoration.PreviousStopReason}.",
+            $"Last stable stage: {restoration.LastStableStage}.",
+            $"An uncommitted interrupted turn was lost: {restoration.LostUncommittedTurn}.",
+            "This is a restored run of an existing session, not the original run and not a new task.",
+            "Continue from the saved confirmed checkpoint. Do not restart discovery, repeat introductions or claim uninterrupted process memory.",
+            "Treat previous results as preserved versions and a basis for continued work, not as immutable terminal answers.",
+            restoration.LostUncommittedTurn
+                ? "Do not assume that the interrupted unfinished action completed."
+                : "All restored turns in the checkpoint were fully committed by AI HUB.",
+            "Mention restoration to the user only when it materially affects the next decision.");
+
     private static string ExtractSnapshotTitle(string markdown, int version, string languageCode)
     {
         var title = markdown
@@ -947,5 +1070,12 @@ public sealed class ExecutorSessionService : IDisposable
         {
             throw new InvalidOperationException("Executor session has not been started.");
         }
+    }
+
+    private static T Clone<T>(T value)
+    {
+        var json = JsonSerializer.Serialize(value);
+        return JsonSerializer.Deserialize<T>(json)
+            ?? throw new InvalidOperationException($"Cannot clone {typeof(T).Name}.");
     }
 }
