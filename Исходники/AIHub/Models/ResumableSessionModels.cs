@@ -37,6 +37,10 @@ public sealed class ChoiceScenarioStateCheckpoint
     public bool PendingCoreRequest { get; set; }
 
     public bool PendingCoreRequestFinal { get; set; }
+
+    public bool PendingCoreRequestConsumesAnswer { get; set; }
+
+    public string PendingCoreRequestTrigger { get; set; } = string.Empty;
 }
 
 public sealed class ExecutorSessionCheckpoint
@@ -118,6 +122,8 @@ public sealed class ResumableScenarioSession
     public bool IsRunOpen { get; set; }
 
     public bool LostUncommittedTurn { get; set; }
+
+    public SessionFileManifest FileManifest { get; set; } = new();
 
     public ChoiceScenarioStateCheckpoint Core { get; set; } = new();
 

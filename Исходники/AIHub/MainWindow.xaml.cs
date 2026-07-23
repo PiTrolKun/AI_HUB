@@ -41,11 +41,13 @@ public partial class MainWindow : Window
     private readonly CoreSpeechPresentationCoordinator _executorSpeechCoordinator;
     private readonly ExecutorWorkflowService _executorWorkflowService;
     private readonly ScenarioSessionArchiveService _sessionArchiveService = new();
+    private readonly SessionFileManifestService _sessionFileManifestService = new();
     private readonly DispatcherTimer _profileBlinkTimer = new();
     private readonly ObservableCollection<ChoiceScenarioOption> _choiceScenarioOptions = [];
     private readonly ObservableCollection<ChoiceScenarioOption> _executorClarificationOptions = [];
     private readonly ObservableCollection<ChoiceExecutorCandidateDisplay> _executorCandidateOptions = [];
     private readonly ObservableCollection<ResumableSessionCardViewModel> _previousSessionCards = [];
+    private readonly ObservableCollection<SessionFileCardViewModel> _sessionFileCards = [];
 
     private AppSettings _appSettings = new();
     private AppState _appState = new();
@@ -127,6 +129,8 @@ public partial class MainWindow : Window
         ExecutorClarificationOptionsItemsControl.ItemsSource = _executorClarificationOptions;
         ExecutorCandidateItemsControl.ItemsSource = _executorCandidateOptions;
         PreviousWorkItemsControl.ItemsSource = _previousSessionCards;
+        ChoiceSessionFilesItemsControl.ItemsSource = _sessionFileCards;
+        ExecutorSessionFilesItemsControl.ItemsSource = _sessionFileCards;
         InitializeAppData();
         RefreshPreviousSessions();
         LoadCoreVoiceSettingsIntoControls();
@@ -560,6 +564,8 @@ public partial class MainWindow : Window
         ChoiceScenarioTitleText.Text = L("ChoiceScenario.Title");
         ChoiceScenarioDescriptionText.Text = L("ChoiceScenario.Description");
         ChoiceScenarioCoreThoughtTitleText.Text = L("ChoiceScenario.CoreThoughtTitle");
+        ChoiceSessionFilesTitleText.Text = L("ChoiceScenario.Files.PanelTitle");
+        ExecutorSessionFilesTitleText.Text = L("ChoiceScenario.Files.PanelTitle");
         UpdateCoreVoiceControls();
         ChoiceCustomOptionButton.Content = L("ChoiceScenario.CustomOption");
         ChoiceCustomInputHelpText.Text = L("ChoiceScenario.CustomInputHelp");
@@ -585,6 +591,7 @@ public partial class MainWindow : Window
         UpdateExecutorVoiceControls();
         BackFromChoiceScenarioButton.Content = L("Settings.Back");
         CancelChoiceScenarioButton.Content = L("ChoiceScenario.Cancel");
+        RefreshSessionFileCards();
 
         DownloadCoreModelButton.Content = L("CoreModel.Download");
         OpenSetupFromCoreModelButton.Content = L("CoreModel.OpenSetup");
@@ -1097,6 +1104,43 @@ public partial class MainWindow : Window
         }
 
         ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
+        if (string.Equals(
+            _currentChoiceScenarioStep?.StepType,
+            ChoiceScenarioService.FileSetupStepType,
+            StringComparison.Ordinal))
+        {
+            if (string.Equals(option.Id, ChoiceScenarioService.SelectFilesOptionId, StringComparison.Ordinal)
+                && AddSessionFilesFromPicker() <= 0)
+            {
+                StatusText.Text = L("Status.ChoiceScenarioFileSelectionCancelled");
+                return;
+            }
+
+            if (string.Equals(option.Id, ChoiceScenarioService.NoFilesOptionId, StringComparison.Ordinal))
+            {
+                _sessionFileManifestService.SetNoFilesPlanned(GetActiveFileManifest());
+            }
+            else if (!string.Equals(option.Id, ChoiceScenarioService.SelectFilesOptionId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            RefreshSessionFileCards();
+            ApplyFileManifestToCoreProfile();
+            WriteFileManifestEvent("scenario_file_setup_completed");
+            var budgetStep = _choiceScenarioService.CreateBudgetStep(L);
+            _choiceScenarioState.AddStep(budgetStep, consumedAnswer: false);
+            RenderChoiceScenarioStep(budgetStep);
+            _choiceScenarioLog?.Write("scenario_parsed_step", budgetStep);
+            SaveActiveSessionCheckpoint(
+                pendingCoreRequest: false,
+                pendingCoreRequestFinal: false,
+                pendingCoreRequestConsumesAnswer: false,
+                pendingCoreRequestTrigger: string.Empty);
+            StatusText.Text = L("Status.ChoiceScenarioFileSetupCompleted");
+            return;
+        }
+
         if (option.Id.StartsWith("budget_", StringComparison.Ordinal)
             && !string.Equals(_currentChoiceScenarioStep?.StepType, "budget_setup", StringComparison.Ordinal))
         {
@@ -1156,6 +1200,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (sender is System.Windows.Controls.Button button)
+        {
+            ShowCustomChoiceMenu(button, executorContext: false);
+        }
+    }
+
+    private void ShowCoreCustomTextInput()
+    {
         ChoiceCustomInputPanel.Visibility = Visibility.Visible;
         ChoiceCustomInput.Focus();
         StatusText.Text = L("Status.ChoiceScenarioCustomInput");
@@ -1582,6 +1634,11 @@ public partial class MainWindow : Window
             _choiceScenarioInvalidJsonCount = 0;
             _choiceScenarioRequestInProgress = false;
             _choiceScenarioState.Restore(session.Core);
+            session.FileManifest ??= new SessionFileManifest();
+            var fileAvailabilityChanged = _sessionFileManifestService.RefreshAvailability(
+                session.FileManifest);
+            ApplyFileManifestToCoreProfile();
+            RefreshSessionFileCards();
             _choiceScenarioLog = ScenarioSessionLog.CreateUncertainty(
                 _storageSettings,
                 session.SessionId,
@@ -1596,6 +1653,8 @@ public partial class MainWindow : Window
                 _sessionRestorationContext.PreviousStopKind,
                 _sessionRestorationContext.PreviousStopReason,
                 _sessionRestorationContext.LostUncommittedTurn,
+                FileAvailabilityChanged = fileAvailabilityChanged,
+                FileManifest = _sessionFileManifestService.CreatePromptManifest(session.FileManifest),
                 _choiceScenarioLog.FilePath
             });
             _choiceScenarioLog.Write("scenario_context_snapshot", _userContextService.CreateSnapshot());
@@ -1620,6 +1679,8 @@ public partial class MainWindow : Window
 
             if (session.Executor is { } executorCheckpoint)
             {
+                executorCheckpoint.Handoff.FileManifest =
+                    _sessionFileManifestService.CreatePromptManifest(session.FileManifest);
                 var installedArtifact = FindInstalledExecutorArtifact(session);
                 if (installedArtifact is not null)
                 {
@@ -1646,7 +1707,12 @@ public partial class MainWindow : Window
             if (session.Core.PendingCoreRequest)
             {
                 CancelCoreSpeech(revealFullText: true, "restored_pending_request");
-                await RequestNextChoiceScenarioStepAsync(session.Core.PendingCoreRequestFinal);
+                await RequestNextChoiceScenarioStepAsync(
+                    session.Core.PendingCoreRequestFinal,
+                    session.Core.PendingCoreRequestConsumesAnswer,
+                    string.IsNullOrWhiteSpace(session.Core.PendingCoreRequestTrigger)
+                        ? "restored_request"
+                        : session.Core.PendingCoreRequestTrigger);
                 return;
             }
 
@@ -2185,7 +2251,7 @@ public partial class MainWindow : Window
         _executorPracticalLayoutActive = false;
         ChoiceCustomInput.Clear();
         ChoiceCustomInputPanel.Visibility = Visibility.Collapsed;
-        var startStep = _choiceScenarioService.CreateBudgetStep(L);
+        var startStep = _choiceScenarioService.CreateFileSetupStep(L);
         _choiceScenarioState.Reset(startStep);
         try
         {
@@ -2199,6 +2265,7 @@ public partial class MainWindow : Window
                 _activeResumableSession.CurrentRunId);
             _activeResumableSession.CoreLogPath = _choiceScenarioLog.FilePath;
             _sessionArchiveService.Save(_storageSettings, _activeResumableSession);
+            RefreshSessionFileCards();
         }
         catch (Exception ex)
         {
@@ -2230,7 +2297,9 @@ public partial class MainWindow : Window
 
     private void SaveActiveSessionCheckpoint(
         bool? pendingCoreRequest = null,
-        bool? pendingCoreRequestFinal = null)
+        bool? pendingCoreRequestFinal = null,
+        bool? pendingCoreRequestConsumesAnswer = null,
+        string? pendingCoreRequestTrigger = null)
     {
         if (_activeResumableSession is null)
         {
@@ -2244,6 +2313,10 @@ public partial class MainWindow : Window
                 ?? _activeResumableSession.Core.PendingCoreRequest;
             core.PendingCoreRequestFinal = pendingCoreRequestFinal
                 ?? _activeResumableSession.Core.PendingCoreRequestFinal;
+            core.PendingCoreRequestConsumesAnswer = pendingCoreRequestConsumesAnswer
+                ?? _activeResumableSession.Core.PendingCoreRequestConsumesAnswer;
+            core.PendingCoreRequestTrigger = pendingCoreRequestTrigger
+                ?? _activeResumableSession.Core.PendingCoreRequestTrigger;
             _activeResumableSession.Core = core;
             if (_currentChoiceScenarioStep?.TaskCard is { } card)
             {
@@ -2380,7 +2453,10 @@ public partial class MainWindow : Window
                 ? "The interrupted unfinished request did not complete. Recreate only that next step from the stable checkpoint."
                 : "All restored scenario steps in the checkpoint were fully committed by AI HUB.");
 
-    private async Task RequestNextChoiceScenarioStepAsync(bool requestFinal)
+    private async Task RequestNextChoiceScenarioStepAsync(
+        bool requestFinal,
+        bool consumesAnswer = true,
+        string requestTrigger = "user_choice")
     {
         if (_choiceScenarioRequestInProgress || _choiceScenarioCts is not null)
         {
@@ -2395,6 +2471,7 @@ public partial class MainWindow : Window
 
         var mustReturnFinal = _choiceScenarioState.IsStepBudgetExhausted;
         var effectiveRequestFinal = requestFinal || mustReturnFinal;
+        var answerCommitted = consumesAnswer && !requestFinal;
         _choiceScenarioRequestInProgress = true;
         _choiceScenarioCts = new CancellationTokenSource();
         SetChoiceScenarioInteractionEnabled(false);
@@ -2409,7 +2486,9 @@ public partial class MainWindow : Window
         {
             SaveActiveSessionCheckpoint(
                 pendingCoreRequest: true,
-                pendingCoreRequestFinal: effectiveRequestFinal);
+                pendingCoreRequestFinal: effectiveRequestFinal,
+                pendingCoreRequestConsumesAnswer: answerCommitted,
+                pendingCoreRequestTrigger: requestFinal ? "manual_final" : requestTrigger);
             var model = _choiceModelDiscoveryService
                 .Discover(_storageSettings)
                 .FirstOrDefault(item => item.IsCoreModel && item.IsRunnable)
@@ -2421,7 +2500,7 @@ public partial class MainWindow : Window
                 var fallbackStep = _choiceScenarioService.CreateFallbackStep(_choiceScenarioState.Answers, L);
                 if (_choiceScenarioState.GetFingerprintCount(fallbackStep) > 0)
                 {
-                    if (!requestFinal)
+                    if (answerCommitted)
                     {
                         _choiceScenarioState.RemoveLastAnswer();
                     }
@@ -2433,7 +2512,7 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: !requestFinal);
+                _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: answerCommitted);
                 RenderChoiceScenarioStep(fallbackStep);
                 SaveActiveSessionCheckpoint(
                     pendingCoreRequest: false,
@@ -2466,13 +2545,17 @@ public partial class MainWindow : Window
                 stepBudget,
                 _choiceScenarioState.SubstantiveStepsUsed,
                 _choiceScenarioState.StepsRemaining,
-                _choiceScenarioState.CapabilityProfile);
+                _choiceScenarioState.CapabilityProfile,
+                _sessionFileManifestService.CreatePromptManifest(GetActiveFileManifest()),
+                requestFinal ? "manual_final" : requestTrigger);
             _choiceScenarioLog?.Write("scenario_core_prompt", new
             {
                 Model = model.Name,
                 model.Path,
                 RequestFinal = effectiveRequestFinal,
                 ManualRequestFinal = requestFinal,
+                RequestTrigger = requestFinal ? "manual_final" : requestTrigger,
+                FileManifest = _sessionFileManifestService.CreatePromptManifest(GetActiveFileManifest()),
                 MustReturnFinal = mustReturnFinal,
                 CapabilityProfile = _choiceScenarioState.CapabilityProfile,
                 StepBudget = stepBudget,
@@ -2572,7 +2655,7 @@ public partial class MainWindow : Window
                         if (!step.IsFinal)
                         {
                             _choiceScenarioInvalidJsonCount++;
-                            if (!requestFinal)
+                            if (answerCommitted)
                             {
                                 _choiceScenarioState.RemoveLastAnswer();
                             }
@@ -2587,7 +2670,7 @@ public partial class MainWindow : Window
                 }
 
                 _choiceScenarioInvalidJsonCount = 0;
-                _choiceScenarioState.AddStep(step, consumedAnswer: !requestFinal);
+                _choiceScenarioState.AddStep(step, consumedAnswer: answerCommitted);
                 RenderChoiceScenarioStep(step);
                 _choiceScenarioLog?.Write("scenario_capability_profile_updated", _choiceScenarioState.CapabilityProfile);
                 if (!step.IsFinal)
@@ -2602,7 +2685,9 @@ public partial class MainWindow : Window
                 _choiceScenarioLog?.Write(step.IsFinal ? "scenario_final_task_card" : "scenario_parsed_step", step);
                 SaveActiveSessionCheckpoint(
                     pendingCoreRequest: false,
-                    pendingCoreRequestFinal: false);
+                    pendingCoreRequestFinal: false,
+                    pendingCoreRequestConsumesAnswer: false,
+                    pendingCoreRequestTrigger: string.Empty);
                 StatusText.Text = step.IsFinal
                     ? L("Status.ChoiceScenarioTaskCardReady")
                     : L("Status.ChoiceScenarioStepReady");
@@ -2610,7 +2695,7 @@ public partial class MainWindow : Window
             }
 
             _choiceScenarioInvalidJsonCount++;
-            if (!requestFinal)
+            if (answerCommitted)
             {
                 _choiceScenarioState.RemoveLastAnswer();
             }
@@ -2641,7 +2726,7 @@ public partial class MainWindow : Window
             var fallbackStep = _choiceScenarioService.CreateFallbackStep(_choiceScenarioState.Answers, L);
             if (_choiceScenarioState.GetFingerprintCount(fallbackStep) > 0)
             {
-                if (!requestFinal)
+                if (answerCommitted)
                 {
                     _choiceScenarioState.RemoveLastAnswer();
                 }
@@ -2649,15 +2734,19 @@ public partial class MainWindow : Window
                 StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
                 SaveActiveSessionCheckpoint(
                     pendingCoreRequest: false,
-                    pendingCoreRequestFinal: false);
+                    pendingCoreRequestFinal: false,
+                    pendingCoreRequestConsumesAnswer: false,
+                    pendingCoreRequestTrigger: string.Empty);
                 return;
             }
 
-            _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: !requestFinal);
+            _choiceScenarioState.AddStep(fallbackStep, consumedAnswer: answerCommitted);
             RenderChoiceScenarioStep(fallbackStep);
             SaveActiveSessionCheckpoint(
                 pendingCoreRequest: false,
-                pendingCoreRequestFinal: false);
+                pendingCoreRequestFinal: false,
+                pendingCoreRequestConsumesAnswer: false,
+                pendingCoreRequestTrigger: string.Empty);
             StatusText.Text = L("Status.ChoiceScenarioCoreUnavailable");
         }
         finally
@@ -2740,6 +2829,7 @@ public partial class MainWindow : Window
         ChoiceCustomOptionButton.IsEnabled = answersEnabled;
         ChoiceCustomSubmitButton.IsEnabled = answersEnabled;
         ChoiceGoFinalButton.IsEnabled = answersEnabled;
+        ChoiceSessionFilesPanel.IsEnabled = answersEnabled;
         BackFromChoiceScenarioButton.IsEnabled = enabled;
         CancelChoiceScenarioButton.IsEnabled = enabled;
     }
@@ -3307,10 +3397,9 @@ public partial class MainWindow : Window
 
         if (string.Equals(option.Id, "executor_custom", StringComparison.Ordinal))
         {
-            ExecutorCustomInputPanel.Visibility = Visibility.Visible;
-            ExecutorCustomInput.Clear();
-            ExecutorCustomInput.Focus();
-            StatusText.Text = L("Status.ExecutorCustomInput");
+            ShowCustomChoiceMenu(
+                (System.Windows.Controls.Button)sender,
+                executorContext: true);
             return;
         }
 
@@ -3366,6 +3455,54 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _executorWorkflowService.Write("executor_failed", new { ex.Message, ErrorType = ex.GetType().FullName });
+            StatusText.Text = LF("Status.ExecutorFailed", ex.Message);
+        }
+        finally
+        {
+            StopChoiceAiActivity();
+            BackFromChoiceScenarioButton.IsEnabled = true;
+            SetExecutorInteractionEnabled(true);
+        }
+    }
+
+    private async Task UpdateExecutorFileManifestAsync()
+    {
+        if (_activeResumableSession is null)
+        {
+            return;
+        }
+
+        CancelExecutorSpeech(revealFullText: true, "file_manifest_updated");
+        _executorCts?.Dispose();
+        _executorCts = new CancellationTokenSource();
+        SetExecutorInteractionEnabled(false);
+        BackFromChoiceScenarioButton.IsEnabled = false;
+        StartChoiceAiActivity();
+        StatusText.Text = L("Status.ExecutorFilesUpdating");
+        try
+        {
+            var promptManifest = _sessionFileManifestService.CreatePromptManifest(
+                _activeResumableSession.FileManifest);
+            var result = await _executorWorkflowService.UpdateFileManifestAsync(
+                promptManifest,
+                CreateMatrixStreamProgress(),
+                _executorCts.Token);
+            DisplayExecutorResponse(result);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_executorSessionFinishedByUser)
+            {
+                StatusText.Text = L("Status.ExecutorCancelled");
+            }
+        }
+        catch (Exception ex)
+        {
+            _executorWorkflowService.Write("executor_file_manifest_failed", new
+            {
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
             StatusText.Text = LF("Status.ExecutorFailed", ex.Message);
         }
         finally
@@ -3458,14 +3595,11 @@ public partial class MainWindow : Window
             }
         }
 
-        if (turn.AllowCustom || suggestsFinalization)
+        _executorClarificationOptions.Add(new ChoiceScenarioOption
         {
-            _executorClarificationOptions.Add(new ChoiceScenarioOption
-            {
-                Id = "executor_custom",
-                Title = L("ChoiceScenario.CustomOption")
-            });
-        }
+            Id = "executor_custom",
+            Title = L("ChoiceScenario.CustomOption")
+        });
 
         ExecutorClarificationOptionsItemsControl.Visibility = _executorClarificationOptions.Count > 0
             ? Visibility.Visible
@@ -3555,6 +3689,8 @@ public partial class MainWindow : Window
             AnswerPreferences = _userProfile.AnswerPreferences,
             ParentCoreSessionId = _choiceScenarioLog?.SessionId ?? string.Empty,
             ParentRunId = _activeResumableSession?.CurrentRunId ?? string.Empty,
+            FileManifest = _sessionFileManifestService.CreatePromptManifest(
+                GetActiveFileManifest()),
             Unknowns =
             [
                 "The exact subject or object of the user's work",
@@ -3581,6 +3717,13 @@ public partial class MainWindow : Window
             Name = "workload_mode",
             Value = _userProfile.WorkloadMode,
             Source = "user_profile",
+            IsAuthoritative = true
+        });
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "file_content_access",
+            Value = "unavailable_in_current_version",
+            Source = "program_file_manifest",
             IsAuthoritative = true
         });
         foreach (var answer in _choiceScenarioState.Answers)
@@ -4223,6 +4366,7 @@ public partial class MainWindow : Window
             && !_executorSessionFinishedByUser;
         ExecutorClarificationOptionsItemsControl.IsEnabled = answersEnabled;
         ExecutorCustomSubmitButton.IsEnabled = answersEnabled;
+        ExecutorSessionFilesPanel.IsEnabled = answersEnabled;
         ExecutorRequestResultButton.IsEnabled = answersEnabled
             && _executorWorkflowService.BriefConfirmed
             && _executorCurrentStageId == ExecutorStageIds.PracticalClarification;

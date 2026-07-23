@@ -1,5 +1,6 @@
 using AIHub.Models;
 using AIHub.Services;
+using System.Text.Json;
 
 namespace AIHub.Tests;
 
@@ -153,6 +154,67 @@ public sealed class ScenarioSessionArchiveServiceTests
         {
             DeleteRoot(root);
         }
+    }
+
+    [TestMethod]
+    public void SaveLoad_PreservesFileManifestAndInternalPath()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var settings = Settings(root);
+            var service = new ScenarioSessionArchiveService();
+            var state = new ChoiceScenarioSessionState();
+            state.Reset(Step("file_setup", "Файлы", "files_none"));
+            var session = service.Create(settings, "Режим неопределенности", state.CreateCheckpoint());
+            session.FileManifest = new SessionFileManifest
+            {
+                Intent = SessionFileIntentStatuses.Selected,
+                Files =
+                [
+                    new SessionFileReference
+                    {
+                        Id = "file-id",
+                        SourcePath = @"C:\UserData\report.docx",
+                        DisplayName = "report.docx",
+                        Extension = ".docx",
+                        Category = SessionFileCategories.Document,
+                        IsAvailable = true
+                    }
+                ]
+            };
+            service.Save(settings, session);
+
+            var loaded = service.Load(settings, session.SessionId);
+
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual(SessionFileIntentStatuses.Selected, loaded.FileManifest.Intent);
+            Assert.AreEqual(@"C:\UserData\report.docx", loaded.FileManifest.Files.Single().SourcePath);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
+    public void Deserialize_LegacySessionWithoutFileManifest_CreatesEmptyManifest()
+    {
+        const string json = """
+            {
+              "schemaVersion": 1,
+              "sessionId": "legacy-session",
+              "scenarioId": "uncertainty",
+              "scenarioTitle": "Режим неопределенности"
+            }
+            """;
+
+        var session = JsonSerializer.Deserialize<ResumableScenarioSession>(json);
+
+        Assert.IsNotNull(session);
+        Assert.IsNotNull(session.FileManifest);
+        Assert.AreEqual(SessionFileIntentStatuses.Unknown, session.FileManifest.Intent);
+        Assert.IsEmpty(session.FileManifest.Files);
     }
 
     private static ChoiceScenarioStep Step(string type, string question, string optionId) => new()

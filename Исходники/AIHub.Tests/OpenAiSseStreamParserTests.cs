@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text;
 using AIHub.Models;
 using AIHub.Services;
@@ -24,13 +23,12 @@ public sealed class OpenAiSseStreamParserTests
 
             """;
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(sse));
-        var chunks = new ConcurrentQueue<ModelStreamChunk>();
+        var chunks = new List<ModelStreamChunk>();
 
         var result = await OpenAiSseStreamParser.ReadAsync(
             stream,
-            new Progress<ModelStreamChunk>(chunks.Enqueue),
+            new ImmediateProgress<ModelStreamChunk>(chunks.Add),
             CancellationToken.None);
-        await Task.Delay(50);
 
         Assert.AreEqual("Привет мир", result.Content);
         Assert.AreEqual("tool_calls", result.FinishReason);
@@ -38,5 +36,10 @@ public sealed class OpenAiSseStreamParserTests
         Assert.AreEqual("{\"q\":\"test\"}", result.ToolCalls.Single().Function.Arguments);
         Assert.IsTrue(chunks.Any(chunk => chunk.Text.Contains("Привет", StringComparison.Ordinal)));
         Assert.IsTrue(chunks.Last().IsComplete);
+    }
+
+    private sealed class ImmediateProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 }

@@ -6,10 +6,37 @@ namespace AIHub.Services;
 
 public sealed class ChoiceScenarioService
 {
+    public const string FileSetupStepType = "file_setup";
+    public const string NoFilesOptionId = "files_none";
+    public const string SelectFilesOptionId = "files_select";
+
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+    };
+
+    public ChoiceScenarioStep CreateFileSetupStep(Func<string, string> localize) => new()
+    {
+        StepType = FileSetupStepType,
+        Question = localize("ChoiceScenario.Files.Question"),
+        CoreThought = localize("ChoiceScenario.Files.Thought"),
+        AllowCustom = false,
+        Options =
+        [
+            new()
+            {
+                Id = NoFilesOptionId,
+                Title = localize("ChoiceScenario.Files.None"),
+                Description = localize("ChoiceScenario.Files.NoneDescription")
+            },
+            new()
+            {
+                Id = SelectFilesOptionId,
+                Title = localize("ChoiceScenario.Files.Select"),
+                Description = localize("ChoiceScenario.Files.SelectDescription")
+            }
+        ]
     };
 
     public ChoiceScenarioStep CreateBudgetStep(Func<string, string> localize) => new()
@@ -82,7 +109,9 @@ public sealed class ChoiceScenarioService
         ChoiceScenarioStepBudget stepBudget,
         int stepsUsed,
         int stepsRemaining,
-        ChoiceCapabilityProfile capabilityProfile) => ChoiceScenarioPromptBuilder.BuildUserPrompt(
+        ChoiceCapabilityProfile capabilityProfile,
+        SessionFilePromptManifest? fileManifest = null,
+        string requestTrigger = "user_choice") => ChoiceScenarioPromptBuilder.BuildUserPrompt(
             answers,
             requestFinal,
             mustReturnFinal,
@@ -92,7 +121,9 @@ public sealed class ChoiceScenarioService
             stepBudget,
             stepsUsed,
             stepsRemaining,
-            capabilityProfile);
+            capabilityProfile,
+            fileManifest,
+            requestTrigger);
 
     public bool TryParseStep(string jsonText, out ChoiceScenarioStep step, out string error)
     {

@@ -63,6 +63,8 @@ public sealed class ExecutorHandoffPackage
     public string ParentCoreSessionId { get; set; } = string.Empty;
 
     public string ParentRunId { get; set; } = string.Empty;
+
+    public SessionFilePromptManifest FileManifest { get; set; } = new();
 }
 
 public sealed class ExecutorHandoffItem

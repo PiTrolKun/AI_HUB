@@ -21,6 +21,22 @@ public sealed class ChoiceScenarioServiceTests
     }
 
     [TestMethod]
+    public void CreateFileSetupStep_PrecedesModelQuestionsAndHasFixedOptions()
+    {
+        var step = _service.CreateFileSetupStep(key => key);
+
+        Assert.AreEqual(ChoiceScenarioService.FileSetupStepType, step.StepType);
+        Assert.IsFalse(step.AllowCustom);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                ChoiceScenarioService.NoFilesOptionId,
+                ChoiceScenarioService.SelectFilesOptionId
+            },
+            step.Options.Select(option => option.Id).ToArray());
+    }
+
+    [TestMethod]
     public void TryParseStep_AcceptsValidQuestionStep()
     {
         const string json = """
@@ -231,6 +247,48 @@ public sealed class ChoiceScenarioServiceTests
 
         StringAssert.Contains(prompt, "maximum_substantive_steps: 4");
         StringAssert.Contains(prompt, "Новый question_step запрещён");
+    }
+
+    [TestMethod]
+    public void BuildUserPrompt_DescribesFileUpdateAsContextNotAnswer()
+    {
+        var budget = new ChoiceScenarioStepBudget { Mode = "normal", MaximumSteps = 10 };
+        var prompt = _service.BuildUserPrompt(
+            [],
+            requestFinal: false,
+            mustReturnFinal: false,
+            new UserContextSnapshot(),
+            "inventory",
+            "ru",
+            budget,
+            stepsUsed: 0,
+            stepsRemaining: 10,
+            capabilityProfile: new ChoiceCapabilityProfile(),
+            fileManifest: new SessionFilePromptManifest
+            {
+                Intent = SessionFileIntentStatuses.Selected,
+                FileCount = 1,
+                ContentAccessAvailable = false,
+                Files =
+                [
+                    new SessionFilePromptItem
+                    {
+                        Id = "safe-id",
+                        Name = "report.docx",
+                        Extension = ".docx",
+                        Category = SessionFileCategories.Document,
+                        IsAvailable = true
+                    }
+                ]
+            },
+            requestTrigger: "file_manifest_updated");
+
+        StringAssert.Contains(prompt, "не отвечал на текущий вопрос");
+        StringAssert.Contains(prompt, "contentAccessAvailable");
+        StringAssert.Contains(prompt, "report.docx");
+        StringAssert.Contains(prompt, "часть задачи, отдельный пример/эталон или поясняющий контекст");
+        StringAssert.Contains(prompt, "пример/эталон; поясняющий материал; не учитывать");
+        Assert.IsFalse(prompt.Contains(@":\\", StringComparison.Ordinal));
     }
 
     [TestMethod]

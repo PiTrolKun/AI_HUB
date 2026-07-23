@@ -99,6 +99,16 @@ public sealed class ChoiceScenarioSessionState
         StepBudget = null;
     }
 
+    public void ApplyTrustedProfileUpdate(IEnumerable<ChoiceCapabilityDimension> updates)
+    {
+        ArgumentNullException.ThrowIfNull(updates);
+        CapabilityProfile.Apply(updates);
+        if (_profileSnapshots.Count > 0)
+        {
+            _profileSnapshots[^1] = CapabilityProfile.Clone();
+        }
+    }
+
     public bool TryAddAnswer(ChoiceScenarioOption option)
     {
         if (CurrentStep is null)

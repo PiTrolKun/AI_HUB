@@ -159,6 +159,31 @@ public sealed class ChoiceScenarioSessionStateTests
         Assert.AreEqual(0, restored.Answers.Count);
     }
 
+    [TestMethod]
+    public void TrustedFileProfileUpdate_DoesNotConsumeAnswerAndSurvivesBack()
+    {
+        var state = new ChoiceScenarioSessionState();
+        state.Reset(Step("question_step", "Текущий вопрос", "one"));
+        state.ApplyTrustedProfileUpdate(
+        [
+            new ChoiceCapabilityDimension
+            {
+                Dimension = ChoiceDecisionDimensions.InputModality,
+                Status = ChoiceDimensionStatuses.Resolved,
+                Values = ["file:document"],
+                Evidence = "trusted file manifest"
+            }
+        ]);
+        state.AddStep(Step("question_step", "Новый вопрос", "two"), consumedAnswer: false);
+
+        Assert.AreEqual(0, state.SubstantiveStepsUsed);
+        Assert.IsTrue(state.TryGoBack(out _));
+        Assert.AreEqual(
+            ChoiceDimensionStatuses.Resolved,
+            state.CapabilityProfile.GetStatus(ChoiceDecisionDimensions.InputModality));
+        Assert.AreEqual(0, state.Answers.Count);
+    }
+
     private static ChoiceScenarioStep Step(string type, string question, string optionId) => new()
     {
         StepType = type,

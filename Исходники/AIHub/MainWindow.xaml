@@ -1587,6 +1587,91 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border x:Name="ChoiceSessionFilesPanel"
+                                    Background="{DynamicResource InputBrush}"
+                                    BorderBrush="{DynamicResource LineBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="10"
+                                    Margin="0,0,0,14"
+                                    Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock x:Name="ChoiceSessionFilesTitleText"
+                                               Text="Файлы в этой сессии"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               Margin="2,0,0,6" />
+                                    <ItemsControl x:Name="ChoiceSessionFilesItemsControl">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="286"
+                                                        MinHeight="58"
+                                                        Background="{DynamicResource PanelBrush}"
+                                                        BorderBrush="{DynamicResource LineBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        Padding="9"
+                                                        Margin="2">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                       FontSize="12"
+                                                                       FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Details}"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       FontSize="11"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Margin="0,3,0,0" />
+                                                            <TextBlock Text="{Binding AvailabilityText}"
+                                                                       FontSize="10"
+                                                                       Margin="0,3,0,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground"
+                                                                                Value="{DynamicResource AccentBrush}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsAvailable}"
+                                                                                         Value="False">
+                                                                                <Setter Property="Foreground"
+                                                                                        Value="#EF4444" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1"
+                                                                Content="×"
+                                                                Tag="{Binding Id}"
+                                                                ToolTip="{Binding RemoveTooltip}"
+                                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                                Width="28"
+                                                                Height="28"
+                                                                MinWidth="28"
+                                                                Padding="0"
+                                                                Margin="8,0,0,0"
+                                                                VerticalAlignment="Top"
+                                                                Click="SessionFileRemoveButton_Click" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
                             <ItemsControl x:Name="ChoiceOptionsItemsControl">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
@@ -2064,6 +2149,90 @@
                                        TextWrapping="Wrap"
                                        Margin="0,5,0,0"
                                        Visibility="Collapsed" />
+                            <Border x:Name="ExecutorSessionFilesPanel"
+                                    Background="{DynamicResource InputBrush}"
+                                    BorderBrush="{DynamicResource LineBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="8"
+                                    Margin="0,10,0,0"
+                                    Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock x:Name="ExecutorSessionFilesTitleText"
+                                               Text="Файлы в этой сессии"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Margin="2,0,0,5" />
+                                    <ItemsControl x:Name="ExecutorSessionFilesItemsControl">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="256"
+                                                        MinHeight="55"
+                                                        Background="{DynamicResource PanelBrush}"
+                                                        BorderBrush="{DynamicResource LineBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        Padding="8"
+                                                        Margin="2">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayName}"
+                                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                       FontSize="11"
+                                                                       FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Details}"
+                                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                                       FontSize="10"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Margin="0,3,0,0" />
+                                                            <TextBlock Text="{Binding AvailabilityText}"
+                                                                       FontSize="10"
+                                                                       Margin="0,3,0,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground"
+                                                                                Value="{DynamicResource AccentBrush}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsAvailable}"
+                                                                                         Value="False">
+                                                                                <Setter Property="Foreground"
+                                                                                        Value="#EF4444" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1"
+                                                                Content="×"
+                                                                Tag="{Binding Id}"
+                                                                ToolTip="{Binding RemoveTooltip}"
+                                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                                Width="26"
+                                                                Height="26"
+                                                                MinWidth="26"
+                                                                Padding="0"
+                                                                Margin="7,0,0,0"
+                                                                VerticalAlignment="Top"
+                                                                Click="SessionFileRemoveButton_Click" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <Border x:Name="ExecutorThoughtPanel"

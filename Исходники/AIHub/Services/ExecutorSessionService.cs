@@ -256,6 +256,54 @@ public sealed class ExecutorSessionService : IDisposable
         }
     }
 
+    public async Task<ExecutorTurnResult> UpdateFileManifestAsync(
+        SessionFilePromptManifest fileManifest,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(fileManifest);
+        var previousManifest = Clone(_handoff!.FileManifest);
+        var messageIndex = _messages.Count;
+        _handoff.FileManifest = Clone(fileManifest);
+        _messages.Add(new StructuredChatMessage
+        {
+            Role = "user",
+            Content = string.Join(
+                Environment.NewLine,
+                "[AI_HUB_FILE_MANIFEST_UPDATED]",
+                $"Current stage: {_currentStageId}",
+                "AI HUB updated trusted metadata about files selected by the user:",
+                JsonSerializer.Serialize(fileManifest),
+                "This is not an answer to your current question.",
+                "File contents and absolute paths are unavailable. Never claim to have read or analyzed them.",
+                "A newly added file may be primary task input, a separate example/reference, or explanatory context.",
+                "If its role is not already clear from the conversation, ask specifically which role it has. Do not assume that every added file must be processed in the same way.",
+                "For that role question, provide ready selectable options for: primary task input; separate example/reference; explanatory context; do not use. Never rely on custom text for these standard roles.",
+                "Re-evaluate the current task definition and ask exactly one next useful question. Do not change stages.",
+                BuildTreeContextMessage())
+        });
+        _sessionLog!.Write("executor_file_manifest_updated", fileManifest);
+        try
+        {
+            return await RunLoopAsync(streamProgress, cancellationToken);
+        }
+        catch
+        {
+            _handoff.FileManifest = previousManifest;
+            if (_messages.Count > messageIndex)
+            {
+                _messages.RemoveRange(messageIndex, _messages.Count - messageIndex);
+            }
+
+            _sessionLog.Write("executor_file_manifest_update_failed", new
+            {
+                Stage = _currentStageId
+            });
+            throw;
+        }
+    }
+
     public async Task<ExecutorTurnResult> ConfirmBriefAsync(
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
@@ -889,6 +937,12 @@ public sealed class ExecutorSessionService : IDisposable
             "You are the selected AI executor in the Uncertainty scenario, not the AI HUB core.",
             "The core selected your capability class. It did not discover the user's exact subject and did not prepare a final task.",
             "Treat programFacts as authoritative, userSignals as raw user input, and coreHypotheses only as provisional background that may be wrong.",
+            "fileManifest contains only trusted file names and metadata selected by the user. It never contains file contents or absolute paths.",
+            "When fileManifest.contentAccessAvailable is false, never claim that you read, opened, saw, transcribed or analyzed a file.",
+            "Use file categories only to identify required capabilities and to ask what role the files should play.",
+            "An [AI_HUB_FILE_MANIFEST_UPDATED] event is context, not an answer to the current question.",
+            "A newly added file can be primary task input, a separate example/reference, or explanatory context. If its role is unclear, ask specifically about that role instead of assuming it belongs to the main input set.",
+            "When asking about a file role, always provide ready selectable options for primary task input, separate example/reference, explanatory context, and do not use. Custom input is only a fallback.",
             "The work has exactly two AI HUB controlled stages: task_definition and practical_clarification.",
             "Never change the stage yourself. Work only inside the current stage named by AI HUB.",
             "Only an explicit [AI_HUB_STAGE_CHANGE] message changes task_definition to practical_clarification. practical_clarification is permanent until the user ends the session.",
