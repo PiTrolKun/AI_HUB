@@ -20,8 +20,9 @@ public static class ExecutorJsonContract
                     ["status"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["enum"] = new JsonArray("clarification_step", "final_result", "cannot_continue")
+                        ["enum"] = new JsonArray("working", "stage_ready", "result_ready", "blocked")
                     },
+                    ["stageSummary"] = StringSchema(),
                     ["thought"] = StringSchema(),
                     ["question"] = StringSchema(),
                     ["options"] = new JsonObject
@@ -37,6 +38,7 @@ public static class ExecutorJsonContract
                 },
                 ["required"] = new JsonArray(
                     "status",
+                    "stageSummary",
                     "thought",
                     "question",
                     "options",

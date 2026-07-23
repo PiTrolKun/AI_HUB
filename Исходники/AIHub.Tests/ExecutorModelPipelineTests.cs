@@ -128,15 +128,65 @@ public sealed class ExecutorModelPipelineTests
     }
 
     [TestMethod]
-    public void ResultParser_RequiresExplicitFinalStatusAndResult()
+    public void ResultParser_ReadsCurrentResultWithoutEndingSession()
     {
-        const string response = "{\"status\":\"final_result\",\"thought\":\"\",\"question\":\"\",\"options\":[],\"allowCustom\":false,\"result\":\"Готовый результат\",\"sources\":[],\"warnings\":[]}";
+        const string response = "{\"status\":\"result_ready\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"\",\"question\":\"Что нужно изменить?\",\"options\":[\"Уточнить\"],\"allowCustom\":false,\"result\":\"Готовый содержательный результат\",\"sources\":[],\"warnings\":[]}";
 
         var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
 
         Assert.IsTrue(parsed);
-        Assert.AreEqual(ExecutorTurnStatuses.Final, turn.Status);
-        Assert.AreEqual("Готовый результат", turn.Result);
+        Assert.AreEqual(ExecutorTurnStatuses.ResultReady, turn.Status);
+        Assert.AreEqual("Готовый содержательный результат", turn.Result);
+        Assert.IsTrue(turn.AllowCustom);
+    }
+
+    [TestMethod]
+    public void ResultParser_RejectsStatusMarkerInsteadOfResult()
+    {
+        const string response = "{\"status\":\"result_ready\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"Создаю результат\",\"question\":\"\",\"options\":[],\"allowCustom\":true,\"result\":\"final_result\",\"sources\":[],\"warnings\":[]}";
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out _);
+
+        Assert.IsFalse(parsed);
+    }
+
+    [TestMethod]
+    public void ResultParser_RejectsPromiseInsteadOfResult()
+    {
+        const string response = "{\"status\":\"result_ready\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"\",\"question\":\"\",\"options\":[],\"allowCustom\":true,\"result\":\"Сейчас подготовлю итоговый ответ\",\"sources\":[],\"warnings\":[]}";
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out _);
+
+        Assert.IsFalse(parsed);
+    }
+
+    [TestMethod]
+    public void ResultParser_StageReadyKeepsCustomResponseAvailable()
+    {
+        const string response = "{\"status\":\"stage_ready\",\"stageSummary\":\"Цель и аудитория подтверждены\",\"thought\":\"Этап достаточно проработан\",\"question\":\"Можно продолжить уточнение или перейти дальше.\",\"options\":[],\"allowCustom\":false,\"result\":\"\",\"sources\":[],\"warnings\":[]}";
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(ExecutorTurnStatuses.StageReady, turn.Status);
+        Assert.IsTrue(turn.AllowCustom);
+    }
+
+    [TestMethod]
+    public void StageFlow_AllowsOnlyAdjacentUserTransitions()
+    {
+        Assert.AreEqual(
+            ExecutorStageIds.SolutionMethod,
+            ExecutorStageFlow.GetNext(ExecutorStageIds.TaskDefinition));
+        Assert.AreEqual(
+            ExecutorStageIds.DataCollection,
+            ExecutorStageFlow.GetPrevious(ExecutorStageIds.ResultAssembly));
+        Assert.IsTrue(ExecutorStageFlow.AreAdjacent(
+            ExecutorStageIds.SolutionMethod,
+            ExecutorStageIds.DataCollection));
+        Assert.IsFalse(ExecutorStageFlow.AreAdjacent(
+            ExecutorStageIds.TaskDefinition,
+            ExecutorStageIds.ResultAssembly));
     }
 
     [TestMethod]

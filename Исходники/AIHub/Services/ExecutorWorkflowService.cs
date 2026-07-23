@@ -88,12 +88,22 @@ public sealed class ExecutorWorkflowService : IDisposable
     }
 
     public Task<ExecutorTurnResult> ContinueAsync(
-        string clarificationAnswer,
+        string userResponse,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _session?.ContinueAsync(clarificationAnswer, streamProgress, cancellationToken)
+        return _session?.ContinueAsync(userResponse, streamProgress, cancellationToken)
+            ?? throw new InvalidOperationException("Executor session is not active.");
+    }
+
+    public Task<ExecutorTurnResult> TransitionStageAsync(
+        string targetStageId,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _session?.TransitionStageAsync(targetStageId, streamProgress, cancellationToken)
             ?? throw new InvalidOperationException("Executor session is not active.");
     }
 
@@ -101,7 +111,12 @@ public sealed class ExecutorWorkflowService : IDisposable
 
     public void Stop(string reason)
     {
-        _sessionLog?.Write("executor_session_end", new { Reason = reason });
+        _sessionLog?.Write("executor_session_end", new
+        {
+            Reason = reason,
+            Stage = _session?.CurrentStageId,
+            LastStatus = _session?.LastTurnStatus
+        });
         _sessionLog?.Dispose();
         _sessionLog = null;
         _session?.Dispose();

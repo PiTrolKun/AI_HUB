@@ -82,14 +82,17 @@ public sealed record ExecutorContextBudget(
 
 public static class ExecutorTurnStatuses
 {
-    public const string Clarification = "clarification_step";
-    public const string Final = "final_result";
-    public const string CannotContinue = "cannot_continue";
+    public const string Working = "working";
+    public const string StageReady = "stage_ready";
+    public const string ResultReady = "result_ready";
+    public const string Blocked = "blocked";
 }
 
 public sealed class ExecutorTurnResult
 {
-    public string Status { get; set; } = ExecutorTurnStatuses.Clarification;
+    public string Status { get; set; } = ExecutorTurnStatuses.Working;
+    public string StageId { get; set; } = string.Empty;
+    public string StageSummary { get; set; } = string.Empty;
     public string Thought { get; set; } = string.Empty;
     public string Question { get; set; } = string.Empty;
     public List<string> Options { get; set; } = [];

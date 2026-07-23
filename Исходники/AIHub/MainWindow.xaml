@@ -1678,6 +1678,25 @@
                                                 Click="ExecutorFinishSessionButton_Click" />
                                     </StackPanel>
                                 </Grid>
+                                <StackPanel x:Name="ExecutorStagePanel"
+                                             Margin="0,10,0,0">
+                                     <TextBlock x:Name="ExecutorStageProgressText"
+                                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                                FontSize="12" />
+                                     <TextBlock x:Name="ExecutorStageTitleText"
+                                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                                FontSize="15"
+                                                FontWeight="SemiBold"
+                                                TextWrapping="Wrap"
+                                                Margin="0,3,0,0" />
+                                     <TextBlock x:Name="ExecutorStageRecommendationText"
+                                                Foreground="{DynamicResource AccentBrush}"
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                TextWrapping="Wrap"
+                                                Margin="0,5,0,0"
+                                                Visibility="Collapsed" />
+                                </StackPanel>
                                 <Border x:Name="ExecutorThoughtPanel"
                                         Background="{DynamicResource StepBadgeBrush}"
                                         BorderBrush="{DynamicResource LineBrush}"
@@ -1761,6 +1780,27 @@
                                                 Click="ExecutorCustomSubmitButton_Click" />
                                     </Grid>
                                 </StackPanel>
+                                <Grid x:Name="ExecutorStageNavigationPanel"
+                                       Margin="5,12,5,0">
+                                     <Grid.ColumnDefinitions>
+                                         <ColumnDefinition Width="*" />
+                                         <ColumnDefinition Width="*" />
+                                     </Grid.ColumnDefinitions>
+                                     <Button x:Name="ExecutorPreviousStageButton"
+                                             Grid.Column="0"
+                                             Content="Предыдущий этап"
+                                             Style="{StaticResource SecondaryButtonStyle}"
+                                             HorizontalAlignment="Stretch"
+                                             Margin="0,0,5,0"
+                                             Click="ExecutorPreviousStageButton_Click" />
+                                     <Button x:Name="ExecutorNextStageButton"
+                                             Grid.Column="1"
+                                             Content="Следующий этап"
+                                             Style="{StaticResource PrimaryButtonStyle}"
+                                             HorizontalAlignment="Stretch"
+                                             Margin="5,0,0,0"
+                                             Click="ExecutorNextStageButton_Click" />
+                                </Grid>
                             </StackPanel>
                         </StackPanel>
                     </Border>

@@ -35,25 +35,44 @@ public static class ExecutorResultParser
             }
 
             parsed.Status = NormalizeStatus(parsed.Status);
+            parsed.StageSummary = parsed.StageSummary.Trim();
             parsed.Thought = parsed.Thought.Trim();
             parsed.Question = parsed.Question.Trim();
             parsed.Result = parsed.Result.Trim();
             parsed.Options = NormalizeList(parsed.Options, 6);
             parsed.Sources = NormalizeList(parsed.Sources, 24);
             parsed.Warnings = NormalizeList(parsed.Warnings, 24);
+            if (parsed.Status is ExecutorTurnStatuses.Working or ExecutorTurnStatuses.StageReady)
+            {
+                parsed.Result = string.Empty;
+            }
+            else if (parsed.Status == ExecutorTurnStatuses.Blocked
+                && !IsMeaningfulResult(parsed.Result))
+            {
+                parsed.Result = string.Empty;
+            }
 
             var valid = parsed.Status switch
             {
-                ExecutorTurnStatuses.Clarification => !string.IsNullOrWhiteSpace(parsed.Question)
+                ExecutorTurnStatuses.Working => !string.IsNullOrWhiteSpace(parsed.Question)
                     && (parsed.Options.Count > 0 || parsed.AllowCustom),
-                ExecutorTurnStatuses.Final => !string.IsNullOrWhiteSpace(parsed.Result),
-                ExecutorTurnStatuses.CannotContinue => !string.IsNullOrWhiteSpace(parsed.Result)
+                ExecutorTurnStatuses.StageReady => !string.IsNullOrWhiteSpace(parsed.StageSummary)
+                    && (!string.IsNullOrWhiteSpace(parsed.Question) || parsed.AllowCustom),
+                ExecutorTurnStatuses.ResultReady => IsMeaningfulResult(parsed.Result),
+                ExecutorTurnStatuses.Blocked => IsMeaningfulResult(parsed.Result)
                     || !string.IsNullOrWhiteSpace(parsed.Thought),
                 _ => false
             };
             if (!valid)
             {
                 return false;
+            }
+
+            if (parsed.Status is ExecutorTurnStatuses.StageReady
+                or ExecutorTurnStatuses.ResultReady
+                or ExecutorTurnStatuses.Blocked)
+            {
+                parsed.AllowCustom = true;
             }
 
             result = parsed;
@@ -67,13 +86,59 @@ public static class ExecutorResultParser
 
     private static string NormalizeStatus(string status) => status.Trim().ToLowerInvariant() switch
     {
-        "needs_clarification" => ExecutorTurnStatuses.Clarification,
-        "clarification" => ExecutorTurnStatuses.Clarification,
-        "completed" => ExecutorTurnStatuses.Final,
-        "complete" => ExecutorTurnStatuses.Final,
-        "final" => ExecutorTurnStatuses.Final,
+        "clarification_step" => ExecutorTurnStatuses.Working,
+        "needs_clarification" => ExecutorTurnStatuses.Working,
+        "clarification" => ExecutorTurnStatuses.Working,
+        "final_result" => ExecutorTurnStatuses.ResultReady,
+        "completed" => ExecutorTurnStatuses.ResultReady,
+        "complete" => ExecutorTurnStatuses.ResultReady,
+        "final" => ExecutorTurnStatuses.ResultReady,
+        "cannot_continue" => ExecutorTurnStatuses.Blocked,
         var value => value
     };
+
+    private static bool IsMeaningfulResult(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = string.Join(
+                ' ',
+                value.Trim().ToLowerInvariant()
+                    .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .Trim(' ', '.', '!', '?', ':', ';', '"', '\'', '`');
+        if (normalized is "final_result"
+            or "result_ready"
+            or "stage_ready"
+            or "working"
+            or "completed"
+            or "complete"
+            or "done"
+            or "готово"
+            or "результат готов")
+        {
+            return false;
+        }
+
+        string[] intentOnlyPrefixes =
+        [
+            "приступаю ",
+            "создаю ",
+            "готовлю ",
+            "формирую ",
+            "сейчас создам",
+            "сейчас подготовлю",
+            "начинаю создавать",
+            "начинаю готовить",
+            "i will create",
+            "i will prepare",
+            "i am creating",
+            "i am preparing"
+        ];
+        return !intentOnlyPrefixes.Any(normalized.StartsWith);
+    }
 
     private static List<string> NormalizeList(IEnumerable<string>? values, int maximum) =>
         (values ?? [])

@@ -75,6 +75,7 @@ public partial class MainWindow : Window
     private bool _executorVoiceEnabled = true;
     private bool _executorSessionFinishedByUser;
     private ExecutorTurnResult? _currentExecutorTurn;
+    private string _executorCurrentStageId = ExecutorStageIds.TaskDefinition;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
 
@@ -484,6 +485,8 @@ public partial class MainWindow : Window
         ExecutorCustomInputHelpText.Text = L("Executor.CustomInputHelp");
         ExecutorCustomSubmitButton.Content = L("ChoiceScenario.AcceptCustom");
         ExecutorFinishSessionButton.Content = L("Executor.FinishSession");
+        ExecutorStageRecommendationText.Text = L("Executor.StageRecommended");
+        UpdateExecutorStageControls();
         UpdateExecutorVoiceControls();
         BackFromChoiceScenarioButton.Content = L("Settings.Back");
         CancelChoiceScenarioButton.Content = L("ChoiceScenario.Cancel");
@@ -2320,6 +2323,11 @@ public partial class MainWindow : Window
         ExecutorClarificationOptionsItemsControl.Visibility = Visibility.Collapsed;
         ExecutorCustomOptionButton.Visibility = Visibility.Collapsed;
         ExecutorCustomInputPanel.Visibility = Visibility.Collapsed;
+        ExecutorStageRecommendationText.Visibility = Visibility.Collapsed;
+        _currentExecutorTurn = null;
+        _executorCurrentStageId = ExecutorStageIds.TaskDefinition;
+        UpdateExecutorStageControls();
+        SetExecutorInteractionEnabled(false);
         BackFromChoiceScenarioButton.IsEnabled = false;
         StartChoiceAiActivity();
         StatusText.Text = L("Status.ExecutorRunning");
@@ -2355,6 +2363,7 @@ public partial class MainWindow : Window
         {
             StopChoiceAiActivity();
             BackFromChoiceScenarioButton.IsEnabled = true;
+            SetExecutorInteractionEnabled(true);
         }
     }
 
@@ -2387,6 +2396,24 @@ public partial class MainWindow : Window
         ExecutorCustomInput.Clear();
         ExecutorCustomInput.Focus();
         StatusText.Text = L("Status.ExecutorCustomInput");
+    }
+
+    private async void ExecutorPreviousStageButton_Click(object sender, RoutedEventArgs e)
+    {
+        var targetStageId = ExecutorStageFlow.GetPrevious(_executorCurrentStageId);
+        if (targetStageId is not null)
+        {
+            await TransitionExecutorStageAsync(targetStageId);
+        }
+    }
+
+    private async void ExecutorNextStageButton_Click(object sender, RoutedEventArgs e)
+    {
+        var targetStageId = ExecutorStageFlow.GetNext(_executorCurrentStageId);
+        if (targetStageId is not null)
+        {
+            await TransitionExecutorStageAsync(targetStageId);
+        }
     }
 
     private async Task ContinueExecutorAsync(string answer)
@@ -2426,61 +2453,118 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task TransitionExecutorStageAsync(string targetStageId)
+    {
+        CancelExecutorSpeech(revealFullText: true, "stage_transition");
+        _executorCts?.Dispose();
+        _executorCts = new CancellationTokenSource();
+        SetExecutorInteractionEnabled(false);
+        BackFromChoiceScenarioButton.IsEnabled = false;
+        StartChoiceAiActivity();
+        StatusText.Text = L("Status.ExecutorStageChanging");
+        try
+        {
+            var result = await _executorWorkflowService.TransitionStageAsync(
+                targetStageId,
+                CreateMatrixStreamProgress(),
+                _executorCts.Token);
+            DisplayExecutorResponse(result);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_executorSessionFinishedByUser)
+            {
+                StatusText.Text = L("Status.ExecutorCancelled");
+            }
+        }
+        catch (Exception ex)
+        {
+            _executorWorkflowService.Write("executor_stage_change_failed", new
+            {
+                TargetStage = targetStageId,
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+            StatusText.Text = LF("Status.ExecutorFailed", ex.Message);
+        }
+        finally
+        {
+            StopChoiceAiActivity();
+            BackFromChoiceScenarioButton.IsEnabled = true;
+            SetExecutorInteractionEnabled(true);
+        }
+    }
+
     private void DisplayExecutorResponse(ExecutorTurnResult turn)
     {
         _currentExecutorTurn = turn;
+        if (ExecutorStageFlow.IsKnown(turn.StageId))
+        {
+            _executorCurrentStageId = turn.StageId;
+        }
+
         _executorClarificationOptions.Clear();
         ExecutorCustomInputPanel.Visibility = Visibility.Collapsed;
         ExecutorThoughtText.Text = turn.Thought;
         ExecutorThoughtPanel.Visibility = string.IsNullOrWhiteSpace(turn.Thought)
             ? Visibility.Collapsed
             : Visibility.Visible;
-        if (string.Equals(turn.Status, ExecutorTurnStatuses.Clarification, StringComparison.OrdinalIgnoreCase))
+        foreach (var option in turn.Options)
         {
-            ExecutorResultTitleText.Text = L("Executor.ClarificationTitle");
-            ExecutorResultText.Text = turn.Question;
-            foreach (var option in turn.Options)
+            _executorClarificationOptions.Add(new ChoiceScenarioOption
             {
-                _executorClarificationOptions.Add(new ChoiceScenarioOption
-                {
-                    Id = "executor_clarification",
-                    Title = option
-                });
-            }
-
-            ExecutorClarificationOptionsItemsControl.Visibility = turn.Options.Count > 0
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-            ExecutorCustomOptionButton.Visibility = turn.AllowCustom
-                ? Visibility.Visible
-                : Visibility.Collapsed;
-            StatusText.Text = L("Status.ExecutorClarificationRequired");
-            ExecutorResultPanel.Visibility = Visibility.Visible;
-            if (_executorVoiceEnabled && _executorSpeechCoordinator.IsAvailable)
-            {
-                StartExecutorSpeech(turn);
-            }
-        }
-        else
-        {
-            ExecutorResultTitleText.Text = string.Equals(
-                turn.Status,
-                ExecutorTurnStatuses.CannotContinue,
-                StringComparison.OrdinalIgnoreCase)
-                    ? L("Executor.CannotContinueTitle")
-                    : L("Executor.ResultTitle");
-            ExecutorResultText.Text = FormatExecutorResult(turn);
-            ExecutorClarificationOptionsItemsControl.Visibility = Visibility.Collapsed;
-            ExecutorCustomOptionButton.Visibility = Visibility.Collapsed;
-            StatusText.Text = string.Equals(
-                turn.Status,
-                ExecutorTurnStatuses.CannotContinue,
-                StringComparison.OrdinalIgnoreCase)
-                    ? L("Status.ExecutorCannotContinue")
-                    : L("Status.ExecutorCompleted");
+                Id = "executor_response",
+                Title = option
+            });
         }
 
+        ExecutorClarificationOptionsItemsControl.Visibility = turn.Options.Count > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ExecutorCustomOptionButton.Visibility = turn.AllowCustom
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ExecutorStageRecommendationText.Visibility = string.Equals(
+            turn.Status,
+            ExecutorTurnStatuses.StageReady,
+            StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+
+        switch (turn.Status)
+        {
+            case ExecutorTurnStatuses.Working:
+                ExecutorResultTitleText.Text = L("Executor.WorkingTitle");
+                ExecutorResultText.Text = turn.Question;
+                StatusText.Text = L("Status.ExecutorWorking");
+                break;
+            case ExecutorTurnStatuses.StageReady:
+                ExecutorResultTitleText.Text = L("Executor.StageReadyTitle");
+                ExecutorResultText.Text = string.IsNullOrWhiteSpace(turn.Question)
+                    ? L("Executor.StageReadyBody")
+                    : turn.Question;
+                StatusText.Text = L("Status.ExecutorStageReady");
+                break;
+            case ExecutorTurnStatuses.ResultReady:
+                ExecutorResultTitleText.Text = L("Executor.CurrentResultTitle");
+                ExecutorResultText.Text = FormatExecutorResult(turn);
+                StatusText.Text = L("Status.ExecutorResultReady");
+                break;
+            case ExecutorTurnStatuses.Blocked:
+                ExecutorResultTitleText.Text = L("Executor.BlockedTitle");
+                ExecutorResultText.Text = FormatExecutorResult(turn);
+                StatusText.Text = L("Status.ExecutorBlocked");
+                break;
+        }
+
+        UpdateExecutorStageControls();
         ExecutorResultPanel.Visibility = Visibility.Visible;
+        if (_executorVoiceEnabled
+            && _executorSpeechCoordinator.IsAvailable
+            && ShouldSpeakExecutorTurn(turn))
+        {
+            StartExecutorSpeech(turn);
+        }
     }
 
     private ExecutorHandoffPackage BuildExecutorHandoff(ExecutorModelArtifact artifact, ChoiceTaskCard card)
@@ -2564,7 +2648,22 @@ public partial class MainWindow : Window
 
     private string FormatExecutorResult(ExecutorTurnResult turn)
     {
-        var builder = new StringBuilder(turn.Result);
+        var builder = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(turn.Result))
+        {
+            builder.Append(turn.Result);
+        }
+
+        if (!string.IsNullOrWhiteSpace(turn.Question))
+        {
+            if (builder.Length > 0)
+            {
+                builder.AppendLine().AppendLine();
+            }
+
+            builder.Append(turn.Question);
+        }
+
         if (turn.Sources.Count > 0)
         {
             builder.AppendLine().AppendLine().AppendLine(L("Executor.SourcesTitle"));
@@ -2585,6 +2684,72 @@ public partial class MainWindow : Window
 
         return builder.ToString().Trim();
     }
+
+    private string GetExecutorVisibleBody(ExecutorTurnResult turn) => turn.Status switch
+    {
+        ExecutorTurnStatuses.Working => turn.Question,
+        ExecutorTurnStatuses.StageReady => string.IsNullOrWhiteSpace(turn.Question)
+            ? L("Executor.StageReadyBody")
+            : turn.Question,
+        _ => FormatExecutorResult(turn)
+    };
+
+    private static bool ShouldSpeakExecutorTurn(ExecutorTurnResult turn) =>
+        turn.Status is ExecutorTurnStatuses.Working
+            or ExecutorTurnStatuses.StageReady
+            or ExecutorTurnStatuses.Blocked;
+
+    private void UpdateExecutorStageControls()
+    {
+        if (!IsInitialized)
+        {
+            return;
+        }
+
+        var index = ExecutorStageFlow.GetIndex(_executorCurrentStageId);
+        if (index < 0)
+        {
+            _executorCurrentStageId = ExecutorStageIds.TaskDefinition;
+            index = 0;
+        }
+
+        ExecutorStageProgressText.Text = LF(
+            "Executor.StageProgress",
+            index + 1,
+            ExecutorStageFlow.ActiveStageIds.Count);
+        ExecutorStageTitleText.Text = GetExecutorStageTitle(_executorCurrentStageId);
+
+        var previousStageId = ExecutorStageFlow.GetPrevious(_executorCurrentStageId);
+        var nextStageId = ExecutorStageFlow.GetNext(_executorCurrentStageId);
+        ExecutorPreviousStageButton.Visibility = previousStageId is null
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        ExecutorNextStageButton.Visibility = nextStageId is null
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        if (previousStageId is not null)
+        {
+            ExecutorPreviousStageButton.Content = LF(
+                "Executor.PreviousStage",
+                GetExecutorStageTitle(previousStageId));
+        }
+
+        if (nextStageId is not null)
+        {
+            ExecutorNextStageButton.Content = LF(
+                "Executor.NextStage",
+                GetExecutorStageTitle(nextStageId));
+        }
+    }
+
+    private string GetExecutorStageTitle(string stageId) => stageId switch
+    {
+        ExecutorStageIds.TaskDefinition => L("Executor.StageTaskDefinition"),
+        ExecutorStageIds.SolutionMethod => L("Executor.StageSolutionMethod"),
+        ExecutorStageIds.DataCollection => L("Executor.StageDataCollection"),
+        ExecutorStageIds.ResultAssembly => L("Executor.StageResultAssembly"),
+        _ => L("Executor.StageTaskDefinition")
+    };
 
     private void StartExecutorSpeech(ExecutorTurnResult turn)
     {
@@ -2659,7 +2824,7 @@ public partial class MainWindow : Window
             if (presentationId == _executorSpeechPresentationId)
             {
                 ExecutorThoughtText.Text = turn.Thought;
-                ExecutorResultText.Text = turn.Question;
+                ExecutorResultText.Text = GetExecutorVisibleBody(turn);
                 _executorSpeechPresentationActive = false;
                 _executorSpeechCts = null;
                 SetExecutorInteractionEnabled(true);
@@ -2685,7 +2850,7 @@ public partial class MainWindow : Window
         if (revealFullText && _currentExecutorTurn is { } turn)
         {
             ExecutorThoughtText.Text = turn.Thought;
-            ExecutorResultText.Text = turn.Question;
+            ExecutorResultText.Text = GetExecutorVisibleBody(turn);
         }
 
         _executorWorkflowService.Write("executor_voice_cancelled", new { Reason = reason });
@@ -2699,7 +2864,7 @@ public partial class MainWindow : Window
         {
             CancelExecutorSpeech(revealFullText: true, "session_muted");
         }
-        else if (_currentExecutorTurn is { Status: ExecutorTurnStatuses.Clarification } turn)
+        else if (_currentExecutorTurn is { } turn && ShouldSpeakExecutorTurn(turn))
         {
             StartExecutorSpeech(turn);
         }
@@ -2729,15 +2894,22 @@ public partial class MainWindow : Window
         ExecutorCustomOptionButton.Visibility = Visibility.Collapsed;
         ExecutorCustomInputPanel.Visibility = Visibility.Collapsed;
         ExecutorFinishSessionButton.IsEnabled = false;
+        SetExecutorInteractionEnabled(false);
         StatusText.Text = L("Status.ExecutorSessionFinished");
     }
 
     private void SetExecutorInteractionEnabled(bool enabled)
     {
-        var answersEnabled = enabled && !_executorSpeechPresentationActive;
+        var answersEnabled = enabled
+            && !_executorSpeechPresentationActive
+            && !_executorSessionFinishedByUser;
         ExecutorClarificationOptionsItemsControl.IsEnabled = answersEnabled;
         ExecutorCustomOptionButton.IsEnabled = answersEnabled;
         ExecutorCustomSubmitButton.IsEnabled = answersEnabled;
+        ExecutorPreviousStageButton.IsEnabled = answersEnabled
+            && ExecutorStageFlow.GetPrevious(_executorCurrentStageId) is not null;
+        ExecutorNextStageButton.IsEnabled = answersEnabled
+            && ExecutorStageFlow.GetNext(_executorCurrentStageId) is not null;
     }
 
     private IProgress<ModelStreamChunk> CreateMatrixStreamProgress() =>
