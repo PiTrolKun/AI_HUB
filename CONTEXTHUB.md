@@ -993,3 +993,4 @@ AI_HUB — русскоязычный локальный AI-хаб для Window
 - Self-contained publish smoke содержит `924` файла, `AIHub.exe`, обе Open XML DLL и не содержит `.gguf` либо `.part`.
 - Новые модели не скачивались, UI автоматически не управлялся, установщик не собирался.
 - Закрывающее состояние публикуется в `origin/main` по штатному правилу архивации ТЗ.
+- Основной коммит закрытия `5a5cb27` (`Complete executor tree and finalization workflows`) успешно отправлен в `origin/main`; GitHub обновлён с `2b99150` до `5a5cb27`.
