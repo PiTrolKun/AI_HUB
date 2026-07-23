@@ -27,6 +27,12 @@
         <SolidColorBrush x:Key="AccentDarkBrush" Color="#1D4ED8" />
         <SolidColorBrush x:Key="StepBadgeBrush" Color="#EAF1FF" />
         <SolidColorBrush x:Key="SecondaryButtonBackgroundBrush" Color="#F8F8F8" />
+        <ItemsPanelTemplate x:Key="ExecutorOptionsWidePanel">
+            <UniformGrid Columns="3" />
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="ExecutorOptionsNarrowPanel">
+            <UniformGrid Columns="2" />
+        </ItemsPanelTemplate>
 
         <Style x:Key="PrimaryButtonStyle" TargetType="Button">
             <Setter Property="Height" Value="40" />
@@ -723,7 +729,8 @@
                            Margin="0,12,0,0" />
             </StackPanel>
 
-            <Viewbox Grid.Row="2"
+            <Viewbox x:Name="SettingsContentViewbox"
+                     Grid.Row="2"
                      Stretch="Uniform"
                      StretchDirection="DownOnly"
                      HorizontalAlignment="Left"
@@ -1354,7 +1361,8 @@
                            Margin="0,8,0,0" />
             </StackPanel>
 
-            <Viewbox Grid.Row="2"
+            <Viewbox x:Name="ChoiceScenarioPreparationViewbox"
+                     Grid.Row="2"
                      Stretch="Uniform"
                      StretchDirection="DownOnly"
                      HorizontalAlignment="Center"
@@ -1646,7 +1654,7 @@
                                             Click="ExecutorConfirmDownloadButton_Click" />
                                 </StackPanel>
                             </StackPanel>
-                            <StackPanel x:Name="ExecutorResultPanel"
+                             <StackPanel x:Name="LegacyExecutorResultPanel"
                                          Margin="0,18,0,0"
                                          Visibility="Collapsed">
                                 <Grid>
@@ -1654,7 +1662,7 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock x:Name="ExecutorResultTitleText"
+                                     <TextBlock x:Name="LegacyExecutorResultTitleText"
                                                Text="Результат исполнителя"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                FontSize="16"
@@ -1662,7 +1670,7 @@
                                                VerticalAlignment="Center" />
                                     <StackPanel Grid.Column="1"
                                                 Orientation="Horizontal">
-                                        <Button x:Name="ExecutorVoiceToggleButton"
+                                         <Button x:Name="LegacyExecutorVoiceToggleButton"
                                                 Content="🔊"
                                                 Style="{StaticResource SecondaryButtonStyle}"
                                                 Width="42"
@@ -1670,7 +1678,14 @@
                                                 MinWidth="42"
                                                 Padding="0"
                                                 Click="ExecutorVoiceToggleButton_Click" />
-                                        <Button x:Name="ExecutorFinishSessionButton"
+                                         <Button x:Name="LegacyExecutorRequestResultButton"
+                                                Content="Выдать результат"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Height="34"
+                                                Margin="8,0,0,0"
+                                                Visibility="Collapsed"
+                                                Click="ExecutorRequestResultButton_Click" />
+                                         <Button x:Name="LegacyExecutorFinishSessionButton"
                                                 Content="Завершить сессию"
                                                 Style="{StaticResource SecondaryButtonStyle}"
                                                 Height="34"
@@ -1678,18 +1693,18 @@
                                                 Click="ExecutorFinishSessionButton_Click" />
                                     </StackPanel>
                                 </Grid>
-                                <StackPanel x:Name="ExecutorStagePanel"
+                                 <StackPanel x:Name="LegacyExecutorStagePanel"
                                              Margin="0,10,0,0">
-                                     <TextBlock x:Name="ExecutorStageProgressText"
+                                     <TextBlock x:Name="LegacyExecutorStageProgressText"
                                                 Foreground="{DynamicResource TextSecondaryBrush}"
                                                 FontSize="12" />
-                                     <TextBlock x:Name="ExecutorStageTitleText"
+                                     <TextBlock x:Name="LegacyExecutorStageTitleText"
                                                 Foreground="{DynamicResource TextPrimaryBrush}"
                                                 FontSize="15"
                                                 FontWeight="SemiBold"
                                                 TextWrapping="Wrap"
                                                 Margin="0,3,0,0" />
-                                     <TextBlock x:Name="ExecutorStageRecommendationText"
+                                     <TextBlock x:Name="LegacyExecutorStageRecommendationText"
                                                 Foreground="{DynamicResource AccentBrush}"
                                                 FontSize="12"
                                                 FontWeight="SemiBold"
@@ -1697,7 +1712,7 @@
                                                 Margin="0,5,0,0"
                                                 Visibility="Collapsed" />
                                 </StackPanel>
-                                <Border x:Name="ExecutorThoughtPanel"
+                                 <Border x:Name="LegacyExecutorThoughtPanel"
                                         Background="{DynamicResource StepBadgeBrush}"
                                         BorderBrush="{DynamicResource LineBrush}"
                                         BorderThickness="1"
@@ -1706,12 +1721,12 @@
                                         Margin="0,10,0,0"
                                         Visibility="Collapsed">
                                     <StackPanel>
-                                        <TextBlock x:Name="ExecutorThoughtTitleText"
+                                         <TextBlock x:Name="LegacyExecutorThoughtTitleText"
                                                    Text="Мысль исполнителя"
                                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                                    FontSize="13"
                                                    FontWeight="SemiBold" />
-                                        <TextBlock x:Name="ExecutorThoughtText"
+                                         <TextBlock x:Name="LegacyExecutorThoughtText"
                                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                                    FontSize="13"
                                                    LineHeight="21"
@@ -1719,13 +1734,13 @@
                                                    Margin="0,6,0,0" />
                                     </StackPanel>
                                 </Border>
-                                <TextBlock x:Name="ExecutorResultText"
+                                 <TextBlock x:Name="LegacyExecutorResultText"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                            FontSize="13"
                                            LineHeight="21"
                                            TextWrapping="Wrap"
                                            Margin="0,8,0,0" />
-                                <ItemsControl x:Name="ExecutorClarificationOptionsItemsControl"
+                                 <ItemsControl x:Name="LegacyExecutorClarificationOptionsItemsControl"
                                               Margin="0,10,0,0"
                                               Visibility="Collapsed">
                                     <ItemsControl.ItemsPanel>
@@ -1746,17 +1761,16 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <Button x:Name="ExecutorCustomOptionButton"
-                                        Content="Свой вариант"
-                                        Style="{StaticResource SecondaryButtonStyle}"
-                                        HorizontalAlignment="Stretch"
-                                        Margin="5,8,5,0"
-                                        Visibility="Collapsed"
-                                        Click="ExecutorCustomOptionButton_Click" />
-                                <StackPanel x:Name="ExecutorCustomInputPanel"
+                                 <Button x:Name="LegacyExecutorCustomOptionButton"
+                                         Content="Свой вариант"
+                                         Style="{StaticResource SecondaryButtonStyle}"
+                                         HorizontalAlignment="Stretch"
+                                         Margin="5,8,5,0"
+                                         Visibility="Collapsed" />
+                                 <StackPanel x:Name="LegacyExecutorCustomInputPanel"
                                             Visibility="Collapsed"
                                             Margin="5,10,5,0">
-                                    <TextBlock x:Name="ExecutorCustomInputHelpText"
+                                     <TextBlock x:Name="LegacyExecutorCustomInputHelpText"
                                                Text="Коротко опишите свой ответ."
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                FontSize="12"
@@ -1766,34 +1780,38 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="ExecutorCustomInput"
-                                                 Height="36"
-                                                 MaxLength="240"
-                                                 VerticalContentAlignment="Center" />
-                                        <Button x:Name="ExecutorCustomSubmitButton"
+                                         <TextBox x:Name="LegacyExecutorCustomInput"
+                                                 Height="86"
+                                                 MaxLength="4000"
+                                                 AcceptsReturn="True"
+                                                 TextWrapping="Wrap"
+                                                 VerticalContentAlignment="Top"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 Padding="8" />
+                                         <Button x:Name="LegacyExecutorCustomSubmitButton"
                                                 Grid.Column="1"
                                                 Content="Принять"
                                                 Style="{StaticResource PrimaryButtonStyle}"
                                                 Height="36"
                                                 MinWidth="110"
                                                 Margin="10,0,0,0"
+                                                VerticalAlignment="Bottom"
                                                 Click="ExecutorCustomSubmitButton_Click" />
                                     </Grid>
                                 </StackPanel>
-                                <Grid x:Name="ExecutorStageNavigationPanel"
+                                 <Grid x:Name="LegacyExecutorStageNavigationPanel"
                                        Margin="5,12,5,0">
                                      <Grid.ColumnDefinitions>
                                          <ColumnDefinition Width="*" />
                                          <ColumnDefinition Width="*" />
                                      </Grid.ColumnDefinitions>
-                                     <Button x:Name="ExecutorPreviousStageButton"
+                                     <Button x:Name="LegacyExecutorPreviousStageButton"
                                              Grid.Column="0"
                                              Content="Предыдущий этап"
                                              Style="{StaticResource SecondaryButtonStyle}"
                                              HorizontalAlignment="Stretch"
-                                             Margin="0,0,5,0"
-                                             Click="ExecutorPreviousStageButton_Click" />
-                                     <Button x:Name="ExecutorNextStageButton"
+                                             Margin="0,0,5,0" />
+                                     <Button x:Name="LegacyExecutorNextStageButton"
                                              Grid.Column="1"
                                              Content="Следующий этап"
                                              Style="{StaticResource PrimaryButtonStyle}"
@@ -1807,23 +1825,277 @@
                 </StackPanel>
             </Viewbox>
 
-            <Border x:Name="ChoiceAiActivityPanel"
-                    Grid.Row="2"
-                    Panel.ZIndex="20"
-                    MaxWidth="960"
-                    MaxHeight="520"
-                    MinHeight="220"
-                    Margin="20,8"
-                    HorizontalAlignment="Stretch"
-                    VerticalAlignment="Stretch"
-                    Background="#020804"
-                    BorderBrush="#238B45"
-                    BorderThickness="1"
-                    CornerRadius="8"
-                    ClipToBounds="True"
-                    Visibility="Collapsed">
-                <controls:MatrixRainControl x:Name="ChoiceMatrixRain" />
-            </Border>
+            <Grid x:Name="ExecutorResultPanel"
+                  Grid.Row="2"
+                  MaxWidth="960"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Visibility="Collapsed"
+                  SizeChanged="ExecutorResultPanel_SizeChanged">
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="ExecutorWorkspaceContentRow"
+                                   Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border x:Name="ExecutorConversationPanel"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="3"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="18"
+                        ClipToBounds="True">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ExecutorConversationTranslateTransform" />
+                    </Border.RenderTransform>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ExecutorResultTitleText"
+                                       Text="Работа с исполнителем"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap" />
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Margin="12,0,0,0">
+                                <Button x:Name="ExecutorVoiceToggleButton"
+                                        Content="🔊"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Width="42"
+                                        Height="34"
+                                        MinWidth="42"
+                                        Padding="0"
+                                        Click="ExecutorVoiceToggleButton_Click" />
+                                <Button x:Name="ExecutorFinishSessionButton"
+                                        Content="Завершить сессию"
+                                        Style="{StaticResource SecondaryButtonStyle}"
+                                        Height="34"
+                                        Margin="8,0,0,0"
+                                        Click="ExecutorFinishSessionButton_Click" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel x:Name="ExecutorStagePanel"
+                                    Grid.Row="1"
+                                    Margin="0,10,0,0">
+                            <TextBlock x:Name="ExecutorStageProgressText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12" />
+                            <TextBlock x:Name="ExecutorStageTitleText"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="15"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"
+                                       Margin="0,3,0,0" />
+                            <TextBlock x:Name="ExecutorStageRecommendationText"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"
+                                       Margin="0,5,0,0"
+                                       Visibility="Collapsed" />
+                        </StackPanel>
+
+                        <Border x:Name="ExecutorThoughtPanel"
+                                Grid.Row="2"
+                                Background="{DynamicResource StepBadgeBrush}"
+                                BorderBrush="{DynamicResource LineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="12"
+                                Margin="0,12,0,0"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock x:Name="ExecutorThoughtTitleText"
+                                           Text="Мысль исполнителя"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="13"
+                                           FontWeight="SemiBold" />
+                                <TextBlock x:Name="ExecutorThoughtText"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="13"
+                                           LineHeight="20"
+                                           TextWrapping="Wrap"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock x:Name="ExecutorResultText"
+                                   Grid.Row="3"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="14"
+                                   LineHeight="22"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,12,0,0"
+                                   VerticalAlignment="Top" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="ExecutorLivePreviewPanel"
+                        Grid.Row="0"
+                        Grid.Column="2"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="18"
+                        ClipToBounds="True"
+                        Opacity="0"
+                        Visibility="Collapsed">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ExecutorLivePreviewTranslateTransform" X="36" />
+                    </Border.RenderTransform>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock x:Name="ExecutorLivePreviewTitleText"
+                                   Text="Краткий результат сейчас"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap" />
+                        <TextBlock x:Name="ExecutorLivePreviewText"
+                                   Grid.Row="1"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="14"
+                                   LineHeight="22"
+                                   TextWrapping="Wrap"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Top"
+                                   Margin="0,12,0,0" />
+                        <TextBlock x:Name="ExecutorLivePreviewHintText"
+                                   Grid.Row="2"
+                                   Text="Промежуточный пересказ меняется после каждого уточнения."
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Margin="0,12,0,0" />
+                        <Button x:Name="ExecutorRequestResultButton"
+                                Grid.Row="3"
+                                Content="Выдать результат"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,12,0,0"
+                                Visibility="Collapsed"
+                                Click="ExecutorRequestResultButton_Click" />
+                    </Grid>
+                </Border>
+
+                <Border x:Name="ExecutorResponseDock"
+                        Grid.Row="2"
+                        Grid.Column="0"
+                        Grid.ColumnSpan="3"
+                        HorizontalAlignment="Stretch"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource LineBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <ItemsControl x:Name="ExecutorClarificationOptionsItemsControl"
+                                       Grid.Row="0"
+                                       ItemsPanel="{StaticResource ExecutorOptionsWidePanel}"
+                                       Visibility="Collapsed">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource ChoiceOptionButtonStyle}"
+                                            Tag="{Binding}"
+                                            MinHeight="44"
+                                            Margin="4"
+                                            Padding="10,6"
+                                            Click="ExecutorClarificationOptionButton_Click">
+                                        <TextBlock Text="{Binding Title}"
+                                                   FontSize="13"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"
+                                                   TextAlignment="Center" />
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Button x:Name="ExecutorNextStageButton"
+                                Grid.Row="1"
+                                Content="Всё верно, начать работу"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                HorizontalAlignment="Stretch"
+                                Margin="4,8,4,0"
+                                Visibility="Collapsed"
+                                Click="ExecutorNextStageButton_Click" />
+
+                        <StackPanel x:Name="ExecutorCustomInputPanel"
+                                    Grid.Row="2"
+                                    Visibility="Collapsed"
+                                    Margin="4,10,4,0">
+                            <TextBlock x:Name="ExecutorCustomInputHelpText"
+                                       Text="Добавьте вопрос, пояснение или важную деталь."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12"
+                                       Margin="0,0,0,6" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="ExecutorCustomInput"
+                                         Height="74"
+                                         MaxLength="4000"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalContentAlignment="Top"
+                                         VerticalScrollBarVisibility="Auto"
+                                         Padding="8" />
+                                <Button x:Name="ExecutorCustomSubmitButton"
+                                        Grid.Column="1"
+                                        Content="Принять"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Height="36"
+                                        MinWidth="110"
+                                        Margin="10,0,0,0"
+                                        VerticalAlignment="Bottom"
+                                        Click="ExecutorCustomSubmitButton_Click" />
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <StackPanel Grid.Row="4"
                         Orientation="Horizontal"
@@ -1968,5 +2240,16 @@
                 </Grid>
             </StackPanel>
         </Border>
+
+        <Grid x:Name="ChoiceAiActivityPanel"
+              Grid.Row="0"
+              Grid.RowSpan="3"
+              Panel.ZIndex="1000"
+              IsHitTestVisible="False"
+              ClipToBounds="True"
+              Visibility="Collapsed">
+            <Border Background="#80000000" />
+            <controls:MatrixRainControl x:Name="ChoiceMatrixRain" />
+        </Grid>
     </Grid>
 </Window>

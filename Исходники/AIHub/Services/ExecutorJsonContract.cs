@@ -20,7 +20,16 @@ public static class ExecutorJsonContract
                     ["status"] = new JsonObject
                     {
                         ["type"] = "string",
-                        ["enum"] = new JsonArray("working", "stage_ready", "result_ready", "blocked")
+                        ["enum"] = new JsonArray("working", "stage_ready", "blocked")
+                    },
+                    ["action"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["enum"] = new JsonArray(
+                            "ask_user",
+                            "confirm_brief",
+                            "request_tool",
+                            "blocked")
                     },
                     ["stageSummary"] = StringSchema(),
                     ["thought"] = StringSchema(),
@@ -32,17 +41,30 @@ public static class ExecutorJsonContract
                         ["maxItems"] = 6
                     },
                     ["allowCustom"] = new JsonObject { ["type"] = "boolean" },
+                    ["currentResultSummary"] = new JsonObject
+                    {
+                        ["type"] = "string",
+                        ["maxLength"] = ExecutorResultSummaryPolicy.MaximumCharacters
+                    },
+                    ["requestedTools"] = StringArraySchema(),
+                    ["missingCriticalInputs"] = StringArraySchema(),
+                    ["assumptions"] = StringArraySchema(),
                     ["result"] = StringSchema(),
                     ["sources"] = StringArraySchema(),
                     ["warnings"] = StringArraySchema()
                 },
                 ["required"] = new JsonArray(
                     "status",
+                    "action",
                     "stageSummary",
                     "thought",
                     "question",
                     "options",
                     "allowCustom",
+                    "currentResultSummary",
+                    "requestedTools",
+                    "missingCriticalInputs",
+                    "assumptions",
                     "result",
                     "sources",
                     "warnings")

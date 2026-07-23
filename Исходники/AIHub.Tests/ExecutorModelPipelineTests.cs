@@ -128,32 +128,39 @@ public sealed class ExecutorModelPipelineTests
     }
 
     [TestMethod]
-    public void ResultParser_ReadsCurrentResultWithoutEndingSession()
+    public void ResultParser_ReadsPracticalQuestionWithCurrentResultSummary()
     {
-        const string response = "{\"status\":\"result_ready\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"\",\"question\":\"Что нужно изменить?\",\"options\":[\"Уточнить\"],\"allowCustom\":false,\"result\":\"Готовый содержательный результат\",\"sources\":[],\"warnings\":[]}";
+        const string response = """
+            {
+              "status":"working",
+              "action":"ask_user",
+              "stageSummary":"Требования подтверждены",
+              "thought":"Проверяю важное ограничение.",
+              "question":"Какой тон ответа предпочтителен?",
+              "options":["Деловой","Нейтральный","Реши самостоятельно"],
+              "allowCustom":true,
+              "currentResultSummary":"Сейчас доступен нейтральный черновик рекомендации с двумя основными вариантами.",
+              "requestedTools":[],
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
 
         var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
 
         Assert.IsTrue(parsed);
-        Assert.AreEqual(ExecutorTurnStatuses.ResultReady, turn.Status);
-        Assert.AreEqual("Готовый содержательный результат", turn.Result);
+        Assert.AreEqual(ExecutorTurnActions.AskUser, turn.Action);
+        StringAssert.Contains(turn.CurrentResultSummary, "нейтральный черновик");
         Assert.IsTrue(turn.AllowCustom);
     }
 
     [TestMethod]
-    public void ResultParser_RejectsStatusMarkerInsteadOfResult()
+    public void ResultParser_RejectsTerminalResultStatus()
     {
-        const string response = "{\"status\":\"result_ready\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"Создаю результат\",\"question\":\"\",\"options\":[],\"allowCustom\":true,\"result\":\"final_result\",\"sources\":[],\"warnings\":[]}";
-
-        var parsed = ExecutorResultParser.TryReadTurn(response, out _);
-
-        Assert.IsFalse(parsed);
-    }
-
-    [TestMethod]
-    public void ResultParser_RejectsPromiseInsteadOfResult()
-    {
-        const string response = "{\"status\":\"result_ready\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"\",\"question\":\"\",\"options\":[],\"allowCustom\":true,\"result\":\"Сейчас подготовлю итоговый ответ\",\"sources\":[],\"warnings\":[]}";
+        const string response = "{\"status\":\"result_ready\",\"action\":\"present_result\",\"stageSummary\":\"Требования подтверждены\",\"thought\":\"\",\"question\":\"\",\"options\":[],\"allowCustom\":true,\"currentResultSummary\":\"\",\"requestedTools\":[],\"missingCriticalInputs\":[],\"assumptions\":[],\"result\":\"Готовый результат\",\"sources\":[],\"warnings\":[]}";
 
         var parsed = ExecutorResultParser.TryReadTurn(response, out _);
 
@@ -173,20 +180,122 @@ public sealed class ExecutorModelPipelineTests
     }
 
     [TestMethod]
-    public void StageFlow_AllowsOnlyAdjacentUserTransitions()
+    public void ResultParser_StageReadyUsesBriefConfirmationAndDropsTransitionOptions()
     {
+        const string response = """
+            {
+              "status":"stage_ready",
+              "action":"confirm_brief",
+              "stageId":"task_definition",
+              "stageSummary":"Нужно подготовить сравнение двух вариантов для владельца проекта.",
+              "thought":"Стартовые данные собраны.",
+              "question":"",
+              "options":["Да, перейти дальше"],
+              "allowCustom":false,
+              "requestedTools":[],
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(ExecutorTurnActions.ConfirmBrief, turn.Action);
+        Assert.AreEqual(0, turn.Options.Count);
+        Assert.IsTrue(turn.AllowCustom);
+    }
+
+    [TestMethod]
+    public void ResultParser_RejectsAutonomousContinueAction()
+    {
+        const string response = """
+            {
+              "status":"working",
+              "action":"continue_work",
+              "stageId":"practical_clarification",
+              "stageSummary":"Выбран сравнительный подход.",
+              "thought":"Проверяю ограничения выбранного метода.",
+              "question":"",
+              "options":[],
+              "allowCustom":false,
+              "currentResultSummary":"Доступно предварительное сравнение.",
+              "requestedTools":[],
+              "missingCriticalInputs":[],
+              "assumptions":["Сравнение должно быть нейтральным"],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out _);
+
+        Assert.IsFalse(parsed);
+    }
+
+    [TestMethod]
+    public void ResultSummaryPolicy_ClampsOversizedPreview()
+    {
+        var value = string.Join(' ', Enumerable.Repeat("результат", 200));
+
+        var clamped = ExecutorResultSummaryPolicy.Clamp(value);
+
+        Assert.IsTrue(clamped.Length <= ExecutorResultSummaryPolicy.MaximumCharacters);
+        StringAssert.EndsWith(clamped, "…");
+    }
+
+    [TestMethod]
+    public void ExecutorContract_ContainsPreviewAndNoAutonomousResultActions()
+    {
+        var schema = ExecutorJsonContract.CreateResponseFormat().ToJsonString();
+
+        StringAssert.Contains(schema, "currentResultSummary");
+        Assert.IsFalse(schema.Contains("continue_work", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("present_result", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("result_ready", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void HandoffConsistency_OfflineRequirementRemovesWebAccess()
+    {
+        var handoff = new ExecutorHandoffPackage
+        {
+            NeedsWeb = true,
+            RequiredTools = ["web_research", "local_notes"],
+            UserSignals =
+            [
+                new ExecutorHandoffItem
+                {
+                    Name = ChoiceDecisionDimensions.ToolRequirements,
+                    Value = "Без интернета",
+                    Source = "user_selection",
+                    IsAuthoritative = true
+                }
+            ]
+        };
+
+        var changed = ExecutorHandoffConsistencyPolicy.Normalize(handoff);
+
+        Assert.IsTrue(changed);
+        Assert.IsFalse(handoff.NeedsWeb);
+        CollectionAssert.AreEqual(new[] { "local_notes" }, handoff.RequiredTools);
+    }
+
+    [TestMethod]
+    public void StageFlow_HasOnlyTechnicalAndPracticalStages()
+    {
+        Assert.AreEqual(2, ExecutorStageFlow.ActiveStageIds.Count);
         Assert.AreEqual(
-            ExecutorStageIds.SolutionMethod,
+            ExecutorStageIds.PracticalClarification,
             ExecutorStageFlow.GetNext(ExecutorStageIds.TaskDefinition));
-        Assert.AreEqual(
-            ExecutorStageIds.DataCollection,
-            ExecutorStageFlow.GetPrevious(ExecutorStageIds.ResultAssembly));
         Assert.IsTrue(ExecutorStageFlow.AreAdjacent(
-            ExecutorStageIds.SolutionMethod,
-            ExecutorStageIds.DataCollection));
-        Assert.IsFalse(ExecutorStageFlow.AreAdjacent(
             ExecutorStageIds.TaskDefinition,
-            ExecutorStageIds.ResultAssembly));
+            ExecutorStageIds.PracticalClarification));
+        Assert.IsNull(ExecutorStageFlow.GetNext(ExecutorStageIds.PracticalClarification));
     }
 
     [TestMethod]

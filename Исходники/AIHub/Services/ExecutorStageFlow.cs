@@ -3,9 +3,7 @@ namespace AIHub.Services;
 public static class ExecutorStageIds
 {
     public const string TaskDefinition = "task_definition";
-    public const string SolutionMethod = "solution_method";
-    public const string DataCollection = "data_collection";
-    public const string ResultAssembly = "result_assembly";
+    public const string PracticalClarification = "practical_clarification";
 }
 
 public static class ExecutorStageFlow
@@ -13,9 +11,7 @@ public static class ExecutorStageFlow
     private static readonly string[] StageIds =
     [
         ExecutorStageIds.TaskDefinition,
-        ExecutorStageIds.SolutionMethod,
-        ExecutorStageIds.DataCollection,
-        ExecutorStageIds.ResultAssembly
+        ExecutorStageIds.PracticalClarification
     ];
 
     public static IReadOnlyList<string> ActiveStageIds => StageIds;

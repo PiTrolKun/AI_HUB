@@ -62,11 +62,13 @@ public sealed class MatrixRainControl : FrameworkElement
     protected override void OnRender(DrawingContext drawingContext)
     {
         base.OnRender(drawingContext);
-        drawingContext.DrawRectangle(new SolidColorBrush(System.Windows.Media.Color.FromRgb(2, 8, 4)), null, new Rect(RenderSize));
         foreach (var glyph in _glyphs)
         {
-            var alpha = (byte)Math.Clamp(255 * glyph.Life, 20, 255);
-            var brush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, glyph.Head ? (byte)210 : (byte)40, 255, glyph.Head ? (byte)220 : (byte)92));
+            var life = Math.Clamp(glyph.Life, 0, 1);
+            var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(
+                glyph.Head ? (byte)210 : (byte)(24 + 30 * life),
+                glyph.Head ? (byte)255 : (byte)(128 + 127 * life),
+                glyph.Head ? (byte)220 : (byte)(48 + 72 * life)));
             var text = new FormattedText(
                 glyph.Character.ToString(),
                 CultureInfo.InvariantCulture,

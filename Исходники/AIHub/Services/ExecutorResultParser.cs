@@ -35,11 +35,16 @@ public static class ExecutorResultParser
             }
 
             parsed.Status = NormalizeStatus(parsed.Status);
+            parsed.Action = NormalizeAction(parsed.Action, parsed.Status);
             parsed.StageSummary = parsed.StageSummary.Trim();
             parsed.Thought = parsed.Thought.Trim();
             parsed.Question = parsed.Question.Trim();
+            parsed.CurrentResultSummary = ExecutorResultSummaryPolicy.Clamp(parsed.CurrentResultSummary);
             parsed.Result = parsed.Result.Trim();
             parsed.Options = NormalizeList(parsed.Options, 6);
+            parsed.RequestedTools = NormalizeList(parsed.RequestedTools, 6);
+            parsed.MissingCriticalInputs = NormalizeList(parsed.MissingCriticalInputs, 12);
+            parsed.Assumptions = NormalizeList(parsed.Assumptions, 12);
             parsed.Sources = NormalizeList(parsed.Sources, 24);
             parsed.Warnings = NormalizeList(parsed.Warnings, 24);
             if (parsed.Status is ExecutorTurnStatuses.Working or ExecutorTurnStatuses.StageReady)
@@ -54,13 +59,18 @@ public static class ExecutorResultParser
 
             var valid = parsed.Status switch
             {
-                ExecutorTurnStatuses.Working => !string.IsNullOrWhiteSpace(parsed.Question)
-                    && (parsed.Options.Count > 0 || parsed.AllowCustom),
+                ExecutorTurnStatuses.Working => parsed.Action switch
+                {
+                    ExecutorTurnActions.AskUser => !string.IsNullOrWhiteSpace(parsed.Question)
+                        && (parsed.Options.Count > 0 || parsed.AllowCustom),
+                    ExecutorTurnActions.RequestTool => parsed.RequestedTools.Count > 0,
+                    _ => false
+                },
                 ExecutorTurnStatuses.StageReady => !string.IsNullOrWhiteSpace(parsed.StageSummary)
-                    && (!string.IsNullOrWhiteSpace(parsed.Question) || parsed.AllowCustom),
-                ExecutorTurnStatuses.ResultReady => IsMeaningfulResult(parsed.Result),
+                    && parsed.Action == ExecutorTurnActions.ConfirmBrief,
                 ExecutorTurnStatuses.Blocked => IsMeaningfulResult(parsed.Result)
-                    || !string.IsNullOrWhiteSpace(parsed.Thought),
+                    || parsed.Action == ExecutorTurnActions.Blocked
+                    && !string.IsNullOrWhiteSpace(parsed.Thought),
                 _ => false
             };
             if (!valid)
@@ -68,11 +78,16 @@ public static class ExecutorResultParser
                 return false;
             }
 
-            if (parsed.Status is ExecutorTurnStatuses.StageReady
-                or ExecutorTurnStatuses.ResultReady
-                or ExecutorTurnStatuses.Blocked)
+            if (parsed.Action == ExecutorTurnActions.AskUser
+                || parsed.Status is ExecutorTurnStatuses.StageReady
+                    or ExecutorTurnStatuses.Blocked)
             {
                 parsed.AllowCustom = true;
+            }
+
+            if (parsed.Status == ExecutorTurnStatuses.StageReady)
+            {
+                parsed.Options.Clear();
             }
 
             result = parsed;
@@ -89,13 +104,33 @@ public static class ExecutorResultParser
         "clarification_step" => ExecutorTurnStatuses.Working,
         "needs_clarification" => ExecutorTurnStatuses.Working,
         "clarification" => ExecutorTurnStatuses.Working,
-        "final_result" => ExecutorTurnStatuses.ResultReady,
-        "completed" => ExecutorTurnStatuses.ResultReady,
-        "complete" => ExecutorTurnStatuses.ResultReady,
-        "final" => ExecutorTurnStatuses.ResultReady,
         "cannot_continue" => ExecutorTurnStatuses.Blocked,
         var value => value
     };
+
+    private static string NormalizeAction(string action, string status)
+    {
+        var normalized = action.Trim().ToLowerInvariant() switch
+        {
+            "needs_user_input" => ExecutorTurnActions.AskUser,
+            "await_user" => ExecutorTurnActions.AskUser,
+            "confirm" => ExecutorTurnActions.ConfirmBrief,
+            "tool" => ExecutorTurnActions.RequestTool,
+            var value => value
+        };
+        if (normalized == ExecutorTurnActions.AskUser
+            && status != ExecutorTurnStatuses.Working)
+        {
+            return status switch
+            {
+                ExecutorTurnStatuses.StageReady => ExecutorTurnActions.ConfirmBrief,
+                ExecutorTurnStatuses.Blocked => ExecutorTurnActions.Blocked,
+                _ => normalized
+            };
+        }
+
+        return normalized;
+    }
 
     private static bool IsMeaningfulResult(string value)
     {

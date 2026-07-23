@@ -4,6 +4,7 @@ namespace AIHub.Services;
 
 public sealed class ExecutorWorkflowService : IDisposable
 {
+    private const int MaximumToolRequestsPerTurn = 3;
     private readonly ExecutorModelArtifactResolver _resolver = new(new HuggingFaceExecutorArtifactSource());
     private readonly ExecutorModelInstaller _installer = new();
     private readonly UserContextService _userContextService;
@@ -15,6 +16,11 @@ public sealed class ExecutorWorkflowService : IDisposable
     {
         _userContextService = userContextService;
     }
+
+    public bool BriefConfirmed => _session?.BriefConfirmed ?? false;
+
+    public IReadOnlyList<ExecutorResultSnapshot> Snapshots =>
+        _session?.Snapshots ?? [];
 
     public Task<ExecutorModelArtifact> ResolveAsync(
         string requestedModel,
@@ -97,17 +103,84 @@ public sealed class ExecutorWorkflowService : IDisposable
             ?? throw new InvalidOperationException("Executor session is not active.");
     }
 
-    public Task<ExecutorTurnResult> TransitionStageAsync(
-        string targetStageId,
+    public async Task<ExecutorTurnResult> ContinueAndRunAsync(
+        string userResponse,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _session?.TransitionStageAsync(targetStageId, streamProgress, cancellationToken)
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ContinueAsync(userResponse, streamProgress, cancellationToken);
+        return await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+    }
+
+    public async Task<ExecutorTurnResult> ConfirmBriefAndRunAsync(
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ConfirmBriefAsync(streamProgress, cancellationToken);
+        return await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+    }
+
+    public Task<ExecutorResultSnapshot> CreateResultSnapshotAsync(
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _session?.CreateResultSnapshotAsync(streamProgress, cancellationToken)
             ?? throw new InvalidOperationException("Executor session is not active.");
     }
 
     public void Write(string eventType, object? payload = null) => _sessionLog?.Write(eventType, payload);
+
+    private async Task<ExecutorTurnResult> ResolveRequestedToolsAsync(
+        ExecutorSessionService session,
+        ExecutorTurnResult turn,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        for (var request = 1; request <= MaximumToolRequestsPerTurn; request++)
+        {
+            if (turn.Action != ExecutorTurnActions.RequestTool)
+            {
+                return turn;
+            }
+
+            _sessionLog?.Write("executor_tool_request", new
+            {
+                Request = request,
+                Stage = turn.StageId,
+                Tools = turn.RequestedTools
+            });
+            try
+            {
+                turn = await session.EnableRequestedToolsAndContinueAsync(
+                    turn.RequestedTools,
+                    streamProgress,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _sessionLog?.Write("executor_tool_request_failed", new
+                {
+                    Request = request,
+                    Stage = session.CurrentStageId,
+                    ex.Message,
+                    ErrorType = ex.GetType().FullName
+                });
+                return session.CreateToolSafetyPause(
+                    $"tool_request_failed:{ex.GetType().Name}");
+            }
+        }
+
+        return session.CreateToolSafetyPause("tool_request_limit");
+    }
 
     public void Stop(string reason)
     {
