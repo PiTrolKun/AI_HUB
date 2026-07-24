@@ -30,6 +30,26 @@ public static class AppDataPaths
 
     public static string BackendsDirectory { get; } = Path.Combine(RuntimeDirectory, "Backends");
 
+    public static string ComponentsDirectory { get; } = Path.Combine(RuntimeDirectory, "Components");
+
+    public static string ComponentRuntimesDirectory { get; } = Path.Combine(ComponentsDirectory, "Runtimes");
+
+    public static string ComponentLibrariesDirectory { get; } = Path.Combine(ComponentsDirectory, "Libraries");
+
+    public static string ComponentLanguagesDirectory { get; } = Path.Combine(ComponentsDirectory, "Languages");
+
+    public static string ComponentModelsDirectory { get; } = Path.Combine(ComponentsDirectory, "Models");
+
+    public static string ComponentViewersDirectory { get; } = Path.Combine(ComponentsDirectory, "Viewers");
+
+    public static string ComponentManifestsDirectory { get; } = Path.Combine(ComponentsDirectory, "Manifests");
+
+    public static string ComponentDownloadsDirectory { get; } = Path.Combine(ComponentsDirectory, "Downloads");
+
+    public static string ComponentLogsDirectory { get; } = Path.Combine(ComponentsDirectory, "Logs");
+
+    public static string ComponentStatePath { get; } = Path.Combine(ComponentManifestsDirectory, "component-state.json");
+
     public static string HuggingFaceCatalogDirectory { get; } = Path.Combine(
         RuntimeDirectory,
         "Каталоги",
@@ -47,6 +67,20 @@ public static class AppDataPaths
     {
         Directory.CreateDirectory(BaseDirectory);
         Directory.CreateDirectory(LocalizationDirectory);
+        EnsureComponentDirectories();
+    }
+
+    public static void EnsureComponentDirectories()
+    {
+        Directory.CreateDirectory(ComponentsDirectory);
+        Directory.CreateDirectory(ComponentRuntimesDirectory);
+        Directory.CreateDirectory(ComponentLibrariesDirectory);
+        Directory.CreateDirectory(ComponentLanguagesDirectory);
+        Directory.CreateDirectory(ComponentModelsDirectory);
+        Directory.CreateDirectory(ComponentViewersDirectory);
+        Directory.CreateDirectory(ComponentManifestsDirectory);
+        Directory.CreateDirectory(ComponentDownloadsDirectory);
+        Directory.CreateDirectory(ComponentLogsDirectory);
     }
 
     private static string? FindProjectRoot()

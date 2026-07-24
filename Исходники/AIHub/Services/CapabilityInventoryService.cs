@@ -8,6 +8,7 @@ public sealed class CapabilityInventoryService
     private readonly CoreModelManager _coreModelManager = new();
     private readonly ToolModelManager _toolModelManager = new();
     private readonly DebugModelDiscoveryService _modelDiscoveryService = new();
+    private readonly ComponentManager _componentManager = new();
 
     public CapabilityInventoryResponse Create(StorageSettings storageSettings)
     {
@@ -37,17 +38,29 @@ public sealed class CapabilityInventoryService
                 Details = "Installed model executor available for prepared tasks."
             }));
         items.Add(CreateMissingRole("embedding", "Embedding model", "Needed later for RAG and semantic document search."));
+        items.AddRange(_componentManager.GetAvailableCapabilities()
+            .Select(capability => CreateStaticTool(
+                "component_capability",
+                capability,
+                true,
+                "Verified local file-processing capability.")));
 
         return new CapabilityInventoryResponse
         {
-            Items = items
-                .GroupBy(item => $"{item.Role}|{item.Path}", StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.First())
-                .OrderByDescending(item => item.IsInstalled)
-                .ThenBy(item => item.Role, StringComparer.OrdinalIgnoreCase)
-                .ToList()
+            Items = NormalizeItems(items)
         };
     }
+
+    public static List<CapabilityInventoryItem> NormalizeItems(
+        IEnumerable<CapabilityInventoryItem> items) => items
+        .GroupBy(
+            item => $"{item.Role}|{(string.IsNullOrWhiteSpace(item.Path) ? item.Name : item.Path)}",
+            StringComparer.OrdinalIgnoreCase)
+        .Select(group => group.First())
+        .OrderByDescending(item => item.IsInstalled)
+        .ThenBy(item => item.Role, StringComparer.OrdinalIgnoreCase)
+        .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
     private CapabilityInventoryItem CreateCoreItem(StorageSettings storageSettings)
     {

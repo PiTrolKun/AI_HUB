@@ -45,6 +45,8 @@ public static class ExecutorResultParser
             parsed.Result = parsed.Result.Trim();
             parsed.Options = NormalizeList(parsed.Options, 6);
             parsed.RequestedTools = NormalizeList(parsed.RequestedTools, 6);
+            parsed.RequestedCapability = parsed.RequestedCapability.Trim().ToLowerInvariant();
+            parsed.CapabilityReason = parsed.CapabilityReason.Trim();
             parsed.MissingCriticalInputs = NormalizeList(parsed.MissingCriticalInputs, 12);
             parsed.Assumptions = NormalizeList(parsed.Assumptions, 12);
             parsed.Sources = NormalizeList(parsed.Sources, 24);
@@ -66,6 +68,9 @@ public static class ExecutorResultParser
                     ExecutorTurnActions.AskUser => !string.IsNullOrWhiteSpace(parsed.Question)
                         && (parsed.Options.Count > 0 || parsed.AllowCustom),
                     ExecutorTurnActions.RequestTool => parsed.RequestedTools.Count > 0,
+                    ExecutorTurnActions.RequestCapability =>
+                        IsAllowedCapability(parsed.RequestedCapability)
+                        && !string.IsNullOrWhiteSpace(parsed.CapabilityReason),
                     ExecutorTurnActions.SuggestFinalization =>
                         parsed.CanFinalize
                         &&
@@ -129,6 +134,7 @@ public static class ExecutorResultParser
             "await_user" => ExecutorTurnActions.AskUser,
             "confirm" => ExecutorTurnActions.ConfirmBrief,
             "tool" => ExecutorTurnActions.RequestTool,
+            "capability" => ExecutorTurnActions.RequestCapability,
             "suggest_finish" => ExecutorTurnActions.SuggestFinalization,
             "ready_for_finalization" => ExecutorTurnActions.SuggestFinalization,
             var value => value
@@ -146,6 +152,9 @@ public static class ExecutorResultParser
 
         return normalized;
     }
+
+    private static bool IsAllowedCapability(string capability) =>
+        ComponentCatalog.FindProviders(capability).Count > 0;
 
     private static bool IsMeaningfulResult(string value)
     {

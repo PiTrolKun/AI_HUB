@@ -52,6 +52,20 @@ public sealed class ChoiceExecutorCandidate
     public string Reason { get; set; } = string.Empty;
 
     public bool IsRecommended { get; set; }
+
+    public string RuntimeBackend { get; set; } = string.Empty;
+
+    public string ArtifactFormat { get; set; } = string.Empty;
+
+    public string CatalogMatchScope { get; set; } = string.Empty;
+
+    public List<string> RequiredCapabilities { get; set; } = [];
+
+    public List<string> AvailableCapabilities { get; set; } = [];
+
+    public List<string> MissingCapabilities { get; set; } = [];
+
+    public List<string> UnresolvedCapabilities { get; set; } = [];
 }
 
 public sealed class ChoiceExecutorSelection

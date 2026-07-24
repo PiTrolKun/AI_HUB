@@ -33,14 +33,40 @@ public sealed class ChoiceExecutorCandidatePoolService
         sessionLog.Write("scenario_candidate_catalog", new { Request = request, Response = catalog });
 
         var pool = CreatePool(inventory, catalog, capabilityProfile, workloadMode, computerPassport);
-        if (pool.HasValidPair)
+        if (pool.HasCandidatePair)
+        {
+            return pool;
+        }
+
+        var coordinatorRequest = BuildCoordinatorCatalogRequest(request);
+        var coordinatorCatalog = new LocalModelCatalogTool(computerPassport: computerPassport)
+            .Search(JsonSerializer.Serialize(coordinatorRequest, JsonOptions), currentCoreName);
+        sessionLog.Write(
+            "scenario_candidate_coordinator_catalog",
+            new { Request = coordinatorRequest, Response = coordinatorCatalog });
+        var coordinatorPool = CreatePool(
+            inventory,
+            coordinatorCatalog,
+            capabilityProfile,
+            workloadMode,
+            computerPassport,
+            ExecutionCompatibilityService.CoordinatorFallbackMatch);
+        pool.AlternativeCandidates.AddRange(coordinatorPool.AlternativeCandidates);
+        pool.Warnings.AddRange(coordinatorCatalog.Warnings);
+        pool.AlternativeCandidates = pool.AlternativeCandidates
+            .GroupBy(candidate => $"{candidate.Family}|{candidate.Model}", StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .Take(6)
+            .ToList();
+        AssignIds(pool);
+        if (pool.HasCandidatePair)
         {
             return pool;
         }
 
         var taskType = request.TaskType.Replace(' ', '_');
         var live = await _huggingFaceProvider.FindModelAsync(
-            $"role=executor query={taskType} format=gguf",
+            $"role=executor query={taskType} pipeline=text-generation format=gguf",
             storageSettings,
             cancellationToken);
         pool.UsedLiveSearch = true;
@@ -98,18 +124,44 @@ public sealed class ChoiceExecutorCandidatePoolService
         };
     }
 
+    public static ModelCatalogSearchRequest BuildCoordinatorCatalogRequest(
+        ModelCatalogSearchRequest source) => new()
+        {
+            Directions = ["text_knowledge"],
+            TaskType = "general_reasoning",
+            RequiredCapabilities = [],
+            LoadLevel = source.LoadLevel,
+            Limit = source.Limit
+        };
+
     public static ChoiceExecutorCandidatePool CreatePool(
         CapabilityInventoryResponse inventory,
         ModelCatalogSearchResponse catalog,
         ChoiceCapabilityProfile capabilityProfile,
         string workloadMode,
-        ComputerPassport computerPassport)
+        ComputerPassport computerPassport,
+        string catalogMatchScope = ExecutionCompatibilityService.TaskProfileMatch)
     {
+        var capabilityResolution = ExecutionCompatibilityService.ResolveCapabilities(
+            capabilityProfile,
+            inventory);
         var pool = new ChoiceExecutorCandidatePool
         {
-            RequiredProtocols = BuildRequiredProtocols(capabilityProfile, workloadMode),
+            RequiredProtocols = BuildRequiredProtocols(
+                capabilityProfile,
+                workloadMode,
+                capabilityResolution),
+            RequiredCapabilities = capabilityResolution.Required.ToList(),
+            AvailableCapabilities = capabilityResolution.Available.ToList(),
+            MissingCapabilities = capabilityResolution.Missing.ToList(),
+            UnresolvedCapabilities = capabilityResolution.Unresolved.ToList(),
             Warnings = catalog.Warnings.ToList()
         };
+        if (pool.UnresolvedCapabilities.Count > 0)
+        {
+            pool.Warnings.Add(
+                "The capability profile contains requirements without an approved executable provider.");
+        }
 
         foreach (var item in inventory.Items.Where(item =>
                      string.Equals(item.Role, "executor", StringComparison.OrdinalIgnoreCase)
@@ -123,23 +175,33 @@ public sealed class ChoiceExecutorCandidatePoolService
                 continue;
             }
 
-            pool.InstalledCandidates.Add(new ChoiceExecutorPoolCandidate
+            var installedCandidate = new ChoiceExecutorPoolCandidate
             {
                 Model = item.Name,
                 Family = GetFamilyKey(item.Name),
                 Status = ChoiceExecutorCandidateStatuses.Installed,
+                Role = ExecutionCompatibilityService.CoordinatorRole,
                 CapabilityClass = GetCapabilityClass(parameterCount),
                 ParameterCount = parameterCount,
                 PipelineTag = "text-generation",
                 HardwareStatus = "runtime_verified",
                 Evidence = "installed=true; runnable=true; runtime inventory"
-            });
+            };
+            ExecutionCompatibilityService.ApplyExecutionPassport(
+                installedCandidate,
+                capabilityResolution,
+                ExecutionCompatibilityService.TaskProfileMatch);
+            if (installedCandidate.RuntimeCompatible)
+            {
+                pool.InstalledCandidates.Add(installedCandidate);
+            }
         }
 
         foreach (var candidate in catalog.Candidates)
         {
             if (candidate.Hardware.IsCompatible == false
-                || !IsAllowedByWorkload(candidate.ParameterCount, workloadMode))
+                || !IsAllowedByWorkload(candidate.ParameterCount, workloadMode)
+                || !ExecutionCompatibilityService.IsLlamaCoordinatorCandidate(candidate))
             {
                 continue;
             }
@@ -151,14 +213,12 @@ public sealed class ChoiceExecutorCandidatePoolService
                 continue;
             }
 
-            pool.AlternativeCandidates.Add(new ChoiceExecutorPoolCandidate
+            var alternativeCandidate = new ChoiceExecutorPoolCandidate
             {
                 Model = candidate.RepoId,
                 Family = family,
                 Status = ChoiceExecutorCandidateStatuses.NotInstalled,
-                Role = candidate.Roles.Any(role => !string.Equals(role, "general_reasoning", StringComparison.OrdinalIgnoreCase))
-                    ? "specialist_model"
-                    : "general_worker",
+                Role = ExecutionCompatibilityService.CoordinatorRole,
                 CapabilityClass = GetCapabilityClass(candidate.ParameterCount),
                 ParameterCount = candidate.ParameterCount,
                 PipelineTag = candidate.PipelineTag,
@@ -167,7 +227,15 @@ public sealed class ChoiceExecutorCandidatePoolService
                 Roles = candidate.Roles.ToList(),
                 HardwareStatus = candidate.Hardware.Status,
                 Evidence = string.Join("; ", candidate.MatchReasons)
-            });
+            };
+            ExecutionCompatibilityService.ApplyExecutionPassport(
+                alternativeCandidate,
+                capabilityResolution,
+                catalogMatchScope);
+            if (alternativeCandidate.RuntimeCompatible)
+            {
+                pool.AlternativeCandidates.Add(alternativeCandidate);
+            }
         }
 
         pool.AlternativeCandidates = pool.AlternativeCandidates
@@ -213,20 +281,11 @@ public sealed class ChoiceExecutorCandidatePoolService
             return false;
         }
 
-        if (!HasCompleteAssessment(selection.InstalledAssessment)
-            || !HasCompleteAssessment(selection.AlternativeAssessment))
-        {
-            error = "Both trusted candidates require an advantage, limitation and reason.";
-            return false;
-        }
-
         var installedChoice = CreateResolvedCandidate(
             installed,
-            selection.InstalledAssessment,
             string.Equals(selection.PreferredCandidateId, installed.Id, StringComparison.OrdinalIgnoreCase));
         var alternativeChoice = CreateResolvedCandidate(
             alternative,
-            selection.AlternativeAssessment,
             string.Equals(selection.PreferredCandidateId, alternative.Id, StringComparison.OrdinalIgnoreCase));
         card.ExecutorCandidates = [installedChoice, alternativeChoice];
 
@@ -244,8 +303,9 @@ public sealed class ChoiceExecutorCandidatePoolService
     {
         var builder = new StringBuilder();
         builder.AppendLine("TRUSTED_EXECUTOR_CANDIDATE_POOL");
-        builder.AppendLine("Program already verified identity, installation status, family, backend and PC fit.");
+        builder.AppendLine("Program already verified identity, installation status, family, runtime, artifact format, component plan and PC fit.");
         builder.AppendLine("Choose IDs only. Do not rewrite model names, status, family, role or capability class.");
+        builder.AppendLine("A coordinator model does not directly provide specialist file/media operations. Those are separate component capabilities.");
         builder.AppendLine("Required capability protocols:");
         foreach (var protocol in pool.RequiredProtocols)
         {
@@ -268,7 +328,7 @@ public sealed class ChoiceExecutorCandidatePoolService
         builder.AppendLine("- installedCandidateId: exactly one installed_* ID;");
         builder.AppendLine("- alternativeCandidateId: exactly one alternative_* ID from a different family;");
         builder.AppendLine("- preferredCandidateId: either selected ID. Prefer installed when it is sufficient; downloading is not automatically better;");
-        builder.AppendLine("- installedAssessment and alternativeAssessment: advantage, limitation and reason for this capability profile.");
+        builder.AppendLine("Program generates all technical advantages, limitations and reasons from verified candidate facts.");
         return builder.ToString().Trim();
     }
 
@@ -314,7 +374,8 @@ public sealed class ChoiceExecutorCandidatePoolService
             var parameterCount = ModelHardwareCompatibilityService.TryReadParameterCountFromName(candidate.RepoId);
             var hardware = ModelHardwareCompatibilityService.Assess(parameterCount, computerPassport, workloadMode);
             if (hardware.IsCompatible == false
-                || !IsAllowedByWorkload(parameterCount, workloadMode))
+                || !IsAllowedByWorkload(parameterCount, workloadMode)
+                || !ExecutionCompatibilityService.IsLlamaCoordinatorPipeline(candidate.PipelineTag))
             {
                 continue;
             }
@@ -326,17 +387,32 @@ public sealed class ChoiceExecutorCandidatePoolService
                 continue;
             }
 
-            pool.AlternativeCandidates.Add(new ChoiceExecutorPoolCandidate
+            var liveCandidate = new ChoiceExecutorPoolCandidate
             {
                 Model = candidate.RepoId,
                 Family = family,
                 Status = ChoiceExecutorCandidateStatuses.NotInstalled,
+                Role = ExecutionCompatibilityService.CoordinatorRole,
                 CapabilityClass = GetCapabilityClass(parameterCount),
                 ParameterCount = parameterCount,
                 PipelineTag = candidate.PipelineTag,
                 HardwareStatus = hardware.Status,
                 Evidence = "live Hugging Face search"
-            });
+            };
+            ExecutionCompatibilityService.ApplyExecutionPassport(
+                liveCandidate,
+                new ExecutionCapabilityResolution
+                {
+                    Required = pool.RequiredCapabilities.ToList(),
+                    Available = pool.AvailableCapabilities.ToList(),
+                    Missing = pool.MissingCapabilities.ToList(),
+                    Unresolved = pool.UnresolvedCapabilities.ToList()
+                },
+                ExecutionCompatibilityService.CoordinatorFallbackMatch);
+            if (liveCandidate.RuntimeCompatible)
+            {
+                pool.AlternativeCandidates.Add(liveCandidate);
+            }
         }
 
         pool.AlternativeCandidates = pool.AlternativeCandidates
@@ -348,15 +424,22 @@ public sealed class ChoiceExecutorCandidatePoolService
 
     private static List<string> BuildRequiredProtocols(
         ChoiceCapabilityProfile profile,
-        string workloadMode)
+        string workloadMode,
+        ExecutionCapabilityResolution capabilityResolution)
     {
         var protocols = profile.Dimensions
             .Where(dimension => dimension.Status is ChoiceDimensionStatuses.Resolved or ChoiceDimensionStatuses.Provisional)
             .Select(dimension => $"{dimension.Dimension}={string.Join(',', dimension.Values)}")
             .ToList();
         protocols.Add($"workload_mode={workloadMode}");
-        protocols.Add("runtime=llama.cpp");
-        protocols.Add("artifact=gguf");
+        protocols.Add($"coordinator_runtime={ExecutionCompatibilityService.LlamaRuntime}");
+        protocols.Add($"coordinator_artifact={ExecutionCompatibilityService.GgufArtifact}");
+        protocols.AddRange(capabilityResolution.Required
+            .Select(capability => $"required_component_capability={capability}"));
+        protocols.AddRange(capabilityResolution.Missing
+            .Select(capability => $"component_download_required={capability}"));
+        protocols.AddRange(capabilityResolution.Unresolved
+            .Select(capability => $"unresolved_capability={capability}"));
         return protocols;
     }
 
@@ -387,7 +470,6 @@ public sealed class ChoiceExecutorCandidatePoolService
 
     private static ChoiceExecutorCandidate CreateResolvedCandidate(
         ChoiceExecutorPoolCandidate candidate,
-        ChoiceExecutorAssessment assessment,
         bool preferred) => new()
         {
             Model = candidate.Model,
@@ -395,16 +477,26 @@ public sealed class ChoiceExecutorCandidatePoolService
             Status = candidate.Status,
             Role = candidate.Role,
             CapabilityClass = candidate.CapabilityClass,
-            Advantage = assessment.Advantage.Trim(),
-            Limitation = assessment.Limitation.Trim(),
-            Reason = assessment.Reason.Trim(),
-            IsRecommended = preferred
+            Advantage = candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+                ? "verified_installed_coordinator"
+                : candidate.CatalogMatchScope,
+            Limitation = candidate.UnresolvedCapabilities.Count > 0
+                ? "required_capability_has_no_approved_provider"
+                : candidate.MissingCapabilities.Count > 0
+                    ? "approved_components_require_acquisition"
+                    : "specialist_operations_are_separate_capabilities",
+            Reason = candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+                ? "Program verified this installed model as a runnable coordinator."
+                : "Program verified this different-family catalog model as a downloadable coordinator candidate.",
+            IsRecommended = preferred,
+            RuntimeBackend = candidate.RuntimeBackend,
+            ArtifactFormat = candidate.ArtifactFormat,
+            CatalogMatchScope = candidate.CatalogMatchScope,
+            RequiredCapabilities = candidate.RequiredCapabilities.ToList(),
+            AvailableCapabilities = candidate.AvailableCapabilities.ToList(),
+            MissingCapabilities = candidate.MissingCapabilities.ToList(),
+            UnresolvedCapabilities = candidate.UnresolvedCapabilities.ToList()
         };
-
-    private static bool HasCompleteAssessment(ChoiceExecutorAssessment assessment) =>
-        !string.IsNullOrWhiteSpace(assessment.Advantage)
-        && !string.IsNullOrWhiteSpace(assessment.Limitation)
-        && !string.IsNullOrWhiteSpace(assessment.Reason);
 
     private static void AppendCandidate(StringBuilder builder, ChoiceExecutorPoolCandidate candidate)
     {
@@ -412,6 +504,9 @@ public sealed class ChoiceExecutorCandidatePoolService
             $"- id={candidate.Id}; model={candidate.Model}; family={candidate.Family}; "
             + $"parameters={candidate.ParameterCount?.ToString() ?? "unknown"}; pipeline={candidate.PipelineTag}; "
             + $"directions={string.Join(',', candidate.Directions)}; roles={string.Join(',', candidate.Roles)}; "
+            + $"runtime={candidate.RuntimeBackend}; artifact={candidate.ArtifactFormat}; "
+            + $"matchScope={candidate.CatalogMatchScope}; missingComponents={string.Join(',', candidate.MissingCapabilities)}; "
+            + $"unresolvedCapabilities={string.Join(',', candidate.UnresolvedCapabilities)}; "
             + $"hardware={candidate.HardwareStatus}; evidence={candidate.Evidence}");
     }
 

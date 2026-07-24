@@ -410,6 +410,58 @@ public sealed class ExecutorSessionService : IDisposable
         }
     }
 
+    public async Task<ExecutorTurnResult> ContinueAfterCapabilityRequestAsync(
+        string capability,
+        string resultCode,
+        string details,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        EnsureActive();
+        var normalizedCapability = capability.Trim().ToLowerInvariant();
+        if (ComponentCatalog.FindProviders(normalizedCapability).Count == 0)
+        {
+            throw new InvalidOperationException("The requested capability is outside the trusted catalog.");
+        }
+
+        var messageIndex = _messages.Count;
+        _messages.Add(new StructuredChatMessage
+        {
+            Role = "user",
+            Content = string.Join(
+                Environment.NewLine,
+                "[AI_HUB_CAPABILITY_RESULT]",
+                $"Current stage: {_currentStageId}",
+                $"Capability: {normalizedCapability}",
+                $"Result: {resultCode}",
+                $"Details: {details}",
+                "This is a trusted program result, not a user answer.",
+                "Continue the same task and context. If available, use the capability through future AI HUB file tools only; direct filesystem access is still forbidden.",
+                "If denied or unavailable, offer a realistic fallback or explain the blocking limitation.",
+                BuildTreeContextMessage())
+        });
+        _sessionLog!.Write("executor_capability_result", new
+        {
+            Stage = _currentStageId,
+            Capability = normalizedCapability,
+            Result = resultCode,
+            Details = details
+        });
+        try
+        {
+            return await RunLoopAsync(streamProgress, cancellationToken);
+        }
+        catch
+        {
+            if (_messages.Count > messageIndex)
+            {
+                _messages.RemoveRange(messageIndex, _messages.Count - messageIndex);
+            }
+
+            throw;
+        }
+    }
+
     private async Task<ExecutorTurnResult> TransitionStageInternalAsync(
         string targetStageId,
         string initiatedBy,
@@ -848,6 +900,14 @@ public sealed class ExecutorSessionService : IDisposable
                 && turn.RequestedTools.Count > 0;
         }
 
+        if (turn.Action == ExecutorTurnActions.RequestCapability)
+        {
+            return _briefConfirmed
+                && turn.Status == ExecutorTurnStatuses.Working
+                && ComponentCatalog.FindProviders(turn.RequestedCapability).Count > 0
+                && !string.IsNullOrWhiteSpace(turn.CapabilityReason);
+        }
+
         if (turn.Action == ExecutorTurnActions.SuggestFinalization)
         {
             return turn.Status == ExecutorTurnStatuses.Working
@@ -934,7 +994,7 @@ public sealed class ExecutorSessionService : IDisposable
     private static string BuildSystemPrompt(ExecutorHandoffPackage handoff) =>
         string.Join(
             Environment.NewLine,
-            "You are the selected AI executor in the Uncertainty scenario, not the AI HUB core.",
+            "You are the selected AI executor in the AI HUB Sandbox scenario, not the AI HUB core.",
             "The core selected your capability class. It did not discover the user's exact subject and did not prepare a final task.",
             "Treat programFacts as authoritative, userSignals as raw user input, and coreHypotheses only as provisional background that may be wrong.",
             "fileManifest contains only trusted file names and metadata selected by the user. It never contains file contents or absolute paths.",
@@ -949,7 +1009,7 @@ public sealed class ExecutorSessionService : IDisposable
             "Ask exactly one useful decision at a time. Do not run a silent autonomous content loop and do not decide that enough information has been collected.",
             "When asking, offer 2-6 short options and allow a custom answer. Offer equivalents of Not important, Decide yourself, or Skip only when they are genuinely safe.",
             "Never offer stage names, transition commands, result commands or session commands as answer options.",
-            "Actions: ask_user waits for the user; confirm_brief asks AI HUB to show the completed technical brief; request_tool asks for safe web tools; suggest_finalization recommends a user-controlled finish; blocked explains why work cannot continue.",
+            "Actions: ask_user waits for the user; confirm_brief asks AI HUB to show the completed technical brief; request_tool asks for safe web tools; request_capability asks AI HUB for one approved file-processing capability; suggest_finalization recommends a user-controlled finish; blocked explains why work cannot continue.",
             "Use confirm_brief only with status stage_ready in task_definition. Put the complete actionable task formulation in stageSummary and leave options empty.",
             "After task confirmation, an ordinary response returns working + ask_user, one practical question, a substantive workingResultFragment, and an updated currentResultSummary.",
             $"workingResultFragment is new content that directly performs part of the confirmed task. Keep it within {ExecutorWorkingResultPolicy.MaximumCharacters} characters.",
@@ -957,6 +1017,7 @@ public sealed class ExecutorSessionService : IDisposable
             $"currentResultSummary is a concise retelling derived from the actual answer fragments available right now. Keep it within {ExecutorResultSummaryPolicy.MaximumCharacters} characters.",
             "Prioritize present answer content, key recommendations, important caveats and gaps that materially affect it. Never write that an answer is being prepared or will be created later.",
             "Use request_tool only after the task is confirmed and list only web_search, web_research or web_read in requestedTools.",
+            $"Use request_capability only after the task is confirmed. requestedCapability must be exactly one ID from this allowlist: {string.Join(", ", ComponentCatalog.Processing.SelectMany(entry => entry.Capabilities).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))}. Explain the task-specific need in capabilityReason and set capabilityRequired accurately. Never name a package, executable, command or URL.",
             "Fill missingCriticalInputs and assumptions honestly; do not invent a precise readiness percentage.",
             "Set canFinalize true as soon as the active branch contains a useful result that can be delivered now, missingCriticalInputs is empty, and the next question would only improve, expand or polish that result. You may still use ask_user with canFinalize true for one genuinely useful optional question.",
             "When canFinalize is true, explain why the current result is already usable in completionReason. Otherwise set canFinalize false and leave completionReason empty.",
@@ -998,7 +1059,7 @@ public sealed class ExecutorSessionService : IDisposable
             "Your previous response was rejected because its structure or meaning was invalid.",
             BuildStageInstruction(stageId),
             "Return JSON only using working, stage_ready or blocked.",
-            "Return one action: ask_user, confirm_brief, request_tool, suggest_finalization or blocked.",
+            "Return one action: ask_user, confirm_brief, request_tool, request_capability, suggest_finalization or blocked.",
             _briefConfirmed
                 ? $"The task brief is already confirmed. Return working + ask_user with one useful practical question, or working + suggest_finalization when no useful question remains. In both cases include a substantive workingResultFragment of at most {ExecutorWorkingResultPolicy.MaximumCharacters} characters and a useful currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters. Set canFinalize true with a non-empty completionReason whenever that current result can already be delivered and missingCriticalInputs is empty, including ask_user turns with only optional improvements left. Otherwise set canFinalize false and leave completionReason empty. Write actual answer content, not a technical brief or future plan."
                 : "The task brief is not confirmed. Use confirm_brief only when task_definition is actionable.",

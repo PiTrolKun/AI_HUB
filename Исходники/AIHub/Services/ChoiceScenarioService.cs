@@ -377,13 +377,6 @@ public sealed class ChoiceScenarioService
             error = "preferredCandidateId must match installedCandidateId or alternativeCandidateId.";
             return false;
         }
-        if (!HasCompleteAssessment(selection.InstalledAssessment)
-            || !HasCompleteAssessment(selection.AlternativeAssessment))
-        {
-            error = "Both trusted candidate assessments require advantage, limitation and reason.";
-            return false;
-        }
-
         return true;
     }
 
@@ -510,11 +503,6 @@ public sealed class ChoiceScenarioService
         NormalizeAssessment(card.ExecutorSelection.InstalledAssessment);
         NormalizeAssessment(card.ExecutorSelection.AlternativeAssessment);
     }
-
-    private static bool HasCompleteAssessment(ChoiceExecutorAssessment assessment) =>
-        !string.IsNullOrWhiteSpace(assessment.Advantage)
-        && !string.IsNullOrWhiteSpace(assessment.Limitation)
-        && !string.IsNullOrWhiteSpace(assessment.Reason);
 
     private static void NormalizeAssessment(ChoiceExecutorAssessment assessment)
     {

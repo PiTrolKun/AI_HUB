@@ -184,6 +184,27 @@ public sealed class ChoiceScenarioSessionStateTests
         Assert.AreEqual(0, state.Answers.Count);
     }
 
+    [TestMethod]
+    public void CustomAnswer_ResolvesCurrentDecisionDimension()
+    {
+        var step = Step("question_step", "Какую операцию выполнить?", "known");
+        step.DecisionDimension = ChoiceDecisionDimensions.TaskType;
+        var state = new ChoiceScenarioSessionState();
+        state.Reset(step);
+
+        Assert.IsTrue(state.TryAddAnswer(new ChoiceScenarioOption
+        {
+            Id = "custom",
+            Title = "Повышение разрешения"
+        }));
+
+        var dimension = state.CapabilityProfile.Dimensions.Single();
+        Assert.AreEqual(ChoiceDecisionDimensions.TaskType, dimension.Dimension);
+        Assert.AreEqual(ChoiceDimensionStatuses.Resolved, dimension.Status);
+        CollectionAssert.AreEqual(new[] { "Повышение разрешения" }, dimension.Values.ToArray());
+        Assert.AreEqual("user custom input", dimension.Evidence);
+    }
+
     private static ChoiceScenarioStep Step(string type, string question, string optionId) => new()
     {
         StepType = type,

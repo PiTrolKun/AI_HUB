@@ -33,6 +33,37 @@
 - Поставка: библиотека и её программная зависимость `DocumentFormat.OpenXml.Framework` включаются в build/publish AI HUB.
 - Ограничение: AI HUB создаёт файл только по явной команде пользователя и не запускает внешнее приложение автоматически.
 
+### Встроенный набор работы с файлами
+
+Следующие NuGet-библиотеки включаются в build/publish AI HUB:
+
+| Пакет | Версия | Назначение | Лицензия |
+|---|---:|---|---|
+| ClosedXML | 0.105.0 | XLSX/XLSM | MIT |
+| PdfPig | 0.1.15 | PDF | Apache-2.0 |
+| SharpCompress | 1.0.0 | Архивы | MIT |
+| CsvHelper | 33.1.0 | CSV/TSV | Apache-2.0 или MS-PL |
+| AngleSharp | 1.5.2 | HTML/SVG DOM | MIT |
+| Markdig | 1.3.2 | Markdown | BSD-2-Clause |
+| YamlDotNet | 18.1.0 | YAML | MIT |
+| MimeKit | 4.17.0 | EML/MIME | MIT |
+| Microsoft.Data.Sqlite | 10.0.10 | SQLite | MIT |
+| SQLitePCLRaw.bundle_e_sqlite3 | 2.1.12 | Нативный SQLite runtime | Apache-2.0; SQLite public domain |
+
+Источником пакетов служит официальный NuGet. AI HUB использует их только для
+локальной обработки и read-only просмотра; макросы, внешняя навигация и
+исполнение вложений не включаются.
+
+### Необязательные загружаемые компоненты
+
+Каталог AI HUB может после явного подтверждения пользователя скачать отдельные
+runtimes обработки (Temurin JRE, Apache Tika, ImageMagick, Tesseract, FFmpeg,
+LibreOffice, whisper.cpp и Whisper model) и программные просмотрщики (WebView2,
+PDF.js, EPUB.js, LibVLC, OpenSeadragon, Babylon.js, AvalonEdit). Они не входят в
+обычный publish. Их источники, версии, размеры и лицензии закреплены в
+`ТЗ/2026-07-24_каталог_компонентов_и_загрузка_возможностей.md` и
+`Документы_проекта/REESTR.md`.
+
 ### RHVoice и голосовые профили
 
 - Назначение: необязательная альтернативная читалка ядра `Просто ИИ голос` и временная озвучка исполнителя «Режима неопределённости».

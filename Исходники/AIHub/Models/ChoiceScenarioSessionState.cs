@@ -123,6 +123,22 @@ public sealed class ChoiceScenarioSessionState
             Values = effect.Values.ToList(),
             Evidence = effect.Evidence
         }).ToList();
+        if (string.Equals(option.Id, "custom", StringComparison.OrdinalIgnoreCase)
+            && appliedEffects.Count == 0
+            && !string.IsNullOrWhiteSpace(CurrentStep.DecisionDimension)
+            && ChoiceDecisionDimensions.All.Contains(
+                CurrentStep.DecisionDimension,
+                StringComparer.OrdinalIgnoreCase))
+        {
+            appliedEffects.Add(new ChoiceCapabilityDimension
+            {
+                Dimension = CurrentStep.DecisionDimension,
+                Status = ChoiceDimensionStatuses.Resolved,
+                Values = [option.Title.Trim()],
+                Evidence = "user custom input"
+            });
+        }
+
         _answers.Add(new ChoiceScenarioAnswer
         {
             StepNumber = _answers.Count + 1,

@@ -199,6 +199,26 @@ public sealed class ExecutorWorkflowService : IDisposable
         return snapshot;
     }
 
+    public async Task<ExecutorTurnResult> ContinueAfterCapabilityRequestAsync(
+        string capability,
+        string resultCode,
+        string details,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ContinueAfterCapabilityRequestAsync(
+            capability,
+            resultCode,
+            details,
+            streamProgress,
+            cancellationToken);
+        turn = await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
+    }
+
     public async Task<ExecutorResultSnapshot> CreateFinalResultAsync(
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)

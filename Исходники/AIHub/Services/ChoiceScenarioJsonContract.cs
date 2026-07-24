@@ -94,29 +94,12 @@ public static class ChoiceScenarioJsonContract
         {
             ["installedCandidateId"] = String(),
             ["alternativeCandidateId"] = String(),
-            ["preferredCandidateId"] = String(),
-            ["installedAssessment"] = CreateExecutorAssessmentSchema(),
-            ["alternativeAssessment"] = CreateExecutorAssessmentSchema()
+            ["preferredCandidateId"] = String()
         },
         ["required"] = new JsonArray(
             "installedCandidateId",
             "alternativeCandidateId",
-            "preferredCandidateId",
-            "installedAssessment",
-            "alternativeAssessment")
-    };
-
-    private static JsonObject CreateExecutorAssessmentSchema() => new()
-    {
-        ["type"] = "object",
-        ["additionalProperties"] = false,
-        ["properties"] = new JsonObject
-        {
-            ["advantage"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 },
-            ["limitation"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 },
-            ["reason"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 }
-        },
-        ["required"] = new JsonArray("advantage", "limitation", "reason")
+            "preferredCandidateId")
     };
 
     private static JsonObject CreateCapabilityProfileSchema() => new()

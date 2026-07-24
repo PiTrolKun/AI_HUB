@@ -130,15 +130,14 @@ public sealed class ChoiceScenarioServiceTests
     }
 
     [TestMethod]
-    public void TryParseStep_RejectsIncompleteCandidateAssessment()
+    public void TryParseStep_DoesNotDependOnFreeFormCandidateAssessment()
     {
         var json = ValidFinalJson().Replace(
             "\"limitation\":\"Менее специализирована\"",
             "\"limitation\":\"\"",
             StringComparison.Ordinal);
 
-        Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
-        StringAssert.Contains(error, "assessments");
+        Assert.IsTrue(_service.TryParseStep(json, out _, out var error), error);
     }
 
     [TestMethod]
@@ -188,6 +187,8 @@ public sealed class ChoiceScenarioServiceTests
         StringAssert.Contains(schema, "executorSelection");
         Assert.IsFalse(schema.Contains("executorCandidates", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("recommendedExecutor", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("installedAssessment", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("alternativeAssessment", StringComparison.Ordinal));
     }
 
     [TestMethod]

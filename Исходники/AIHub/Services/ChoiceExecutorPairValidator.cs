@@ -38,6 +38,11 @@ public static class ChoiceExecutorPairValidator
             error = "The resolved executor choice contains a model outside the trusted candidate pool.";
             return false;
         }
+        if (!installedSource.RuntimeCompatible || !alternativeSource.RuntimeCompatible)
+        {
+            error = "The resolved executor choice contains a model without a verified coordinator runtime.";
+            return false;
+        }
 
         if (string.Equals(installedSource.Family, alternativeSource.Family, StringComparison.OrdinalIgnoreCase))
         {

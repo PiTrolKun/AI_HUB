@@ -65,7 +65,7 @@ public sealed class ChoiceScenarioOrchestrator
                     computerPassport,
                     sessionLog,
                     cancellationToken);
-                if (!candidatePool.HasValidPair)
+                if (!candidatePool.HasCandidatePair)
                 {
                     return CreatePoolError(candidatePool);
                 }
@@ -211,7 +211,7 @@ public sealed class ChoiceScenarioOrchestrator
                 computerPassport,
                 sessionLog,
                 cancellationToken);
-            if (!candidatePool.HasValidPair)
+            if (!candidatePool.HasCandidatePair)
             {
                 return CreatePoolError(candidatePool);
             }

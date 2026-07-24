@@ -63,6 +63,32 @@
 |---|---|---|---|---|---|
 | System.Speech | Доступ к установленным Windows SAPI-голосам RHVoice и событиям произнесённых слов | 10.0.9 | MIT | NuGet `System.Speech`, Microsoft | Windows-only; библиотека включается в publish, сами RHVoice-голоса остаются внешней установкой |
 | DocumentFormat.OpenXml | Формирование итогового результата executor-сессии в формате DOCX | 3.5.1 | MIT | NuGet `DocumentFormat.OpenXml`, Microsoft | Runtime-зависимость включается в publish; создаёт файл только по явной команде и выбранному пользователем пути |
+| ClosedXML | Чтение и редактирование XLSX/XLSM, внутренний табличный просмотр | 0.105.0 | MIT | NuGet `ClosedXML` | Включается в publish |
+| PdfPig | Извлечение текста и структуры PDF для обработки и read-only просмотра | 0.1.15 | Apache-2.0 | NuGet `PdfPig` | Включается в publish; не исполняет PDF-скрипты |
+| SharpCompress | Чтение и безопасная распаковка ZIP/7z/RAR/TAR/GZip | 1.0.0 | MIT | NuGet `SharpCompress` | Включается в publish; распаковка ограничена числом записей, размером и целевым каталогом |
+| CsvHelper | Чтение CSV/TSV и внутренний табличный просмотр | 33.1.0 | Apache-2.0 или MS-PL | NuGet `CsvHelper` | Включается в publish |
+| AngleSharp | Локальный разбор HTML/SVG без браузерной навигации | 1.5.2 | MIT | NuGet `AngleSharp` | Включается в publish; внешний JavaScript не запускается |
+| Markdig | Разбор Markdown и безопасное текстовое представление | 1.3.2 | BSD-2-Clause | NuGet `Markdig` | Включается в publish |
+| YamlDotNet | Чтение и нормализация YAML | 18.1.0 | MIT | NuGet `YamlDotNet` | Включается в publish |
+| MimeKit | Чтение EML/MIME и списка вложений | 4.17.0 | MIT | NuGet `MimeKit` | Включается в publish; вложения не запускаются |
+| Microsoft.Data.Sqlite | Read-only просмотр структуры локальных SQLite-файлов | 10.0.10 | MIT | NuGet `Microsoft.Data.Sqlite` | Включается в publish; соединение открывается в режиме ReadOnly |
+| SQLitePCLRaw.bundle_e_sqlite3 | Нативный SQLite runtime для Microsoft.Data.Sqlite | 2.1.12 | Apache-2.0, SQLite public domain для нативного движка | NuGet `SQLitePCLRaw.bundle_e_sqlite3` | Явно закреплён на 2.1.12 вместо транзитивной 2.1.11 с опубликованным advisory |
+
+## Загружаемые компоненты обработки и просмотра
+
+Каталог версии `0.0.66-dev` содержит закреплённые источники для Eclipse Temurin
+JRE 21, Apache Tika 3.3.2, ImageMagick 7.1.2-27, Tesseract 5.4.0 и языковых
+данных, FFmpeg 8.1 LGPL, LibreOffice 26.2.4, whisper.cpp 1.9.1 и Whisper small.
+Они не входят в обычный publish и скачиваются только после явного подтверждения
+пользователя. Системные установщики требуют отдельного подтверждения запуска.
+
+Отдельный программный каталог просмотрщиков содержит WebView2 Runtime, PDF.js,
+EPUB.js, LibVLC Windows, OpenSeadragon, Babylon.js и AvalonEdit. Просмотрщики
+никогда не попадают в prompt, capability inventory или план выбора LLM.
+Лицензии: WebView2 — Microsoft Software License Terms; PDF.js и Babylon.js —
+Apache-2.0; EPUB.js — BSD-2-Clause; LibVLC — LGPL-2.1; OpenSeadragon —
+BSD-3-Clause; AvalonEdit — MIT. Эти пакеты также не входят в установщик без
+отдельного решения о поставке.
 
 ## Правило
 

@@ -46,11 +46,10 @@ public static class ChoiceScenarioPromptBuilder
         - В финальном запросе программа передаст TRUSTED_EXECUTOR_CANDIDATE_POOL: проверенные installed_* и alternative_* идентификаторы.
         - Выбирай только идентификаторы из TRUSTED_EXECUTOR_CANDIDATE_POOL. Не переписывай имена моделей, статусы, семейства, роли, размеры и backend.
         - Выбери один установленный runnable вариант и одну загружаемую альтернативу из другого семейства.
-        - Для каждого выбранного варианта укажи честные advantage, limitation и reason относительно capability profile.
         - preferredCandidateId может указывать на любой из двух вариантов. Если установленная модель достаточна, предпочти её; загрузка сама по себе не означает лучший выбор.
         - Не вызывай inventory, model_catalog_search, hf_find_model или hf_model_files: это инструменты программы на границе сценария, а не твоя обязанность.
         - needsWeb, requiredTools, технический статус и правила мощности вычисляет программа по capability profile и доверенному пулу.
-        - Не пытайся заменить предложенный пул моделью из собственных знаний. Если среди кандидатов есть компромисс, объясни его в assessment.
+        - Не пытайся заменить предложенный пул моделью из собственных знаний. Технические объяснения карточек строит программа.
         - Prompt рабочей модели передаёт известное как фон с происхождением данных и требует самой начать отдельное сужение предметной задачи.
 
         decisionDimension:
@@ -129,17 +128,7 @@ public static class ChoiceScenarioPromptBuilder
             "executorSelection": {
               "installedCandidateId": "installed_ID_FROM_TRUSTED_POOL",
               "alternativeCandidateId": "alternative_ID_FROM_TRUSTED_POOL",
-              "preferredCandidateId": "ONE_OF_THE_SELECTED_IDS",
-              "installedAssessment": {
-                "advantage": "Преимущество для собранного профиля",
-                "limitation": "Ограничение для собранного профиля",
-                "reason": "Почему вариант подходит"
-              },
-              "alternativeAssessment": {
-                "advantage": "Преимущество для собранного профиля",
-                "limitation": "Ограничение для собранного профиля",
-                "reason": "Почему вариант подходит"
-              }
+              "preferredCandidateId": "ONE_OF_THE_SELECTED_IDS"
             },
             "promptForExecutor": "Начни с известных вводных. Сначала задай недостающие предметные вопросы. Не выдумывай детали."
           }

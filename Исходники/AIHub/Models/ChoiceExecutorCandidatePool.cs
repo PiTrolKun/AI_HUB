@@ -4,6 +4,14 @@ public sealed class ChoiceExecutorCandidatePool
 {
     public List<string> RequiredProtocols { get; set; } = [];
 
+    public List<string> RequiredCapabilities { get; set; } = [];
+
+    public List<string> AvailableCapabilities { get; set; } = [];
+
+    public List<string> MissingCapabilities { get; set; } = [];
+
+    public List<string> UnresolvedCapabilities { get; set; } = [];
+
     public List<ChoiceExecutorPoolCandidate> InstalledCandidates { get; set; } = [];
 
     public List<ChoiceExecutorPoolCandidate> AlternativeCandidates { get; set; } = [];
@@ -12,7 +20,13 @@ public sealed class ChoiceExecutorCandidatePool
 
     public List<string> Warnings { get; set; } = [];
 
-    public bool HasValidPair => InstalledCandidates.Count > 0 && AlternativeCandidates.Count > 0;
+    public bool HasCandidatePair => InstalledCandidates.Count > 0
+        && AlternativeCandidates.Count > 0;
+
+    public bool IsExecutionReady => HasCandidatePair
+        && UnresolvedCapabilities.Count == 0;
+
+    public bool HasValidPair => IsExecutionReady;
 }
 
 public sealed class ChoiceExecutorPoolCandidate
@@ -42,4 +56,23 @@ public sealed class ChoiceExecutorPoolCandidate
     public string HardwareStatus { get; set; } = string.Empty;
 
     public string Evidence { get; set; } = string.Empty;
+
+    public string RuntimeBackend { get; set; } = string.Empty;
+
+    public string ArtifactFormat { get; set; } = string.Empty;
+
+    public string CatalogMatchScope { get; set; } = string.Empty;
+
+    public bool RuntimeCompatible { get; set; }
+
+    public List<string> RequiredCapabilities { get; set; } = [];
+
+    public List<string> AvailableCapabilities { get; set; } = [];
+
+    public List<string> MissingCapabilities { get; set; } = [];
+
+    public List<string> UnresolvedCapabilities { get; set; } = [];
+
+    public bool IsExecutionCompatible => RuntimeCompatible
+        && UnresolvedCapabilities.Count == 0;
 }

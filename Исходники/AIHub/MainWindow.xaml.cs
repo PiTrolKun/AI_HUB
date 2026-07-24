@@ -70,6 +70,7 @@ public partial class MainWindow : Window
     private ExecutorResultWindow? _executorResultWindow;
     private SessionTreeWindow? _sessionTreeWindow;
     private ExecutorModelArtifact? _pendingExecutorArtifact;
+    private ComponentAcquisitionPlan? _pendingExecutorComponentPlan;
     private ChoiceExecutorCandidate? _selectedExecutorCandidate;
     private readonly CancellationTokenSource _catalogStartupCts = new();
     private ISessionEventLog? _choiceScenarioLog;
@@ -132,6 +133,7 @@ public partial class MainWindow : Window
         ChoiceSessionFilesItemsControl.ItemsSource = _sessionFileCards;
         ExecutorSessionFilesItemsControl.ItemsSource = _sessionFileCards;
         InitializeAppData();
+        InitializeComponentCatalogUi();
         RefreshPreviousSessions();
         LoadCoreVoiceSettingsIntoControls();
         UpdateCoreVoiceControls();
@@ -200,6 +202,7 @@ public partial class MainWindow : Window
         ApplySystemTitleBarTheme();
         _debugChatWindow?.ApplyTheme(_isDarkTheme);
         _sessionTreeWindow?.ApplyTheme(_isDarkTheme);
+        _fileViewerService.ApplyTheme(_isDarkTheme);
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -449,6 +452,8 @@ public partial class MainWindow : Window
         HeaderSubtitleText.Text = L("App.Subtitle");
         ProfileButton.ToolTip = L("Header.ProfileTooltip");
         SettingsButton.ToolTip = L("Header.SettingsTooltip");
+        GlobalFileViewerButton.ToolTip = L("Header.FileViewerTooltip");
+        AutomationProperties.SetName(GlobalFileViewerButton, L("Header.FileViewerTooltip"));
         SessionTreeButton.ToolTip = L("Header.SessionTreeTooltip");
         System.Windows.Automation.AutomationProperties.SetName(
             SessionTreeButton,
@@ -512,6 +517,17 @@ public partial class MainWindow : Window
         SettingsCoreVoiceVolumeText.Text = L("Settings.CoreVoiceVolume");
         SettingsCoreVoiceRateText.Text = L("Settings.CoreVoiceRate");
         CoreVoiceTestButton.Content = L("Settings.CoreVoiceTest");
+        ProcessingComponentsExpander.Header = L("Components.ProcessingTitle");
+        ProcessingComponentsHelpText.Text = L("Components.ProcessingHelp");
+        ViewerComponentsExpander.Header = L("Components.ViewersTitle");
+        ViewerComponentsHelpText.Text = L("Components.ViewersHelp");
+        PreferInternalViewersCheckBox.Content = L("Components.PreferInternal");
+        DownloadSelectedComponentsButton.Content = L("Components.DownloadSelected");
+        DownloadAllComponentsButton.Content = L("Components.DownloadAll");
+        VerifyInstalledComponentsButton.Content = L("Components.VerifyInstalled");
+        DownloadSelectedViewersButton.Content = L("Components.DownloadSelectedViewers");
+        DownloadAllViewersButton.Content = L("Components.DownloadAllViewers");
+        VerifyInstalledViewersButton.Content = L("Components.VerifyViewers");
         PopulateCoreVoiceProviderComboBox();
         BackFromSettingsButton.Content = L("Settings.Back");
 
@@ -639,6 +655,7 @@ public partial class MainWindow : Window
         _localizationService.Load(language.Code);
         PopulateLanguageComboBox();
         ApplyLocalization();
+        RefreshComponentCatalogUi();
         RefreshPreviousSessions();
         StatusText.Text = L("Status.LanguageSaved");
     }
@@ -1782,10 +1799,11 @@ public partial class MainWindow : Window
         card.ExecutorStatus = candidate.Status;
         card.ExecutorRole = candidate.Role;
         card.ExecutorCapabilityClass = candidate.CapabilityClass;
-        card.ExecutorReason = candidate.Reason;
+        card.ExecutorReason = BuildExecutorVerifiedReason(candidate);
         RenderExecutorCandidates(card);
-        ExecutorPrepareButton.Visibility = Visibility.Visible;
-        ExecutorPrepareButton.IsEnabled = true;
+        var canPrepare = candidate.UnresolvedCapabilities.Count == 0;
+        ExecutorPrepareButton.Visibility = canPrepare ? Visibility.Visible : Visibility.Collapsed;
+        ExecutorPrepareButton.IsEnabled = canPrepare;
     }
 
     private static bool ModelNamesReferToSameExecutor(string left, string right)
@@ -2196,6 +2214,7 @@ public partial class MainWindow : Window
         ChoiceScenarioPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Visible;
         PopulateLanguageComboBox();
+        RefreshComponentCatalogUi();
     }
 
     private void ShowProfilePage()
@@ -2761,6 +2780,7 @@ public partial class MainWindow : Window
 
     private void StartChoiceAiActivity()
     {
+        GlobalFileViewerButton.IsEnabled = false;
         ChoiceAiActivityPanel.Visibility = Visibility.Visible;
         ChoiceMatrixRain.Start();
     }
@@ -2769,6 +2789,7 @@ public partial class MainWindow : Window
     {
         ChoiceMatrixRain.Stop();
         ChoiceAiActivityPanel.Visibility = Visibility.Collapsed;
+        GlobalFileViewerButton.IsEnabled = true;
     }
 
     private void RenderChoiceScenarioStep(ChoiceScenarioStep step)
@@ -3040,11 +3061,9 @@ public partial class MainWindow : Window
             _executorCandidateOptions.Add(new ChoiceExecutorCandidateDisplay(
                 candidate,
                 candidate.Model,
-                candidate.Status == ChoiceExecutorCandidateStatuses.Installed
-                    ? L("Executor.StatusInstalled")
-                    : L("Executor.StatusDownload"),
-                LF("Executor.Advantage", candidate.Advantage),
-                LF("Executor.Limitation", candidate.Limitation),
+                BuildExecutorAvailabilityStatus(candidate),
+                LF("Executor.Advantage", BuildExecutorVerifiedAdvantage(candidate)),
+                LF("Executor.Limitation", BuildExecutorVerifiedLimitation(candidate)),
                 recommendation,
                 selected || (_selectedExecutorCandidate is null && candidate.IsRecommended)));
         }
@@ -3066,16 +3085,85 @@ public partial class MainWindow : Window
         card.ExecutorStatus = candidate.Status;
         card.ExecutorRole = candidate.Role;
         card.ExecutorCapabilityClass = candidate.CapabilityClass;
-        card.ExecutorReason = candidate.Reason;
+        card.ExecutorReason = BuildExecutorVerifiedReason(candidate);
         RenderExecutorCandidates(card);
-        ExecutorPrepareButton.Visibility = Visibility.Visible;
-        ExecutorPrepareButton.IsEnabled = true;
-        StatusText.Text = LF("Status.ExecutorCandidateSelected", candidate.Model);
+        var canPrepare = candidate.UnresolvedCapabilities.Count == 0;
+        ExecutorPrepareButton.Visibility = canPrepare ? Visibility.Visible : Visibility.Collapsed;
+        ExecutorPrepareButton.IsEnabled = canPrepare;
+        StatusText.Text = canPrepare
+            ? LF("Status.ExecutorCandidateSelected", candidate.Model)
+            : LF(
+                "Status.ExecutorUnresolvedCapabilities",
+                string.Join(", ", candidate.UnresolvedCapabilities));
         _choiceScenarioLog?.Write("executor_candidate_selected", candidate);
         SaveActiveSessionCheckpoint(
             pendingCoreRequest: false,
             pendingCoreRequestFinal: false);
     }
+
+    private string BuildExecutorVerifiedAdvantage(ChoiceExecutorCandidate candidate)
+    {
+        if (candidate.Status == ChoiceExecutorCandidateStatuses.Installed)
+        {
+            return LF(
+                "Executor.VerifiedInstalledAdvantage",
+                string.IsNullOrWhiteSpace(candidate.RuntimeBackend)
+                    ? ExecutionCompatibilityService.LlamaRuntime
+                    : candidate.RuntimeBackend);
+        }
+
+        return string.Equals(
+            candidate.CatalogMatchScope,
+            ExecutionCompatibilityService.TaskProfileMatch,
+            StringComparison.OrdinalIgnoreCase)
+            ? LF("Executor.VerifiedTaskMatchAdvantage", candidate.Family)
+            : LF("Executor.VerifiedFallbackAdvantage", candidate.Family);
+    }
+
+    private string BuildExecutorAvailabilityStatus(ChoiceExecutorCandidate candidate)
+    {
+        if (candidate.UnresolvedCapabilities.Count > 0)
+        {
+            return candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+                ? L("Executor.StatusInstalledIncomplete")
+                : L("Executor.StatusDownloadIncomplete");
+        }
+
+        return candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+            ? L("Executor.StatusInstalled")
+            : L("Executor.StatusDownload");
+    }
+
+    private string BuildExecutorVerifiedLimitation(ChoiceExecutorCandidate candidate)
+    {
+        if (candidate.UnresolvedCapabilities.Count > 0)
+        {
+            return LF(
+                "Executor.VerifiedUnresolvedCapabilities",
+                string.Join(", ", candidate.UnresolvedCapabilities));
+        }
+
+        if (candidate.MissingCapabilities.Count > 0)
+        {
+            return LF(
+                "Executor.VerifiedMissingCapabilities",
+                string.Join(", ", candidate.MissingCapabilities));
+        }
+
+        return L("Executor.VerifiedCoordinatorLimitation");
+    }
+
+    private string BuildExecutorVerifiedReason(ChoiceExecutorCandidate candidate) =>
+        candidate.UnresolvedCapabilities.Count > 0
+            ? L("Executor.VerifiedIncompleteReason")
+            : candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+            ? L("Executor.VerifiedInstalledReason")
+            : string.Equals(
+                candidate.CatalogMatchScope,
+                ExecutionCompatibilityService.TaskProfileMatch,
+                StringComparison.OrdinalIgnoreCase)
+                ? L("Executor.VerifiedTaskMatchReason")
+                : L("Executor.VerifiedFallbackReason");
 
     private async void ExecutorPrepareButton_Click(object sender, RoutedEventArgs e)
     {
@@ -3085,6 +3173,16 @@ public partial class MainWindow : Window
             || string.IsNullOrWhiteSpace(card.RecommendedExecutor))
         {
             StatusText.Text = L("Status.ExecutorCandidateRequired");
+            return;
+        }
+
+        if (_selectedExecutorCandidate.UnresolvedCapabilities.Count > 0)
+        {
+            StatusText.Text = LF(
+                "Status.ExecutorUnresolvedCapabilities",
+                string.Join(", ", _selectedExecutorCandidate.UnresolvedCapabilities));
+            ExecutorPrepareButton.Visibility = Visibility.Collapsed;
+            ExecutorPrepareButton.IsEnabled = false;
             return;
         }
 
@@ -3100,11 +3198,23 @@ public partial class MainWindow : Window
                 _storageSettings,
                 _executorCts.Token);
             _choiceScenarioLog?.Write("executor_artifact_resolved", _pendingExecutorArtifact);
+            _pendingExecutorComponentPlan = ComponentCapabilityMapper.BuildPlan(
+                card.CapabilityProfile,
+                "Required by the executor work profile.");
             SaveActiveSessionCheckpoint(
                 pendingCoreRequest: false,
                 pendingCoreRequestFinal: false);
             if (_pendingExecutorArtifact.IsInstalled)
             {
+                if (!await EnsureExecutorComponentsReadyAsync(
+                        _pendingExecutorComponentPlan,
+                        confirmationAlreadyGranted: false,
+                        _executorCts.Token))
+                {
+                    ExecutorPrepareButton.IsEnabled = true;
+                    ExecutorCandidateItemsControl.IsEnabled = true;
+                    return;
+                }
                 await RunExecutorAsync(_pendingExecutorArtifact, card);
                 return;
             }
@@ -3114,7 +3224,7 @@ public partial class MainWindow : Window
                 parameterCount,
                 _computerPassportService.EnsurePassport(),
                 _userProfile.WorkloadMode);
-            ExecutorDownloadDetailsText.Text = LF(
+            var modelDetails = LF(
                 "Executor.DownloadDetails",
                 _pendingExecutorArtifact.RepoId,
                 _pendingExecutorArtifact.FileName,
@@ -3127,6 +3237,8 @@ public partial class MainWindow : Window
                     _storageSettings.Models.Locations.FirstOrDefault()?.Path ?? L("Common.Unknown"),
                     "Executors"),
                 $"{compatibility.Status}: {compatibility.Reason}");
+            ExecutorDownloadDetailsText.Text = modelDetails
+                + BuildExecutorComponentPlanText(_pendingExecutorComponentPlan);
             ExecutorDownloadPanel.Visibility = Visibility.Visible;
             ExecutorConfirmDownloadButton.IsEnabled = true;
             ExecutorCancelDownloadButton.IsEnabled = true;
@@ -3170,6 +3282,15 @@ public partial class MainWindow : Window
                 _executorCts.Token);
             _choiceScenarioLog?.Write("executor_download_completed", installed);
             ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
+            if (!await EnsureExecutorComponentsReadyAsync(
+                    _pendingExecutorComponentPlan,
+                    confirmationAlreadyGranted: true,
+                    _executorCts.Token))
+            {
+                ExecutorPrepareButton.IsEnabled = true;
+                ExecutorCandidateItemsControl.IsEnabled = true;
+                return;
+            }
             if (_resumeExecutorAfterDownload
                 && _activeResumableSession?.Executor is { } checkpoint
                 && _sessionRestorationContext is { } restoration)
@@ -3556,6 +3677,18 @@ public partial class MainWindow : Window
     private void DisplayExecutorResponse(ExecutorTurnResult turn, bool speak = true)
     {
         _currentExecutorTurn = turn;
+        if (turn.Action == ExecutorTurnActions.RequestCapability)
+        {
+            ExecutorClarificationOptionsItemsControl.Visibility = Visibility.Collapsed;
+            ExecutorCustomInputPanel.Visibility = Visibility.Collapsed;
+            ExecutorResultPanel.Visibility = Visibility.Visible;
+            ExecutorResultTitleText.Text = L("Components.ExecutorRequestTitle");
+            ExecutorResultText.Text = turn.CapabilityReason;
+            StatusText.Text = L("Components.ExecutorRequestStatus");
+            Dispatcher.BeginInvoke(new Action(async () =>
+                await HandleExecutorCapabilityRequestAsync(turn)));
+            return;
+        }
         if (ExecutorStageFlow.IsKnown(turn.StageId))
         {
             _executorCurrentStageId = turn.StageId;
@@ -3724,6 +3857,20 @@ public partial class MainWindow : Window
             Name = "file_content_access",
             Value = "unavailable_in_current_version",
             Source = "program_file_manifest",
+            IsAuthoritative = true
+        });
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "available_file_capabilities",
+            Value = string.Join(", ", _componentManager.GetAvailableCapabilities()),
+            Source = "program_component_inventory",
+            IsAuthoritative = true
+        });
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "required_file_capabilities",
+            Value = string.Join(", ", ComponentCapabilityMapper.FromProfile(card.CapabilityProfile)),
+            Source = "program_component_plan",
             IsAuthoritative = true
         });
         foreach (var answer in _choiceScenarioState.Answers)

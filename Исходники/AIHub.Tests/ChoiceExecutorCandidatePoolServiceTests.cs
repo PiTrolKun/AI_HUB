@@ -80,7 +80,8 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
                 new ChoiceExecutorPoolCandidate
                 {
                     Id = "installed_1", Model = "local/General-27B-GGUF", Family = "general",
-                    Status = ChoiceExecutorCandidateStatuses.Installed, ParameterCount = 27_000_000_000
+                    Status = ChoiceExecutorCandidateStatuses.Installed, ParameterCount = 27_000_000_000,
+                    PipelineTag = "text-generation", RuntimeCompatible = true
                 }
             ],
             AlternativeCandidates =
@@ -89,7 +90,7 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
                 {
                     Id = "alternative_1", Model = "org/research-pro", Family = "research",
                     Status = ChoiceExecutorCandidateStatuses.NotInstalled, ParameterCount = 20_000_000_000,
-                    HardwareStatus = "fit"
+                    PipelineTag = "text-generation", RuntimeCompatible = true, HardwareStatus = "fit"
                 }
             ]
         };
@@ -117,6 +118,104 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
         CollectionAssert.Contains(request.Directions, "science_professional");
         Assert.AreEqual("deep_research", request.TaskType);
         Assert.AreEqual("optimal", request.LoadLevel);
+    }
+
+    [TestMethod]
+    public void CreatePool_RejectsSpecialistPipelineWithoutRegisteredCoordinatorRuntime()
+    {
+        var catalog = CreateCatalog();
+        catalog.Candidates.Insert(0, new ModelCatalogCandidate
+        {
+            RepoId = "org/video-specialist-20b",
+            ModelType = "video_transformer",
+            PipelineTag = "video-to-video",
+            ParameterCount = 20_000_000_000,
+            Directions = ["video"],
+            Hardware = new ModelHardwareCompatibility
+            {
+                Status = "fit",
+                IsCompatible = true
+            },
+            MatchReasons = ["direction: video"]
+        });
+
+        var pool = ChoiceExecutorCandidatePoolService.CreatePool(
+            CreateInventory(),
+            catalog,
+            CreateProfile(),
+            UserWorkloadModes.Balanced,
+            CreatePassport());
+
+        Assert.IsFalse(pool.AlternativeCandidates.Any(candidate =>
+            candidate.Model == "org/video-specialist-20b"));
+        Assert.IsTrue(pool.AlternativeCandidates.All(candidate =>
+            candidate.RuntimeCompatible
+            && candidate.RuntimeBackend == ExecutionCompatibilityService.LlamaRuntime));
+    }
+
+    [TestMethod]
+    public void CreatePool_KeepsCoordinatorChoicesButBlocksExecutionForUnresolvedCapability()
+    {
+        var profile = CreateProfile();
+        profile.Dimensions.Add(new ChoiceCapabilityDimension
+        {
+            Dimension = ChoiceDecisionDimensions.SpecializationNeed,
+            Status = ChoiceDimensionStatuses.Resolved,
+            Values = ["audio_generation"],
+            Evidence = "user choice"
+        });
+
+        var pool = ChoiceExecutorCandidatePoolService.CreatePool(
+            CreateInventory(),
+            CreateCatalog(),
+            profile,
+            UserWorkloadModes.Balanced,
+            CreatePassport());
+
+        Assert.IsTrue(pool.HasCandidatePair);
+        Assert.IsFalse(pool.IsExecutionReady);
+        CollectionAssert.Contains(pool.UnresolvedCapabilities, "generate.audio");
+        Assert.IsTrue(pool.InstalledCandidates.All(candidate =>
+            candidate.RuntimeCompatible
+            && candidate.UnresolvedCapabilities.Contains("generate.audio")));
+
+        var card = CreateCard(
+            pool.InstalledCandidates[0].Id,
+            pool.AlternativeCandidates[0].Id);
+        Assert.IsTrue(
+            ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var applyError),
+            applyError);
+        Assert.IsTrue(
+            ChoiceExecutorPairValidator.Validate(
+                card,
+                pool,
+                UserWorkloadModes.Balanced,
+                "Qwen3-8B-GGUF",
+                CreatePassport(),
+                out var validationError),
+            validationError);
+        CollectionAssert.Contains(
+            card.ExecutorCandidates[0].UnresolvedCapabilities,
+            "generate.audio");
+    }
+
+    [TestMethod]
+    public void TryApplySelection_ReplacesFreeFormCapabilityClaimsWithVerifiedFacts()
+    {
+        var pool = ChoiceExecutorCandidatePoolService.CreatePool(
+            CreateInventory(),
+            CreateCatalog(),
+            CreateProfile(),
+            UserWorkloadModes.Balanced,
+            CreatePassport());
+        var card = CreateCard(pool.InstalledCandidates[0].Id, pool.AlternativeCandidates[0].Id);
+        card.ExecutorSelection.InstalledAssessment.Advantage = "Can directly edit every media format.";
+
+        Assert.IsTrue(ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var error), error);
+        Assert.AreEqual("verified_installed_coordinator", card.ExecutorCandidates[0].Advantage);
+        Assert.AreEqual(
+            ExecutionCompatibilityService.CoordinatorRole,
+            card.ExecutorCandidates[0].Role);
     }
 
     private static ChoiceTaskCard CreateCard(string installedId, string alternativeId) => new()
