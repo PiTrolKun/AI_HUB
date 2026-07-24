@@ -86,6 +86,11 @@ public sealed class ExecutorModelPipelineTests
             Assert.IsTrue(installed.IsInstalled);
             Assert.IsTrue(new DebugModelDiscoveryService().Discover(storage)
                 .Any(model => model.Role == "executor" && model.Path == installed.InstalledPath));
+            var installedManifest = ExecutorModelManifestStore.Load(manifestPath);
+            Assert.IsNotNull(installedManifest);
+            Assert.AreEqual(
+                ModelSemanticPassportStatuses.Pending,
+                installedManifest.SemanticPassport.Status);
         }
         finally
         {
@@ -94,6 +99,87 @@ public sealed class ExecutorModelPipelineTests
                 Directory.Delete(root, recursive: true);
             }
         }
+    }
+
+    [TestMethod]
+    public void ManifestStore_ProvidesManualPassportForKnownQwenExecutor()
+    {
+        var manifest = new ExecutorModelManifest
+        {
+            RequestedModel = "sm54/Qwen3.6-27B-Q4_K_M-GGUF",
+            RepoId = "sm54/Qwen3.6-27B-Q4_K_M-GGUF",
+            File = "Qwen3.6-27B-Q4_K_M.gguf",
+            Quantization = "Q4_K_M",
+            RuntimeBackend = LlamaBackendPaths.DisplayName,
+            Status = "installed",
+            RuntimeVerifiedAt = DateTimeOffset.Now
+        };
+
+        var passport = ExecutorModelManifestStore.ResolvePassport(manifest);
+
+        Assert.AreEqual(ModelSemanticPassportStatuses.Generated, passport.Status);
+        Assert.AreEqual("manual_catalog", passport.Source);
+        StringAssert.Contains(passport.DescriptionRu, "модель-координатор");
+        StringAssert.Contains(passport.DescriptionEn, "coordinator model");
+    }
+
+    [TestMethod]
+    public void ManifestStore_AtomicallyPreservesSemanticPassport()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "aihub-passport-manifest-test-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(root, "executor-model.json");
+        try
+        {
+            var manifest = new ExecutorModelManifest
+            {
+                RepoId = "example/model",
+                File = "model.gguf",
+                Status = "installed",
+                SemanticPassport = new ModelSemanticPassport
+                {
+                    Status = ModelSemanticPassportStatuses.Generated,
+                    DescriptionRu = "Проверенное русское техническое описание модели.",
+                    DescriptionEn = "Verified English technical model description.",
+                    Source = "unit_test"
+                }
+            };
+
+            ExecutorModelManifestStore.Save(path, manifest);
+            var loaded = ExecutorModelManifestStore.Load(path);
+
+            Assert.IsNotNull(loaded);
+            Assert.AreEqual("unit_test", loaded.SemanticPassport.Source);
+            Assert.IsFalse(File.Exists(path + ".tmp"));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
+    public void SemanticPassportParser_ReadsBoundedBilingualJson()
+    {
+        var response = """
+            ```json
+            {
+              "ru": "Локальная модель для анализа текста и подготовки ответов. Действия выполняются через инструменты AI HUB.",
+              "en": "Local model for text analysis and response preparation. Actions are performed through AI HUB tools."
+            }
+            ```
+            """;
+
+        var descriptions = ModelSemanticPassportService.ParseDescriptions(response);
+
+        StringAssert.Contains(descriptions.Ru, "AI HUB");
+        StringAssert.Contains(descriptions.En, "AI HUB");
+        Assert.IsTrue(descriptions.Ru.Length <= 700);
+        Assert.IsTrue(descriptions.En.Length <= 700);
     }
 
     [TestMethod]
@@ -258,12 +344,79 @@ public sealed class ExecutorModelPipelineTests
 
         StringAssert.Contains(schema, "currentResultSummary");
         StringAssert.Contains(schema, "workingResultFragment");
+        StringAssert.Contains(schema, ExecutorOptionIntents.ApproveAction);
+        StringAssert.Contains(schema, "session_file_read");
         StringAssert.Contains(schema, "canFinalize");
         StringAssert.Contains(schema, "completionReason");
         StringAssert.Contains(schema, ExecutorTurnActions.SuggestFinalization);
         Assert.IsFalse(schema.Contains("continue_work", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("present_result", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("result_ready", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ResultParser_ValidatesActionOptionsAndRemovesSemanticDuplicates()
+    {
+        const string response = """
+            {
+              "status":"working",
+              "action":"ask_user",
+              "stageId":"practical_clarification",
+              "stageSummary":"",
+              "thought":"Нужно получить подтверждение чтения.",
+              "question":"Прочитать выбранный файл?",
+              "options":[
+                {
+                  "title":"Прочитать файл",
+                  "intent":"approve_action",
+                  "action":"session_file_read",
+                  "targetId":"file-1",
+                  "effect":"AI HUB прочитает доступное текстовое содержимое.",
+                  "isRecommended":true
+                },
+                {
+                  "title":"Да, прочитать",
+                  "intent":"approve_action",
+                  "action":"session_file_read",
+                  "targetId":"file-1",
+                  "effect":"Повтор того же действия.",
+                  "isRecommended":false
+                },
+                {
+                  "title":"Не читать",
+                  "intent":"decline_action",
+                  "action":"",
+                  "targetId":"",
+                  "effect":"",
+                  "isRecommended":false
+                }
+              ],
+              "allowCustom":true,
+              "currentResultSummary":"",
+              "workingResultFragment":"",
+              "canFinalize":false,
+              "completionReason":"",
+              "requestedTools":[],
+              "requestedCapability":"",
+              "capabilityReason":"",
+              "capabilityRequired":false,
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(2, turn.Options.Count);
+        Assert.AreEqual(ExecutorOptionIntents.ApproveAction, turn.Options[0].Intent);
+        Assert.AreEqual("session_file_read", turn.Options[0].Action);
+        Assert.AreEqual("file-1", turn.Options[0].TargetId);
+        Assert.IsTrue(turn.Options[0].IsRecommended);
+        Assert.AreEqual(ExecutorOptionIntents.DeclineAction, turn.Options[1].Intent);
     }
 
     [TestMethod]
@@ -417,6 +570,7 @@ public sealed class ExecutorModelPipelineTests
             var documentXml = reader.ReadToEnd();
             StringAssert.Contains(documentXml, "Итоговый результат");
             StringAssert.Contains(documentXml, "Проверяемый текст документа");
+            StringAssert.Contains(documentXml, "w:sectPr");
         }
         finally
         {

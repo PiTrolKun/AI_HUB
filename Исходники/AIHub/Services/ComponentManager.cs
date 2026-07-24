@@ -64,12 +64,37 @@ public sealed class ComponentManager
             .Where(capability => !string.IsNullOrWhiteSpace(capability))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var statuses = GetStatus(ComponentKinds.Processing)
+            .ToDictionary(item => item.Entry.Id, StringComparer.OrdinalIgnoreCase);
         var providerIds = requested
-            .SelectMany(ComponentCatalog.FindProviders)
-            .Select(entry => entry.Id)
+            .Select(capability => ComponentCatalog.FindProviders(capability)
+                .OrderByDescending(entry =>
+                    statuses.TryGetValue(entry.Id, out var status) && status.IsAvailable)
+                .ThenBy(entry => entry.IsPlanned)
+                .ThenBy(entry => entry.DownloadSizeBytes)
+                .FirstOrDefault()?.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Cast<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var entries = ComponentCatalog.ResolveDependencies(providerIds);
+        return BuildPlanForComponents(providerIds, reason, required);
+    }
+
+    public ComponentAcquisitionPlan BuildPlanForComponents(
+        IEnumerable<string> componentIds,
+        string reason,
+        bool required = true)
+    {
+        var requestedIds = componentIds
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (requestedIds.Count == 0)
+        {
+            return new ComponentAcquisitionPlan();
+        }
+
+        var entries = ComponentCatalog.ResolveDependencies(requestedIds);
         var statuses = GetStatus(ComponentKinds.Processing)
             .ToDictionary(item => item.Entry.Id, StringComparer.OrdinalIgnoreCase);
         return new ComponentAcquisitionPlan

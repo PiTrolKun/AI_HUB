@@ -281,7 +281,9 @@ public sealed class SessionKnowledgeTree
                     turn.StageId,
                     isActive: true);
                 _pendingQuestionId = question.Id;
-                _pendingOptions = [.. turn.Options];
+                _pendingOptions = turn.Options
+                    .Select(option => option.Title)
+                    .ToList();
                 _activeNodeId = question.Id;
                 changedNodeId = question.Id;
             }

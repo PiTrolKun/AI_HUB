@@ -63,6 +63,22 @@ public static partial class ExecutorDocxExporter
                 : CreateMarkdownParagraph(line));
         }
 
+        body.Append(new SectionProperties(
+            new PageSize
+            {
+                Width = 11906,
+                Height = 16838
+            },
+            new PageMargin
+            {
+                Top = 1134,
+                Right = 1134,
+                Bottom = 1134,
+                Left = 1134,
+                Header = 720,
+                Footer = 720,
+                Gutter = 0
+            }));
         mainPart.Document.Save();
     }
 

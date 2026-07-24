@@ -39,7 +39,42 @@ public static class ExecutorJsonContract
                     ["options"] = new JsonObject
                     {
                         ["type"] = "array",
-                        ["items"] = StringSchema(),
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["additionalProperties"] = false,
+                            ["properties"] = new JsonObject
+                            {
+                                ["title"] = StringSchema(120),
+                                ["intent"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                    ["enum"] = new JsonArray(
+                                        "answer",
+                                        "approve_action",
+                                        "decline_action")
+                                },
+                                ["action"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                    ["enum"] = new JsonArray(
+                                        "",
+                                        "session_files_list",
+                                        "session_file_inspect",
+                                        "session_file_read")
+                                },
+                                ["targetId"] = StringSchema(160),
+                                ["effect"] = StringSchema(240),
+                                ["isRecommended"] = new JsonObject { ["type"] = "boolean" }
+                            },
+                            ["required"] = new JsonArray(
+                                "title",
+                                "intent",
+                                "action",
+                                "targetId",
+                                "effect",
+                                "isRecommended")
+                        },
                         ["maxItems"] = 6
                     },
                     ["allowCustom"] = new JsonObject { ["type"] = "boolean" },
@@ -54,16 +89,38 @@ public static class ExecutorJsonContract
                         ["maxLength"] = ExecutorWorkingResultPolicy.MaximumCharacters
                     },
                     ["canFinalize"] = new JsonObject { ["type"] = "boolean" },
-                    ["completionReason"] = StringSchema(),
-                    ["requestedTools"] = StringArraySchema(),
-                    ["requestedCapability"] = StringSchema(),
-                    ["capabilityReason"] = StringSchema(),
+                    ["completionReason"] = StringSchema(600),
+                    ["requestedTools"] = StringArraySchema(3, 80),
+                    ["requestedCapabilities"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["additionalProperties"] = false,
+                            ["properties"] = new JsonObject
+                            {
+                                ["id"] = StringSchema(120),
+                                ["purpose"] = StringSchema(400),
+                                ["required"] = new JsonObject { ["type"] = "boolean" },
+                                ["alternatives"] = StringArraySchema(6, 120)
+                            },
+                            ["required"] = new JsonArray(
+                                "id",
+                                "purpose",
+                                "required",
+                                "alternatives")
+                        },
+                        ["maxItems"] = 8
+                    },
+                    ["requestedCapability"] = StringSchema(120),
+                    ["capabilityReason"] = StringSchema(600),
                     ["capabilityRequired"] = new JsonObject { ["type"] = "boolean" },
-                    ["missingCriticalInputs"] = StringArraySchema(),
-                    ["assumptions"] = StringArraySchema(),
-                    ["result"] = StringSchema(),
-                    ["sources"] = StringArraySchema(),
-                    ["warnings"] = StringArraySchema()
+                    ["missingCriticalInputs"] = StringArraySchema(8, 500),
+                    ["assumptions"] = StringArraySchema(8, 500),
+                    ["result"] = StringSchema(4000),
+                    ["sources"] = StringArraySchema(12, 800),
+                    ["warnings"] = StringArraySchema(8, 500)
                 },
                 ["required"] = new JsonArray(
                     "status",
@@ -78,6 +135,7 @@ public static class ExecutorJsonContract
                     "canFinalize",
                     "completionReason",
                     "requestedTools",
+                    "requestedCapabilities",
                     "requestedCapability",
                     "capabilityReason",
                     "capabilityRequired",
@@ -90,11 +148,16 @@ public static class ExecutorJsonContract
         }
     };
 
-    private static JsonObject StringSchema() => new() { ["type"] = "string" };
+    private static JsonObject StringSchema(int maximumLength = 2000) => new()
+    {
+        ["type"] = "string",
+        ["maxLength"] = maximumLength
+    };
 
-    private static JsonObject StringArraySchema() => new()
+    private static JsonObject StringArraySchema(int maximumItems, int maximumLength) => new()
     {
         ["type"] = "array",
-        ["items"] = StringSchema()
+        ["items"] = StringSchema(maximumLength),
+        ["maxItems"] = maximumItems
     };
 }

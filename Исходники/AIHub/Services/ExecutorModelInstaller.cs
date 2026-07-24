@@ -3,7 +3,6 @@ using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
-using System.Text.Json;
 using AIHub.Models;
 
 namespace AIHub.Services;
@@ -14,12 +13,6 @@ public sealed class ExecutorModelInstaller : IDisposable
     private const int GgufHeaderProbeBytes = 2 * 1024 * 1024;
     private readonly HttpClient _httpClient;
     private readonly bool _ownsClient;
-    private readonly JsonSerializerOptions _jsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
-    };
-
     public ExecutorModelInstaller(HttpClient? httpClient = null)
     {
         _httpClient = httpClient ?? new HttpClient();
@@ -148,10 +141,14 @@ public sealed class ExecutorModelInstaller : IDisposable
     public ExecutorModelArtifact MarkRuntimeVerified(ExecutorModelArtifact artifact)
     {
         var manifestPath = GetManifestPath(artifact);
+        var previousPassport = ExecutorModelManifestStore.Load(manifestPath)?.SemanticPassport;
         var manifest = CreateManifest(artifact, "installed", artifact.SizeBytes);
         manifest.VerifiedAt = DateTimeOffset.Now;
         manifest.RuntimeVerifiedAt = DateTimeOffset.Now;
         manifest.RuntimeBackend = LlamaBackendPaths.DisplayName;
+        manifest.SemanticPassport = ExecutorModelManifestStore.PreparePassport(
+            manifest,
+            previousPassport);
         SaveManifest(manifestPath, manifest);
         artifact.IsInstalled = true;
         return artifact;
@@ -159,11 +156,14 @@ public sealed class ExecutorModelInstaller : IDisposable
 
     public void MarkRuntimeIncompatible(ExecutorModelArtifact artifact, Exception error)
     {
+        var manifestPath = GetManifestPath(artifact);
+        var previousPassport = ExecutorModelManifestStore.Load(manifestPath)?.SemanticPassport;
         var manifest = CreateManifest(artifact, "runtime_incompatible", artifact.SizeBytes);
         manifest.VerifiedAt = DateTimeOffset.Now;
         manifest.RuntimeBackend = LlamaBackendPaths.DisplayName;
         manifest.RuntimeError = error.Message;
-        SaveManifest(GetManifestPath(artifact), manifest);
+        manifest.SemanticPassport = previousPassport ?? new ModelSemanticPassport();
+        SaveManifest(manifestPath, manifest);
         artifact.IsInstalled = false;
     }
 
@@ -175,8 +175,18 @@ public sealed class ExecutorModelInstaller : IDisposable
         }
     }
 
-    private void SaveManifest(string path, ExecutorModelManifest manifest) =>
-        File.WriteAllText(path, JsonSerializer.Serialize(manifest, _jsonOptions));
+    private static void SaveManifest(string path, ExecutorModelManifest manifest)
+    {
+        var previousPassport = ExecutorModelManifestStore.Load(path)?.SemanticPassport;
+        if (manifest.SemanticPassport.Status == ModelSemanticPassportStatuses.Missing
+            && previousPassport is not null
+            && previousPassport.Status != ModelSemanticPassportStatuses.Missing)
+        {
+            manifest.SemanticPassport = previousPassport;
+        }
+
+        ExecutorModelManifestStore.Save(path, manifest);
+    }
 
     private static ExecutorModelManifest CreateManifest(
         ExecutorModelArtifact artifact,

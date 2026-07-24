@@ -13,4 +13,15 @@ public sealed class ChoiceScenarioOption
     public string RecommendationReason { get; set; } = string.Empty;
 
     public List<ChoiceCapabilityDimension> ProfileEffects { get; set; } = [];
+
+    public string Intent { get; set; } = ExecutorOptionIntents.Answer;
+
+    public string Action { get; set; } = string.Empty;
+
+    public string TargetId { get; set; } = string.Empty;
+
+    public string Effect { get; set; } = string.Empty;
+
+    public bool IsExecutorAction =>
+        string.Equals(Intent, ExecutorOptionIntents.ApproveAction, StringComparison.Ordinal);
 }

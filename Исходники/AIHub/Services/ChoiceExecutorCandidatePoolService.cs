@@ -22,7 +22,8 @@ public sealed class ChoiceExecutorCandidatePoolService
         string currentCoreName,
         ComputerPassport computerPassport,
         ISessionEventLog sessionLog,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SessionFilePromptManifest? fileManifest = null)
     {
         var inventory = _inventoryService.Create(storageSettings);
         var request = BuildCatalogRequest(capabilityProfile, workloadMode);
@@ -32,7 +33,13 @@ public sealed class ChoiceExecutorCandidatePoolService
         sessionLog.Write("scenario_candidate_inventory", inventory);
         sessionLog.Write("scenario_candidate_catalog", new { Request = request, Response = catalog });
 
-        var pool = CreatePool(inventory, catalog, capabilityProfile, workloadMode, computerPassport);
+        var pool = CreatePool(
+            inventory,
+            catalog,
+            capabilityProfile,
+            workloadMode,
+            computerPassport,
+            fileManifest: fileManifest);
         if (pool.HasCandidatePair)
         {
             return pool;
@@ -50,7 +57,8 @@ public sealed class ChoiceExecutorCandidatePoolService
             capabilityProfile,
             workloadMode,
             computerPassport,
-            ExecutionCompatibilityService.CoordinatorFallbackMatch);
+            ExecutionCompatibilityService.CoordinatorFallbackMatch,
+            fileManifest);
         pool.AlternativeCandidates.AddRange(coordinatorPool.AlternativeCandidates);
         pool.Warnings.AddRange(coordinatorCatalog.Warnings);
         pool.AlternativeCandidates = pool.AlternativeCandidates
@@ -140,13 +148,17 @@ public sealed class ChoiceExecutorCandidatePoolService
         ChoiceCapabilityProfile capabilityProfile,
         string workloadMode,
         ComputerPassport computerPassport,
-        string catalogMatchScope = ExecutionCompatibilityService.TaskProfileMatch)
+        string catalogMatchScope = ExecutionCompatibilityService.TaskProfileMatch,
+        SessionFilePromptManifest? fileManifest = null)
     {
-        var capabilityResolution = ExecutionCompatibilityService.ResolveCapabilities(
+        var executionRoute = new ExecutionRoutePlannerService().Build(
             capabilityProfile,
-            inventory);
+            fileManifest,
+            "Prepare the verified execution route before selecting a coordinator.");
+        var capabilityResolution = CreateCapabilityResolution(executionRoute);
         var pool = new ChoiceExecutorCandidatePool
         {
+            ExecutionRoute = executionRoute,
             RequiredProtocols = BuildRequiredProtocols(
                 capabilityProfile,
                 workloadMode,
@@ -157,6 +169,7 @@ public sealed class ChoiceExecutorCandidatePoolService
             UnresolvedCapabilities = capabilityResolution.Unresolved.ToList(),
             Warnings = catalog.Warnings.ToList()
         };
+        pool.Warnings.AddRange(executionRoute.Warnings);
         if (pool.UnresolvedCapabilities.Count > 0)
         {
             pool.Warnings.Add(
@@ -185,7 +198,9 @@ public sealed class ChoiceExecutorCandidatePoolService
                 ParameterCount = parameterCount,
                 PipelineTag = "text-generation",
                 HardwareStatus = "runtime_verified",
-                Evidence = "installed=true; runnable=true; runtime inventory"
+                Evidence = "installed=true; runnable=true; runtime inventory",
+                SemanticDescriptionRu = item.SemanticDescriptionRu,
+                SemanticDescriptionEn = item.SemanticDescriptionEn
             };
             ExecutionCompatibilityService.ApplyExecutionPassport(
                 installedCandidate,
@@ -288,6 +303,7 @@ public sealed class ChoiceExecutorCandidatePoolService
             alternative,
             string.Equals(selection.PreferredCandidateId, alternative.Id, StringComparison.OrdinalIgnoreCase));
         card.ExecutorCandidates = [installedChoice, alternativeChoice];
+        card.ExecutionRoute = pool.ExecutionRoute;
 
         var preferred = installedChoice.IsRecommended ? installedChoice : alternativeChoice;
         card.RecommendedExecutor = preferred.Model;
@@ -306,12 +322,17 @@ public sealed class ChoiceExecutorCandidatePoolService
         builder.AppendLine("Program already verified identity, installation status, family, runtime, artifact format, component plan and PC fit.");
         builder.AppendLine("Choose IDs only. Do not rewrite model names, status, family, role or capability class.");
         builder.AppendLine("A coordinator model does not directly provide specialist file/media operations. Those are separate component capabilities.");
+        builder.AppendLine("The program owns the execution route. You are selecting only its LLM coordinator node.");
+        builder.AppendLine("Before choosing, silently test this abstract question: can the coordinator plus the listed ready adapters actually complete the described work without inventing access? Base the answer on the plain-language passports and adapter status, not model popularity.");
+        builder.AppendLine("A downloaded or installed package with adapterReady=false is not an executable model tool. Do not describe it as ready.");
         builder.AppendLine("Required capability protocols:");
         foreach (var protocol in pool.RequiredProtocols)
         {
             builder.AppendLine($"- {protocol}");
         }
 
+        AppendExecutionRoute(builder, pool.ExecutionRoute);
+        AppendComponentPassports(builder, pool.RequiredCapabilities);
         builder.AppendLine("Installed runnable candidates:");
         foreach (var candidate in pool.InstalledCandidates)
         {
@@ -443,6 +464,45 @@ public sealed class ChoiceExecutorCandidatePoolService
         return protocols;
     }
 
+    private static ExecutionCapabilityResolution CreateCapabilityResolution(
+        ExecutionRoutePlan executionRoute)
+    {
+        var bindings = executionRoute.Resolution.Bindings;
+        return new ExecutionCapabilityResolution
+        {
+            Required = executionRoute.Requirements
+                .Where(requirement => requirement.Request.Required)
+                .Select(requirement => requirement.Request.Id)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            Available = bindings
+                .Where(binding => binding.IsExecutable)
+                .Select(binding => binding.RequestedCapabilityId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            Missing = bindings
+                .Where(binding =>
+                    binding.Required
+                    && binding.Status == CapabilityBindingStatuses.PackageMissing
+                    && binding.AdapterAvailable)
+                .Select(binding => binding.RequestedCapabilityId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            Unresolved = bindings
+                .Where(binding =>
+                    binding.Required
+                    && binding.Status is CapabilityBindingStatuses.AdapterMissing
+                        or CapabilityBindingStatuses.UnknownCapability)
+                .Select(binding => binding.RequestedCapabilityId)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+        };
+    }
+
     private static void ApplyToolProtocols(ChoiceTaskCard card)
     {
         var values = card.CapabilityProfile.Dimensions
@@ -488,6 +548,8 @@ public sealed class ChoiceExecutorCandidatePoolService
             Reason = candidate.Status == ChoiceExecutorCandidateStatuses.Installed
                 ? "Program verified this installed model as a runnable coordinator."
                 : "Program verified this different-family catalog model as a downloadable coordinator candidate.",
+            SemanticDescriptionRu = candidate.SemanticDescriptionRu,
+            SemanticDescriptionEn = candidate.SemanticDescriptionEn,
             IsRecommended = preferred,
             RuntimeBackend = candidate.RuntimeBackend,
             ArtifactFormat = candidate.ArtifactFormat,
@@ -507,8 +569,65 @@ public sealed class ChoiceExecutorCandidatePoolService
             + $"runtime={candidate.RuntimeBackend}; artifact={candidate.ArtifactFormat}; "
             + $"matchScope={candidate.CatalogMatchScope}; missingComponents={string.Join(',', candidate.MissingCapabilities)}; "
             + $"unresolvedCapabilities={string.Join(',', candidate.UnresolvedCapabilities)}; "
-            + $"hardware={candidate.HardwareStatus}; evidence={candidate.Evidence}");
+            + $"hardware={candidate.HardwareStatus}; evidence={candidate.Evidence}; "
+            + $"semanticPassportRu={NormalizePromptValue(candidate.SemanticDescriptionRu)}");
     }
+
+    private static void AppendExecutionRoute(
+        StringBuilder builder,
+        ExecutionRoutePlan route)
+    {
+        builder.AppendLine("Verified execution route:");
+        builder.AppendLine($"- sourceFormats={string.Join(',', route.SourceFormats)}; executable={route.IsExecutable.ToString().ToLowerInvariant()}");
+        foreach (var requirement in route.Requirements)
+        {
+            var binding = route.Resolution.Bindings.FirstOrDefault(item =>
+                string.Equals(
+                    item.RequestedCapabilityId,
+                    requirement.Request.Id,
+                    StringComparison.OrdinalIgnoreCase));
+            builder.AppendLine(
+                $"- layer={requirement.Layer}; capability={requirement.Request.Id}; "
+                + $"status={binding?.Status ?? CapabilityBindingStatuses.UnknownCapability}; "
+                + $"component={binding?.ComponentId ?? string.Empty}; "
+                + $"adapter={binding?.AdapterId ?? string.Empty}; "
+                + $"purpose={NormalizePromptValue(requirement.Request.Purpose)}");
+        }
+    }
+
+    private static void AppendComponentPassports(
+        StringBuilder builder,
+        IEnumerable<string> requiredCapabilities)
+    {
+        var providers = requiredCapabilities
+            .SelectMany(ComponentCatalog.FindProviders)
+            .Where(entry => entry.IsVisibleToAi)
+            .DistinctBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (providers.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine("Verified component passports:");
+        foreach (var provider in providers)
+        {
+            var adapters = provider.Capabilities
+                .Select(ComponentAdapterRegistry.Find)
+                .Where(adapter => adapter is not null)
+                .DistinctBy(adapter => adapter!.Id, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            builder.AppendLine(
+                $"- id={provider.Id}; capabilities={string.Join(',', provider.Capabilities)}; "
+                + $"adapterReady={(adapters.Count > 0).ToString().ToLowerInvariant()}; "
+                + $"tools={string.Join(',', adapters.SelectMany(adapter => adapter!.ToolNames).Distinct(StringComparer.Ordinal))}; "
+                + $"usage={NormalizePromptValue(string.Join(' ', adapters.Select(adapter => adapter!.UsageSummary)))}; "
+                + $"description={NormalizePromptValue(ComponentSemanticPassportCatalog.Get(provider).Ru)}");
+        }
+    }
+
+    private static string NormalizePromptValue(string value) =>
+        Regex.Replace(value?.Trim() ?? string.Empty, @"\s+", " ");
 
     private static void AssignIds(ChoiceExecutorCandidatePool pool)
     {

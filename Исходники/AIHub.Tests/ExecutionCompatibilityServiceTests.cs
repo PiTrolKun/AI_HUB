@@ -7,7 +7,7 @@ namespace AIHub.Tests;
 public sealed class ExecutionCompatibilityServiceTests
 {
     [TestMethod]
-    public void ResolveCapabilities_DistinguishesAvailableDownloadableAndUnknownRequirements()
+    public void ResolveCapabilities_DistinguishesCallableAndUnboundRequirements()
     {
         var profile = CreateCapabilityProfile(
             "read.csv",
@@ -31,8 +31,9 @@ public sealed class ExecutionCompatibilityServiceTests
         var result = ExecutionCompatibilityService.ResolveCapabilities(profile, inventory);
 
         CollectionAssert.Contains(result.Available, "read.csv");
-        CollectionAssert.Contains(result.Missing, "extract.audio_transcript");
-        CollectionAssert.Contains(result.Missing, "edit.video");
+        Assert.AreEqual(0, result.Missing.Count);
+        CollectionAssert.Contains(result.Unresolved, "extract.audio_transcript");
+        CollectionAssert.Contains(result.Unresolved, "edit.video");
         CollectionAssert.Contains(result.Unresolved, "generate.audio");
     }
 
@@ -62,11 +63,9 @@ public sealed class ExecutionCompatibilityServiceTests
         CollectionAssert.AreEquivalent(
             new[] { "read.audio", "generate.audio" },
             result.Required);
-        CollectionAssert.AreEqual(
-            new[] { "read.audio" },
-            result.Missing);
-        CollectionAssert.AreEqual(
-            new[] { "generate.audio" },
+        Assert.AreEqual(0, result.Missing.Count);
+        CollectionAssert.AreEquivalent(
+            new[] { "read.audio", "generate.audio" },
             result.Unresolved);
     }
 

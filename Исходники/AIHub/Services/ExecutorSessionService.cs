@@ -7,13 +7,13 @@ namespace AIHub.Services;
 
 public sealed class ExecutorSessionService : IDisposable
 {
-    private const int MaxToolRounds = 6;
-    private const int MaxContractRepairAttempts = 2;
     private readonly LlamaServerRuntimeService _runtime;
-    private readonly ToolGateway _toolGateway = new();
+    private readonly ExecutorToolGateway _toolGateway = new();
+    private readonly SessionFileManifestService _fileManifestService = new();
     private readonly List<StructuredChatMessage> _messages = [];
     private readonly List<ExecutorResultSnapshot> _snapshots = [];
     private readonly SessionKnowledgeTree _knowledgeTree = new();
+    private readonly HashSet<string> _successfulToolCalls = new(StringComparer.Ordinal);
     private ExecutorModelArtifact? _artifact;
     private ExecutorHandoffPackage? _handoff;
     private DebugModelInfo? _model;
@@ -21,6 +21,7 @@ public sealed class ExecutorSessionService : IDisposable
     private string _restorationPrompt = string.Empty;
     private string _languageCode = "ru";
     private List<StructuredToolDefinition> _tools = [];
+    private SessionFileManifest _sessionFileManifest = new();
     private StorageSettings? _storageSettings;
     private ISessionEventLog? _sessionLog;
     private ExecutorTurnResult? _lastTurn;
@@ -28,12 +29,25 @@ public sealed class ExecutorSessionService : IDisposable
     private string _confirmedBriefCheckpoint = string.Empty;
     private bool _briefConfirmed;
     private int _snapshotVersion;
+    private long _successfulToolSequence;
     private bool _disposed;
+    private int _autonomySeconds;
 
-    public ExecutorSessionService(UserContextService userContextService)
+    public ExecutorSessionService(
+        UserContextService userContextService,
+        int autonomySeconds = CoreAutonomySettings.DefaultSeconds)
     {
         _runtime = new LlamaServerRuntimeService(userContextService);
+        ConfigureAutonomy(autonomySeconds);
         _knowledgeTree.Changed += KnowledgeTree_Changed;
+    }
+
+    public void ConfigureAutonomy(int seconds)
+    {
+        _autonomySeconds = Math.Clamp(
+            seconds,
+            CoreAutonomySettings.MinimumSeconds,
+            CoreAutonomySettings.MaximumSeconds);
     }
 
     public string CurrentStageId => _currentStageId;
@@ -66,13 +80,15 @@ public sealed class ExecutorSessionService : IDisposable
             EnabledTools = _tools
                 .Select(tool => tool.Function.Name)
                 .Distinct(StringComparer.Ordinal)
-                .ToList()
+                .ToList(),
+            SuccessfulToolCalls = [.. _successfulToolCalls]
         };
     }
 
     public async Task<ExecutorTurnResult> ExecuteAsync(
         ExecutorModelArtifact artifact,
         ExecutorHandoffPackage handoff,
+        SessionFileManifest sessionFileManifest,
         StorageSettings storageSettings,
         ISessionEventLog sessionLog,
         IProgress<ModelStreamChunk> streamProgress,
@@ -86,6 +102,10 @@ public sealed class ExecutorSessionService : IDisposable
 
         _artifact = Clone(artifact);
         _handoff = Clone(handoff);
+        _sessionFileManifest = Clone(sessionFileManifest);
+        _handoff.FileManifest = _fileManifestService.CreatePromptManifest(
+            _sessionFileManifest,
+            contentAccessAvailable: true);
         _model = new DebugModelInfo
         {
             Name = artifact.RepoId,
@@ -96,17 +116,19 @@ public sealed class ExecutorSessionService : IDisposable
             Format = "gguf",
             IsRunnable = true
         };
-        _systemPrompt = BuildSystemPrompt(handoff);
+        _systemPrompt = BuildSystemPrompt(_handoff);
         _restorationPrompt = string.Empty;
-        _languageCode = handoff.LanguageCode;
+        _languageCode = _handoff.LanguageCode;
         _storageSettings = storageSettings;
         _sessionLog = sessionLog;
-        _knowledgeTree.Initialize(handoff);
+        _knowledgeTree.Initialize(_handoff);
         _currentStageId = ExecutorStageIds.TaskDefinition;
         _confirmedBriefCheckpoint = string.Empty;
         _lastTurn = null;
         _briefConfirmed = false;
         _snapshotVersion = 0;
+        _successfulToolSequence = 0;
+        _successfulToolCalls.Clear();
         _snapshots.Clear();
         _messages.Clear();
         _messages.Add(new StructuredChatMessage
@@ -114,7 +136,7 @@ public sealed class ExecutorSessionService : IDisposable
             Role = "user",
             Content = string.Join(
                 Environment.NewLine,
-                BuildUserPrompt(handoff, _currentStageId),
+                BuildUserPrompt(_handoff, _currentStageId),
                 BuildTreeContextMessage())
         });
         sessionLog.Write("executor_session_start", new
@@ -123,20 +145,19 @@ public sealed class ExecutorSessionService : IDisposable
             artifact.FileName,
             artifact.Quantization,
             InitialStage = _currentStageId,
-            Handoff = handoff
+            Handoff = _handoff
         });
 
-        _tools = handoff.NeedsWeb
-            ? ScenarioToolCatalog.CreateDefinitions()
-                .Where(tool => tool.Function.Name is "web_search" or "web_research" or "web_read")
-                .ToList()
-            : [];
+        _tools = ExecutorToolCatalog.CreateDefinitions(
+            includeWeb: _handoff.NeedsWeb,
+            includeSessionFiles: HasAvailableSessionFiles());
         return await RunLoopAsync(streamProgress, cancellationToken);
     }
 
     public ExecutorTurnResult Restore(
         ExecutorSessionCheckpoint checkpoint,
         ExecutorModelArtifact installedArtifact,
+        SessionFileManifest sessionFileManifest,
         StorageSettings storageSettings,
         ISessionEventLog sessionLog,
         SessionRestorationContext restoration)
@@ -153,6 +174,10 @@ public sealed class ExecutorSessionService : IDisposable
 
         _artifact = Clone(installedArtifact);
         _handoff = Clone(checkpoint.Handoff);
+        _sessionFileManifest = Clone(sessionFileManifest);
+        _handoff.FileManifest = _fileManifestService.CreatePromptManifest(
+            _sessionFileManifest,
+            contentAccessAvailable: true);
         _model = new DebugModelInfo
         {
             Name = installedArtifact.RepoId,
@@ -166,25 +191,31 @@ public sealed class ExecutorSessionService : IDisposable
         _restorationPrompt = BuildRestorationPrompt(restoration);
         _systemPrompt = string.Join(
             Environment.NewLine,
-            BuildSystemPrompt(checkpoint.Handoff),
+            BuildSystemPrompt(_handoff),
             string.Empty,
             _restorationPrompt);
-        _languageCode = checkpoint.Handoff.LanguageCode;
+        _languageCode = _handoff.LanguageCode;
         _storageSettings = storageSettings;
         _sessionLog = sessionLog;
         _currentStageId = checkpoint.CurrentStageId;
         _confirmedBriefCheckpoint = checkpoint.ConfirmedBriefCheckpoint;
         _briefConfirmed = checkpoint.BriefConfirmed;
         _snapshotVersion = checkpoint.SnapshotVersion;
+        _successfulToolSequence = 0;
+        _successfulToolCalls.Clear();
+        _successfulToolCalls.UnionWith(checkpoint.SuccessfulToolCalls ?? []);
         _lastTurn = Clone(checkpoint.LastTurn);
         _messages.Clear();
         _messages.AddRange(Clone(checkpoint.Messages));
         _snapshots.Clear();
         _snapshots.AddRange(Clone(checkpoint.Snapshots));
-        _tools = ScenarioToolCatalog.CreateDefinitions()
-            .Where(tool => checkpoint.EnabledTools.Contains(
-                tool.Function.Name,
-                StringComparer.Ordinal))
+        _tools = ExecutorToolCatalog.CreateDefinitions(
+                includeWeb: true,
+                includeSessionFiles: HasAvailableSessionFiles())
+            .Where(tool => ExecutorToolCatalog.IsSessionFileTool(tool.Function.Name)
+                || checkpoint.EnabledTools.Contains(
+                    tool.Function.Name,
+                    StringComparer.Ordinal))
             .ToList();
         _knowledgeTree.Restore(checkpoint.KnowledgeTree);
         sessionLog.Write("executor_session_restored", new
@@ -238,7 +269,10 @@ public sealed class ExecutorSessionService : IDisposable
         });
         try
         {
-            return await RunLoopAsync(streamProgress, cancellationToken);
+            return await RunLoopAsync(
+                streamProgress,
+                cancellationToken,
+                GetRequiredFileEvidenceTool());
         }
         catch
         {
@@ -256,16 +290,89 @@ public sealed class ExecutorSessionService : IDisposable
         }
     }
 
+    public async Task<ExecutorTurnResult> ContinueApprovedActionAsync(
+        ExecutorTurnOption approvedOption,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        EnsureActive();
+        ArgumentNullException.ThrowIfNull(approvedOption);
+        if (approvedOption.Intent != ExecutorOptionIntents.ApproveAction
+            || !ExecutorToolCatalog.IsSessionFileTool(approvedOption.Action)
+            || _lastTurn?.Options.Any(option =>
+                option.Intent == ExecutorOptionIntents.ApproveAction
+                && string.Equals(option.Action, approvedOption.Action, StringComparison.Ordinal)
+                && string.Equals(option.TargetId, approvedOption.TargetId, StringComparison.Ordinal)) != true)
+        {
+            throw new InvalidOperationException("The selected executor action is not active or allowed.");
+        }
+
+        var messageIndex = _messages.Count;
+        _knowledgeTree.RecordAnswer(approvedOption.Title);
+        _messages.Add(new StructuredChatMessage
+        {
+            Role = "user",
+            Content = string.Join(
+                Environment.NewLine,
+                "[AI_HUB_USER_APPROVED_ACTION]",
+                $"Current stage: {_currentStageId}",
+                $"Approved action: {approvedOption.Action}",
+                $"Target file id: {approvedOption.TargetId}",
+                $"Expected effect: {approvedOption.Effect}",
+                "Execute the approved safe tool now. Do not replace it with a promise or another confirmation question.",
+                "After a successful tool result, use the evidence in the current task and continue with exactly one useful question.",
+                BuildTreeContextMessage())
+        });
+        _sessionLog!.Write("executor_action_approved", new
+        {
+            Stage = _currentStageId,
+            approvedOption.Title,
+            approvedOption.Action,
+            approvedOption.TargetId,
+            approvedOption.Effect
+        });
+        try
+        {
+            var successfulToolSequenceBefore = _successfulToolSequence;
+            var turn = await RunLoopAsync(
+                streamProgress,
+                cancellationToken,
+                approvedOption.Action);
+            if (_successfulToolSequence <= successfulToolSequenceBefore
+                || !_successfulToolCalls.Contains(
+                CreateToolEvidenceKey(approvedOption.Action, approvedOption.TargetId)))
+            {
+                return CreateToolSafetyPause($"approved_action_failed:{approvedOption.Action}");
+            }
+
+            return turn;
+        }
+        catch
+        {
+            if (_messages.Count > messageIndex)
+            {
+                _messages.RemoveRange(messageIndex, _messages.Count - messageIndex);
+            }
+
+            throw;
+        }
+    }
+
     public async Task<ExecutorTurnResult> UpdateFileManifestAsync(
-        SessionFilePromptManifest fileManifest,
+        SessionFileManifest fileManifest,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
         EnsureActive();
         ArgumentNullException.ThrowIfNull(fileManifest);
-        var previousManifest = Clone(_handoff!.FileManifest);
+        var previousSessionManifest = Clone(_sessionFileManifest);
+        var previousPromptManifest = Clone(_handoff!.FileManifest);
         var messageIndex = _messages.Count;
-        _handoff.FileManifest = Clone(fileManifest);
+        _sessionFileManifest = Clone(fileManifest);
+        _handoff.FileManifest = _fileManifestService.CreatePromptManifest(
+            _sessionFileManifest,
+            contentAccessAvailable: true);
+        RefreshSessionFileTools();
         _messages.Add(new StructuredChatMessage
         {
             Role = "user",
@@ -274,23 +381,29 @@ public sealed class ExecutorSessionService : IDisposable
                 "[AI_HUB_FILE_MANIFEST_UPDATED]",
                 $"Current stage: {_currentStageId}",
                 "AI HUB updated trusted metadata about files selected by the user:",
-                JsonSerializer.Serialize(fileManifest),
+                JsonSerializer.Serialize(_handoff.FileManifest),
                 "This is not an answer to your current question.",
-                "File contents and absolute paths are unavailable. Never claim to have read or analyzed them.",
+                "Absolute paths are unavailable. Use session_files_list, session_file_inspect and session_file_read when actual supported file content is relevant.",
+                "Do not claim that you read or analyzed a file unless a successful tool result contains the needed evidence.",
                 "A newly added file may be primary task input, a separate example/reference, or explanatory context.",
                 "If its role is not already clear from the conversation, ask specifically which role it has. Do not assume that every added file must be processed in the same way.",
                 "For that role question, provide ready selectable options for: primary task input; separate example/reference; explanatory context; do not use. Never rely on custom text for these standard roles.",
                 "Re-evaluate the current task definition and ask exactly one next useful question. Do not change stages.",
                 BuildTreeContextMessage())
         });
-        _sessionLog!.Write("executor_file_manifest_updated", fileManifest);
+        _sessionLog!.Write("executor_file_manifest_updated", _handoff.FileManifest);
         try
         {
-            return await RunLoopAsync(streamProgress, cancellationToken);
+            return await RunLoopAsync(
+                streamProgress,
+                cancellationToken,
+                GetRequiredFileEvidenceTool());
         }
         catch
         {
-            _handoff.FileManifest = previousManifest;
+            _sessionFileManifest = previousSessionManifest;
+            _handoff.FileManifest = previousPromptManifest;
+            RefreshSessionFileTools();
             if (_messages.Count > messageIndex)
             {
                 _messages.RemoveRange(messageIndex, _messages.Count - messageIndex);
@@ -357,7 +470,9 @@ public sealed class ExecutorSessionService : IDisposable
             .Where(name => name is "web_search" or "web_research" or "web_read")
             .Distinct(StringComparer.Ordinal)
             .ToHashSet(StringComparer.Ordinal);
-        var enabled = ScenarioToolCatalog.CreateDefinitions()
+        var enabled = ExecutorToolCatalog.CreateDefinitions(
+                includeWeb: true,
+                includeSessionFiles: false)
             .Where(tool => allowedNames.Contains(tool.Function.Name))
             .ToList();
         foreach (var tool in enabled)
@@ -417,11 +532,48 @@ public sealed class ExecutorSessionService : IDisposable
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
+        return await ContinueAfterCapabilityRequestAsync(
+            [
+                new ExecutorCapabilityRequest
+                {
+                    Id = capability,
+                    Purpose = details,
+                    Required = true
+                }
+            ],
+            resultCode,
+            details,
+            streamProgress,
+            cancellationToken);
+    }
+
+    public async Task<ExecutorTurnResult> ContinueAfterCapabilityRequestAsync(
+        IReadOnlyCollection<ExecutorCapabilityRequest> capabilities,
+        string resultCode,
+        string details,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
         EnsureActive();
-        var normalizedCapability = capability.Trim().ToLowerInvariant();
-        if (ComponentCatalog.FindProviders(normalizedCapability).Count == 0)
+        var normalizedCapabilities = capabilities
+            .Where(capability => !string.IsNullOrWhiteSpace(capability.Id))
+            .Select(capability => new ExecutorCapabilityRequest
+            {
+                Id = capability.Id.Trim().ToLowerInvariant(),
+                Purpose = capability.Purpose.Trim(),
+                Required = capability.Required,
+                Alternatives = capability.Alternatives
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .Select(value => value.Trim().ToLowerInvariant())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            })
+            .GroupBy(capability => capability.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+        if (normalizedCapabilities.Count == 0)
         {
-            throw new InvalidOperationException("The requested capability is outside the trusted catalog.");
+            throw new InvalidOperationException("The capability result does not contain any capability IDs.");
         }
 
         var messageIndex = _messages.Count;
@@ -432,18 +584,23 @@ public sealed class ExecutorSessionService : IDisposable
                 Environment.NewLine,
                 "[AI_HUB_CAPABILITY_RESULT]",
                 $"Current stage: {_currentStageId}",
-                $"Capability: {normalizedCapability}",
+                "Capabilities:",
+                string.Join(
+                    Environment.NewLine,
+                    normalizedCapabilities.Select(capability =>
+                        $"- {capability.Id}; required={capability.Required}; purpose={capability.Purpose}")),
                 $"Result: {resultCode}",
                 $"Details: {details}",
                 "This is a trusted program result, not a user answer.",
-                "Continue the same task and context. If available, use the capability through future AI HUB file tools only; direct filesystem access is still forbidden.",
-                "If denied or unavailable, offer a realistic fallback or explain the blocking limitation.",
+                "Continue the same task and context. A package is usable only when the result explicitly says that its trusted adapter and tool schema are ready.",
+                "If external discovery is authorized, research alternatives but do not claim that an unverified package is callable.",
+                "If denied, unavailable or missing an adapter, use a realistic fallback or explain the blocking limitation.",
                 BuildTreeContextMessage())
         });
         _sessionLog!.Write("executor_capability_result", new
         {
             Stage = _currentStageId,
-            Capability = normalizedCapability,
+            Capabilities = normalizedCapabilities,
             Result = resultCode,
             Details = details
         });
@@ -506,7 +663,10 @@ public sealed class ExecutorSessionService : IDisposable
 
         try
         {
-            return await RunLoopAsync(streamProgress, cancellationToken);
+            return await RunLoopAsync(
+                streamProgress,
+                cancellationToken,
+                GetRequiredFileEvidenceTool());
         }
         catch
         {
@@ -544,6 +704,11 @@ public sealed class ExecutorSessionService : IDisposable
         if (!_briefConfirmed)
         {
             throw new InvalidOperationException("The executor brief has not been confirmed.");
+        }
+        if (GetRequiredFileEvidenceTool() is not null)
+        {
+            throw new InvalidOperationException(
+                "The executor has not read the required session file through an AI HUB tool.");
         }
 
         var model = _model!;
@@ -719,15 +884,41 @@ public sealed class ExecutorSessionService : IDisposable
             "Инструмент не смог завершить запрос. Уточните, как продолжить без него.",
             "The tool could not complete the request. Clarify how to continue without it.");
 
+    private bool HasAvailableSessionFiles() =>
+        _sessionFileManifest.Files.Any(file => file.IsAvailable);
+
+    private void RefreshSessionFileTools()
+    {
+        _tools.RemoveAll(tool =>
+            ExecutorToolCatalog.IsSessionFileTool(tool.Function.Name));
+        if (!HasAvailableSessionFiles())
+        {
+            return;
+        }
+
+        _tools.AddRange(ExecutorToolCatalog.CreateDefinitions(
+            includeWeb: false,
+            includeSessionFiles: true));
+    }
+
     private async Task<ExecutorTurnResult> RunLoopAsync(
         IProgress<ModelStreamChunk> streamProgress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? requiredToolName = null)
     {
         var model = _model ?? throw new InvalidOperationException("Executor model is unavailable.");
         var storageSettings = _storageSettings ?? throw new InvalidOperationException("Executor storage is unavailable.");
         var sessionLog = _sessionLog ?? throw new InvalidOperationException("Executor log is unavailable.");
-        for (var round = 1; round <= MaxToolRounds; round++)
+        var requiredToolSatisfied = string.IsNullOrWhiteSpace(requiredToolName);
+        var budget = new AutonomyExecutionBudget(_autonomySeconds);
+        if (!requiredToolSatisfied)
         {
+            budget.Start();
+        }
+        var round = 0;
+        while (budget.CanStartNext(round == 0))
+        {
+            round++;
             cancellationToken.ThrowIfCancellationRequested();
             await CompactIfNeededAsync(model, _systemPrompt, sessionLog, streamProgress, cancellationToken);
             var response = await _runtime.GenerateExternalWithToolsAsync(
@@ -738,7 +929,8 @@ public sealed class ExecutorSessionService : IDisposable
                 message => sessionLog.Write("executor_runtime", new { Message = message }),
                 streamProgress,
                 cancellationToken,
-                ExecutorJsonContract.CreateResponseFormat());
+                responseFormat: null,
+                requiredToolName: round == 1 ? requiredToolName : null);
             sessionLog.Write("executor_model_response", new
             {
                 Round = round,
@@ -748,6 +940,17 @@ public sealed class ExecutorSessionService : IDisposable
             });
             if (!response.HasToolCalls)
             {
+                if (!requiredToolSatisfied)
+                {
+                    sessionLog.Write("executor_required_tool_missing", new
+                    {
+                        RequiredTool = requiredToolName,
+                        Round = round
+                    });
+                    throw new InvalidOperationException(
+                        $"Executor did not call the required tool '{requiredToolName}'.");
+                }
+
                 _messages.Add(new StructuredChatMessage { Role = "assistant", Content = response.Content });
                 if (ExecutorResultParser.TryReadTurn(response.Content, out var turn))
                 {
@@ -758,8 +961,11 @@ public sealed class ExecutorSessionService : IDisposable
                 }
 
                 sessionLog.Write("executor_contract_repair_requested", new { RawResponse = response.Content });
-                for (var attempt = 1; attempt <= MaxContractRepairAttempts; attempt++)
+                var attempt = 0;
+                budget.Start();
+                while (budget.CanStartNext())
                 {
+                    attempt++;
                     _messages.Add(new StructuredChatMessage
                     {
                         Role = "user",
@@ -788,14 +994,45 @@ public sealed class ExecutorSessionService : IDisposable
                             return AcceptTurn(turn, sessionLog, "executor_contract_repaired");
                         }
                     }
+
+                    if (!budget.RegisterProgress(
+                            $"contract:{repaired.Content.Length}:{StringComparer.Ordinal.GetHashCode(repaired.Content)}"))
+                    {
+                        sessionLog.Write("executor_contract_repair_stagnation", new
+                        {
+                            Attempt = attempt,
+                            Stage = _currentStageId
+                        });
+                        break;
+                    }
                 }
 
                 sessionLog.Write("executor_contract_repair_failed", new
                 {
-                    Attempts = MaxContractRepairAttempts,
-                    Stage = _currentStageId
+                    Attempts = attempt,
+                    Stage = _currentStageId,
+                    ElapsedMilliseconds = budget.Elapsed.TotalMilliseconds,
+                    LimitMilliseconds = budget.Limit.TotalMilliseconds
                 });
-                throw new InvalidOperationException("Executor returned an invalid structured turn after repair attempts.");
+                return CreateSafetyPause(
+                    "contract_repair_time_or_stagnation",
+                    "Исполнитель не смог исправить формат ответа за отведённое время. Уточните задачу или повторите шаг.",
+                    "The executor could not repair its response within the available time. Clarify the task or retry the step.");
+            }
+
+            budget.Start();
+            var toolFingerprint = string.Join(
+                "|",
+                response.ToolCalls.Select(toolCall =>
+                    $"{toolCall.Function.Name}:{toolCall.Function.Arguments}"));
+            if (!budget.RegisterProgress(toolFingerprint))
+            {
+                sessionLog.Write("executor_tool_stagnation", new
+                {
+                    Round = round,
+                    Fingerprint = toolFingerprint
+                });
+                return CreateToolSafetyPause("repeated_tool_call_without_progress");
             }
 
             _messages.Add(new StructuredChatMessage
@@ -806,19 +1043,102 @@ public sealed class ExecutorSessionService : IDisposable
             });
             foreach (var toolCall in response.ToolCalls)
             {
-                var command = ScenarioToolCatalog.BuildCommand(toolCall);
-                var result = await _toolGateway.ExecuteAsync(command, storageSettings, sessionLog, cancellationToken);
+                var execution = await _toolGateway.ExecuteAsync(
+                    toolCall,
+                    storageSettings,
+                    _sessionFileManifest,
+                    sessionLog,
+                    cancellationToken);
+                if (execution.Success)
+                {
+                    _successfulToolSequence++;
+                    _successfulToolCalls.Add(toolCall.Function.Name);
+                    if (string.Equals(
+                        toolCall.Function.Name,
+                        requiredToolName,
+                        StringComparison.Ordinal))
+                    {
+                        requiredToolSatisfied = true;
+                    }
+                    var targetId = TryReadToolTargetId(toolCall.Function.Arguments);
+                    if (!string.IsNullOrWhiteSpace(targetId))
+                    {
+                        _successfulToolCalls.Add(
+                            CreateToolEvidenceKey(toolCall.Function.Name, targetId));
+                    }
+                }
                 _messages.Add(new StructuredChatMessage
                 {
                     Role = "tool",
                     ToolCallId = toolCall.Id,
                     Name = toolCall.Function.Name,
-                    Content = ToolMessageFormatter.WrapToolResult(toolCall.Function.Name, command, result)
+                    Content = ToolMessageFormatter.WrapToolResult(
+                        toolCall.Function.Name,
+                        execution.Command,
+                        execution.Content)
                 });
             }
         }
 
-        throw new InvalidOperationException("Executor exceeded the allowed tool rounds without producing a result.");
+        sessionLog.Write("executor_autonomy_time_budget_reached", new
+        {
+            Round = round,
+            ElapsedMilliseconds = budget.Elapsed.TotalMilliseconds,
+            LimitMilliseconds = budget.Limit.TotalMilliseconds
+        });
+        return CreateToolSafetyPause("autonomy_time_budget");
+    }
+
+    private string? GetRequiredFileEvidenceTool()
+    {
+        if (!HasAvailableSessionFiles()
+            || string.IsNullOrWhiteSpace(_confirmedBriefCheckpoint))
+        {
+            return null;
+        }
+
+        var unreadRequiredFile = _sessionFileManifest.Files
+            .Where(file => file.IsAvailable && IsTextualFileCategory(file.Category))
+            .FirstOrDefault(file =>
+                !string.IsNullOrWhiteSpace(file.DisplayName)
+                && _confirmedBriefCheckpoint.Contains(
+                    file.DisplayName,
+                    StringComparison.OrdinalIgnoreCase)
+                && !_successfulToolCalls.Contains(
+                    CreateToolEvidenceKey("session_file_read", file.Id)));
+        return unreadRequiredFile is not null ? "session_file_read" : null;
+    }
+
+    private static bool IsTextualFileCategory(string category) =>
+        category is SessionFileCategories.Document
+            or SessionFileCategories.Table
+            or SessionFileCategories.Code
+            or SessionFileCategories.Text;
+
+    private static string CreateToolEvidenceKey(string toolName, string targetId) =>
+        string.IsNullOrWhiteSpace(targetId)
+            ? toolName
+            : $"{toolName}:{targetId}";
+
+    private static string TryReadToolTargetId(string arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(arguments);
+            return document.RootElement.TryGetProperty("file_id", out var value)
+                && value.ValueKind == JsonValueKind.String
+                ? value.GetString()?.Trim() ?? string.Empty
+                : string.Empty;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
     }
 
     private ExecutorTurnResult AcceptTurn(
@@ -904,8 +1224,10 @@ public sealed class ExecutorSessionService : IDisposable
         {
             return _briefConfirmed
                 && turn.Status == ExecutorTurnStatuses.Working
-                && ComponentCatalog.FindProviders(turn.RequestedCapability).Count > 0
-                && !string.IsNullOrWhiteSpace(turn.CapabilityReason);
+                && turn.RequestedCapabilities.Count > 0
+                && turn.RequestedCapabilities.All(request =>
+                    !string.IsNullOrWhiteSpace(request.Id)
+                    && !string.IsNullOrWhiteSpace(request.Purpose));
         }
 
         if (turn.Action == ExecutorTurnActions.SuggestFinalization)
@@ -998,8 +1320,15 @@ public sealed class ExecutorSessionService : IDisposable
             "The core selected your capability class. It did not discover the user's exact subject and did not prepare a final task.",
             "Treat programFacts as authoritative, userSignals as raw user input, and coreHypotheses only as provisional background that may be wrong.",
             "fileManifest contains only trusted file names and metadata selected by the user. It never contains file contents or absolute paths.",
+            "When fileManifest.contentAccessAvailable is true, supported content is available only through session_files_list, session_file_inspect and session_file_read. Never infer content from a name or metadata.",
             "When fileManifest.contentAccessAvailable is false, never claim that you read, opened, saw, transcribed or analyzed a file.",
-            "Use file categories only to identify required capabilities and to ask what role the files should play.",
+            "Use session_files_list when file IDs or the current set are uncertain. Inspect an unfamiliar or large file before reading it.",
+            "Use session_file_read in bounded chunks. Start at offset 0 and continue only with next_offset when more content is relevant.",
+            "A successful file tool result is evidence, not a user answer. After reading, apply that evidence to the actual task and produce a substantive working result.",
+            "Do not ask the user to manually retell a supported text or document file before trying the safe file tools.",
+            "The file tools never provide semantic image, audio or video understanding. Technical dimensions or metadata do not mean that you saw, heard or watched the media.",
+            "If an adapter is unavailable, do not fabricate access. Request one approved capability after brief confirmation, ask for a safe fallback, or explain the limitation.",
+            "Use file categories to identify required capabilities and to ask what role the files should play when that role is unclear.",
             "An [AI_HUB_FILE_MANIFEST_UPDATED] event is context, not an answer to the current question.",
             "A newly added file can be primary task input, a separate example/reference, or explanatory context. If its role is unclear, ask specifically about that role instead of assuming it belongs to the main input set.",
             "When asking about a file role, always provide ready selectable options for primary task input, separate example/reference, explanatory context, and do not use. Custom input is only a fallback.",
@@ -1007,9 +1336,15 @@ public sealed class ExecutorSessionService : IDisposable
             "Never change the stage yourself. Work only inside the current stage named by AI HUB.",
             "Only an explicit [AI_HUB_STAGE_CHANGE] message changes task_definition to practical_clarification. practical_clarification is permanent until the user ends the session.",
             "Ask exactly one useful decision at a time. Do not run a silent autonomous content loop and do not decide that enough information has been collected.",
-            "When asking, offer 2-6 short options and allow a custom answer. Offer equivalents of Not important, Decide yourself, or Skip only when they are genuinely safe.",
+            "When asking, offer 2-6 short options and allow a custom answer. Every option is an object with title, intent, action, targetId, effect and isRecommended.",
+            "Use intent answer for ordinary answers and intent decline_action for a clear refusal. Leave action and targetId empty for both.",
+            "Use intent approve_action only when the user must explicitly approve a concrete safe file action. Set action to session_files_list, session_file_inspect or session_file_read, targetId to the trusted manifest file ID when applicable, and effect to a short honest description of what AI HUB will do.",
+            "An approve_action title must be a concrete command such as Read this file, not a vague Yes. Do not create an approve_action for work that is not backed by one of the allowed tools.",
+            "Do not ask permission for safe file reading when the confirmed user task already clearly requires that file. Call the tool directly instead.",
+            "Do not output duplicate or near-duplicate options. Each option must lead to a materially different answer or action.",
+            "Offer equivalents of Not important, Decide yourself, or Skip only when they are genuinely safe.",
             "Never offer stage names, transition commands, result commands or session commands as answer options.",
-            "Actions: ask_user waits for the user; confirm_brief asks AI HUB to show the completed technical brief; request_tool asks for safe web tools; request_capability asks AI HUB for one approved file-processing capability; suggest_finalization recommends a user-controlled finish; blocked explains why work cannot continue.",
+            "Actions: ask_user waits for the user; confirm_brief asks AI HUB to show the completed technical brief; request_tool asks for safe web tools; request_capability asks AI HUB for one or more task capabilities; suggest_finalization recommends a user-controlled finish; blocked explains why work cannot continue.",
             "Use confirm_brief only with status stage_ready in task_definition. Put the complete actionable task formulation in stageSummary and leave options empty.",
             "After task confirmation, an ordinary response returns working + ask_user, one practical question, a substantive workingResultFragment, and an updated currentResultSummary.",
             $"workingResultFragment is new content that directly performs part of the confirmed task. Keep it within {ExecutorWorkingResultPolicy.MaximumCharacters} characters.",
@@ -1017,7 +1352,7 @@ public sealed class ExecutorSessionService : IDisposable
             $"currentResultSummary is a concise retelling derived from the actual answer fragments available right now. Keep it within {ExecutorResultSummaryPolicy.MaximumCharacters} characters.",
             "Prioritize present answer content, key recommendations, important caveats and gaps that materially affect it. Never write that an answer is being prepared or will be created later.",
             "Use request_tool only after the task is confirmed and list only web_search, web_research or web_read in requestedTools.",
-            $"Use request_capability only after the task is confirmed. requestedCapability must be exactly one ID from this allowlist: {string.Join(", ", ComponentCatalog.Processing.SelectMany(entry => entry.Capabilities).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))}. Explain the task-specific need in capabilityReason and set capabilityRequired accurately. Never name a package, executable, command or URL.",
+            $"Use request_capability only after the task is confirmed. Put every simultaneously required capability into requestedCapabilities (maximum 8), with a plain task-specific purpose, required flag and possible capability-ID alternatives. Known IDs include: {string.Join(", ", ComponentCatalog.Processing.SelectMany(entry => entry.Capabilities).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))}. You may request an unknown but precise capability when the trusted catalog has no match; AI HUB will decide whether external discovery is allowed. Keep requestedCapability, capabilityReason and capabilityRequired equal to the first array item for backward compatibility. Never name a package, executable, command or URL.",
             "Fill missingCriticalInputs and assumptions honestly; do not invent a precise readiness percentage.",
             "Set canFinalize true as soon as the active branch contains a useful result that can be delivered now, missingCriticalInputs is empty, and the next question would only improve, expand or polish that result. You may still use ask_user with canFinalize true for one genuinely useful optional question.",
             "When canFinalize is true, explain why the current result is already usable in completionReason. Otherwise set canFinalize false and leave completionReason empty.",
@@ -1064,6 +1399,8 @@ public sealed class ExecutorSessionService : IDisposable
                 ? $"The task brief is already confirmed. Return working + ask_user with one useful practical question, or working + suggest_finalization when no useful question remains. In both cases include a substantive workingResultFragment of at most {ExecutorWorkingResultPolicy.MaximumCharacters} characters and a useful currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters. Set canFinalize true with a non-empty completionReason whenever that current result can already be delivered and missingCriticalInputs is empty, including ask_user turns with only optional improvements left. Otherwise set canFinalize false and leave completionReason empty. Write actual answer content, not a technical brief or future plan."
                 : "The task brief is not confirmed. Use confirm_brief only when task_definition is actionable.",
             "Never put stage transitions, saving, exporting, result display or session commands into options. Use suggest_finalization instead when appropriate.",
+            "Options are structured objects. Use approve_action only for a concrete session file tool and include its action, trusted targetId and effect. Use answer or decline_action for everything else.",
+            "Remove duplicate or equivalent options. A green action in AI HUB must represent a real tool call, never a decorative recommendation.",
             "Never return continue_work, present_result or result_ready.",
             "Keep the session open. Do not change stages and do not claim that the session ended.");
 

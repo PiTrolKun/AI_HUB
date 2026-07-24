@@ -26,7 +26,9 @@ public sealed class AppSettingsStore
         try
         {
             var json = File.ReadAllText(AppDataPaths.SettingsPath);
-            return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            settings.CoreAutonomy ??= new CoreAutonomySettings();
+            return settings;
         }
         catch
         {

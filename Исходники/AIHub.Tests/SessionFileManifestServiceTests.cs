@@ -64,6 +64,34 @@ public sealed class SessionFileManifestServiceTests
     }
 
     [TestMethod]
+    public void ExecutorPromptManifest_EnablesContentAccessWithoutExposingPath()
+    {
+        var root = CreateRoot();
+        try
+        {
+            Directory.CreateDirectory(root);
+            var path = Path.Combine(root, "executor-input.txt");
+            File.WriteAllText(path, "trusted session input");
+            var manifest = new SessionFileManifest();
+            var service = new SessionFileManifestService();
+            service.AddFiles(manifest, [path]);
+
+            var promptManifest = service.CreatePromptManifest(
+                manifest,
+                contentAccessAvailable: true);
+            var json = JsonSerializer.Serialize(promptManifest);
+
+            Assert.IsTrue(promptManifest.ContentAccessAvailable);
+            Assert.IsFalse(json.Contains(root, StringComparison.OrdinalIgnoreCase));
+            Assert.IsFalse(json.Contains("trusted session input", StringComparison.Ordinal));
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
     public void RefreshAvailability_KeepsMissingCardAndMarksItUnavailable()
     {
         var root = CreateRoot();

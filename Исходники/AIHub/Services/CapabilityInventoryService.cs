@@ -35,15 +35,20 @@ public sealed class CapabilityInventoryService
                 Format = model.Format,
                 Path = model.Path,
                 Source = "executor-model.json",
-                Details = "Installed model executor available for prepared tasks."
+                Details = !string.IsNullOrWhiteSpace(model.SemanticDescriptionEn)
+                    ? model.SemanticDescriptionEn
+                    : "Installed model executor available for prepared tasks.",
+                SemanticDescriptionRu = model.SemanticDescriptionRu,
+                SemanticDescriptionEn = model.SemanticDescriptionEn
             }));
         items.Add(CreateMissingRole("embedding", "Embedding model", "Needed later for RAG and semantic document search."));
         items.AddRange(_componentManager.GetAvailableCapabilities()
+            .Where(ComponentAdapterRegistry.IsCallable)
             .Select(capability => CreateStaticTool(
                 "component_capability",
                 capability,
                 true,
-                "Verified local file-processing capability.")));
+                "Verified package plus trusted callable AI HUB adapter.")));
 
         return new CapabilityInventoryResponse
         {

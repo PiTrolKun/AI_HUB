@@ -19,4 +19,8 @@ public sealed class CapabilityInventoryItem
     public string Source { get; set; } = string.Empty;
 
     public string Details { get; set; } = string.Empty;
+
+    public string SemanticDescriptionRu { get; set; } = string.Empty;
+
+    public string SemanticDescriptionEn { get; set; } = string.Empty;
 }

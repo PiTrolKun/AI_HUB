@@ -35,6 +35,9 @@ public partial class MainWindow
             var card = new ComponentCardViewModel
             {
                 Entry = status.Entry,
+                DescriptionText = ComponentSemanticPassportCatalog.GetDescription(
+                    status.Entry,
+                    _localizationService.CurrentLanguageCode),
                 Status = LocalizeComponentStatus(status),
                 CanDownload = !status.Entry.IsBuiltIn
                     && !status.Entry.IsPlanned
@@ -192,6 +195,9 @@ public partial class MainWindow
             .Select(entry => new ComponentCardViewModel
             {
                 Entry = entry,
+                DescriptionText = ComponentSemanticPassportCatalog.GetDescription(
+                    entry,
+                    _localizationService.CurrentLanguageCode),
                 CanDownload = true
             })
             .ToList();
@@ -382,38 +388,71 @@ public partial class MainWindow
 
     private async Task HandleExecutorCapabilityRequestAsync(ExecutorTurnResult turn)
     {
-        var capability = turn.RequestedCapability;
-        var providers = ComponentCatalog.FindProviders(capability);
-        if (providers.Count == 0)
+        var requests = turn.RequestedCapabilities.Count > 0
+            ? turn.RequestedCapabilities
+            :
+            [
+                new ExecutorCapabilityRequest
+                {
+                    Id = turn.RequestedCapability,
+                    Purpose = turn.CapabilityReason,
+                    Required = turn.CapabilityRequired
+                }
+            ];
+        var resolver = new CapabilityResolverService(_componentManager);
+        var plan = resolver.Resolve(requests, turn.CapabilityReason);
+        var externalDiscoveryAllowed = false;
+        if (plan.RequiresExternalDiscovery)
+        {
+            var unknown = plan.Bindings
+                .Where(binding =>
+                    binding.Status == CapabilityBindingStatuses.UnknownCapability)
+                .Select(binding => $"• {binding.CapabilityId}: {binding.Purpose}");
+            var externalConfirmation = WpfMessageBox.Show(
+                this,
+                string.Join(
+                    Environment.NewLine,
+                    L("Components.ExternalDiscoveryWarning"),
+                    string.Empty,
+                    string.Join(Environment.NewLine, unknown)),
+                L("Components.ExternalDiscoveryTitle"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            externalDiscoveryAllowed = externalConfirmation == MessageBoxResult.Yes;
+        }
+
+        if (plan.IsExecutable)
         {
             await ContinueExecutorAfterCapabilityAsync(
-                capability,
-                "capability_unavailable",
-                "No trusted provider exists in the AI HUB catalog.");
+                requests,
+                "capability_bundle_ready",
+                BuildCapabilityResolutionDetails(plan, externalDiscoveryAllowed));
             return;
         }
 
-        if (_componentManager.IsCapabilityAvailable(capability))
+        var pending = plan.Acquisition.Items
+            .Where(item => !item.AlreadyAvailable)
+            .ToList();
+        if (pending.Count == 0)
         {
             await ContinueExecutorAfterCapabilityAsync(
-                capability,
-                "capability_available",
-                "The requested capability is already installed and passed health-check.");
+                requests,
+                externalDiscoveryAllowed
+                    ? "capability_external_discovery_authorized"
+                    : "capability_bundle_unavailable",
+                BuildCapabilityResolutionDetails(plan, externalDiscoveryAllowed));
             return;
         }
 
-        var plan = _componentManager.BuildPlan(
-            [capability],
-            turn.CapabilityReason,
-            turn.CapabilityRequired);
-        var pending = plan.Items.Where(item => !item.AlreadyAvailable).ToList();
         var message = string.Join(
             Environment.NewLine,
             LF("Components.ExecutorRequestReason", turn.CapabilityReason),
             string.Empty,
             string.Join(Environment.NewLine, pending.Select(item => $"• {item.Name}")),
             string.Empty,
-            LF("Components.ExecutorRequestSize", ComponentCardViewModel.FormatBytes(plan.TotalDownloadBytes)));
+            LF(
+                "Components.ExecutorRequestSize",
+                ComponentCardViewModel.FormatBytes(plan.Acquisition.TotalDownloadBytes)));
         var confirmation = WpfMessageBox.Show(
             this,
             message,
@@ -423,9 +462,12 @@ public partial class MainWindow
         if (confirmation != MessageBoxResult.Yes)
         {
             await ContinueExecutorAfterCapabilityAsync(
-                capability,
-                "capability_denied",
-                "The user declined the component acquisition plan.");
+                requests,
+                externalDiscoveryAllowed
+                    ? "capability_download_denied_external_discovery_authorized"
+                    : "capability_download_denied",
+                "The user declined the component acquisition plan. "
+                + BuildCapabilityResolutionDetails(plan, externalDiscoveryAllowed));
             return;
         }
 
@@ -466,21 +508,23 @@ public partial class MainWindow
                     }
                 }
             }
-            var result = _componentManager.IsCapabilityAvailable(capability)
-                ? "capability_available"
-                : "capability_needs_manual_install";
+            var refreshed = resolver.Resolve(requests, turn.CapabilityReason);
+            var result = refreshed.IsExecutable
+                ? "capability_bundle_ready"
+                : refreshed.Bindings.Any(binding =>
+                    binding.Status == CapabilityBindingStatuses.AdapterMissing)
+                    ? "capability_adapter_missing"
+                    : "capability_needs_manual_install";
             await ContinueExecutorAfterCapabilityAsync(
-                capability,
+                requests,
                 result,
-                result == "capability_available"
-                    ? "The trusted component plan completed and passed health-check."
-                    : "The package was downloaded, but a system installation or health-check is still required.");
+                BuildCapabilityResolutionDetails(refreshed, externalDiscoveryAllowed));
         }
         catch (Exception ex)
         {
             await ContinueExecutorAfterCapabilityAsync(
-                capability,
-                "capability_install_failed",
+                requests,
+                "capability_bundle_install_failed",
                 ex.Message);
         }
         finally
@@ -495,6 +539,24 @@ public partial class MainWindow
         string resultCode,
         string details)
     {
+        await ContinueExecutorAfterCapabilityAsync(
+            [
+                new ExecutorCapabilityRequest
+                {
+                    Id = capability,
+                    Purpose = details,
+                    Required = true
+                }
+            ],
+            resultCode,
+            details);
+    }
+
+    private async Task ContinueExecutorAfterCapabilityAsync(
+        IReadOnlyCollection<ExecutorCapabilityRequest> capabilities,
+        string resultCode,
+        string details)
+    {
         _executorCts?.Dispose();
         _executorCts = new CancellationTokenSource();
         SetExecutorInteractionEnabled(false);
@@ -503,7 +565,7 @@ public partial class MainWindow
         try
         {
             var result = await _executorWorkflowService.ContinueAfterCapabilityRequestAsync(
-                capability,
+                capabilities,
                 resultCode,
                 details,
                 CreateMatrixStreamProgress(),
@@ -518,7 +580,7 @@ public partial class MainWindow
         {
             _executorWorkflowService.Write("executor_capability_continuation_failed", new
             {
-                Capability = capability,
+                Capabilities = capabilities,
                 Result = resultCode,
                 ex.Message,
                 ErrorType = ex.GetType().FullName
@@ -531,6 +593,31 @@ public partial class MainWindow
             BackFromChoiceScenarioButton.IsEnabled = true;
             SetExecutorInteractionEnabled(true);
         }
+    }
+
+    private static string BuildCapabilityResolutionDetails(
+        CapabilityResolutionPlan plan,
+        bool externalDiscoveryAllowed)
+    {
+        var lines = plan.Bindings.Select(binding =>
+        {
+            var adapter = ComponentAdapterRegistry.Find(binding.CapabilityId);
+            return string.Join(
+                "; ",
+                $"capability={binding.CapabilityId}",
+                $"requested_capability={binding.RequestedCapabilityId}",
+                $"required={binding.Required}",
+                $"status={binding.Status}",
+                $"package={binding.ComponentName}",
+                $"adapter={binding.AdapterId}",
+                $"tools={string.Join(',', binding.ToolNames)}",
+                $"usage={adapter?.UsageSummary ?? string.Empty}",
+                binding.Details);
+        });
+        return string.Join(
+            Environment.NewLine,
+            lines.Append(
+                $"external_discovery_authorized={externalDiscoveryAllowed.ToString().ToLowerInvariant()}"));
     }
 
     private string BuildExecutorComponentPlanText(ComponentAcquisitionPlan? plan)

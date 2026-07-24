@@ -43,10 +43,22 @@ public static class ExecutorResultParser
             parsed.WorkingResultFragment = ExecutorWorkingResultPolicy.Clamp(parsed.WorkingResultFragment);
             parsed.CompletionReason = parsed.CompletionReason.Trim();
             parsed.Result = parsed.Result.Trim();
-            parsed.Options = NormalizeList(parsed.Options, 6);
+            parsed.Options = NormalizeOptions(parsed.Options);
             parsed.RequestedTools = NormalizeList(parsed.RequestedTools, 6);
             parsed.RequestedCapability = parsed.RequestedCapability.Trim().ToLowerInvariant();
             parsed.CapabilityReason = parsed.CapabilityReason.Trim();
+            parsed.RequestedCapabilities = NormalizeCapabilities(
+                parsed.RequestedCapabilities,
+                parsed.RequestedCapability,
+                parsed.CapabilityReason,
+                parsed.CapabilityRequired);
+            if (parsed.RequestedCapabilities.Count > 0)
+            {
+                var primary = parsed.RequestedCapabilities[0];
+                parsed.RequestedCapability = primary.Id;
+                parsed.CapabilityReason = primary.Purpose;
+                parsed.CapabilityRequired = primary.Required;
+            }
             parsed.MissingCriticalInputs = NormalizeList(parsed.MissingCriticalInputs, 12);
             parsed.Assumptions = NormalizeList(parsed.Assumptions, 12);
             parsed.Sources = NormalizeList(parsed.Sources, 24);
@@ -69,8 +81,10 @@ public static class ExecutorResultParser
                         && (parsed.Options.Count > 0 || parsed.AllowCustom),
                     ExecutorTurnActions.RequestTool => parsed.RequestedTools.Count > 0,
                     ExecutorTurnActions.RequestCapability =>
-                        IsAllowedCapability(parsed.RequestedCapability)
-                        && !string.IsNullOrWhiteSpace(parsed.CapabilityReason),
+                        parsed.RequestedCapabilities.Count > 0
+                        && parsed.RequestedCapabilities.All(request =>
+                            !string.IsNullOrWhiteSpace(request.Id)
+                            && !string.IsNullOrWhiteSpace(request.Purpose)),
                     ExecutorTurnActions.SuggestFinalization =>
                         parsed.CanFinalize
                         &&
@@ -153,8 +167,77 @@ public static class ExecutorResultParser
         return normalized;
     }
 
-    private static bool IsAllowedCapability(string capability) =>
-        ComponentCatalog.FindProviders(capability).Count > 0;
+    private static List<ExecutorTurnOption> NormalizeOptions(
+        IEnumerable<ExecutorTurnOption>? values)
+    {
+        var result = new List<ExecutorTurnOption>();
+        var signatures = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var recommendationUsed = false;
+        foreach (var source in values ?? [])
+        {
+            if (source is null || string.IsNullOrWhiteSpace(source.Title))
+            {
+                continue;
+            }
+
+            var option = new ExecutorTurnOption
+            {
+                Title = source.Title.Trim(),
+                Intent = NormalizeOptionIntent(source.Intent),
+                Action = source.Action.Trim().ToLowerInvariant(),
+                TargetId = source.TargetId.Trim(),
+                Effect = source.Effect.Trim(),
+                IsRecommended = source.IsRecommended && !recommendationUsed
+            };
+            if (option.Intent == ExecutorOptionIntents.ApproveAction
+                && !IsAllowedOptionAction(option.Action))
+            {
+                continue;
+            }
+
+            if (option.Intent != ExecutorOptionIntents.ApproveAction)
+            {
+                option.Action = string.Empty;
+                option.TargetId = string.Empty;
+            }
+
+            var signature = option.Intent == ExecutorOptionIntents.ApproveAction
+                ? $"{option.Intent}|{option.Action}|{option.TargetId}"
+                : $"{option.Intent}|{NormalizeOptionText(option.Title)}";
+            if (!signatures.Add(signature))
+            {
+                continue;
+            }
+
+            recommendationUsed |= option.IsRecommended;
+            result.Add(option);
+            if (result.Count == 6)
+            {
+                break;
+            }
+        }
+
+        return result;
+    }
+
+    private static string NormalizeOptionIntent(string value) =>
+        value.Trim().ToLowerInvariant() switch
+        {
+            ExecutorOptionIntents.ApproveAction => ExecutorOptionIntents.ApproveAction,
+            ExecutorOptionIntents.DeclineAction => ExecutorOptionIntents.DeclineAction,
+            _ => ExecutorOptionIntents.Answer
+        };
+
+    private static bool IsAllowedOptionAction(string action) =>
+        action is "session_files_list"
+            or "session_file_inspect"
+            or "session_file_read";
+
+    private static string NormalizeOptionText(string value) =>
+        string.Join(
+            ' ',
+            value.Trim().ToLowerInvariant()
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static bool IsMeaningfulResult(string value)
     {
@@ -206,4 +289,38 @@ public static class ExecutorResultParser
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(maximum)
             .ToList();
+
+    private static List<ExecutorCapabilityRequest> NormalizeCapabilities(
+        IEnumerable<ExecutorCapabilityRequest>? values,
+        string legacyCapability,
+        string legacyReason,
+        bool legacyRequired)
+    {
+        var normalized = (values ?? [])
+            .Where(value => value is not null && !string.IsNullOrWhiteSpace(value.Id))
+            .Select(value => new ExecutorCapabilityRequest
+            {
+                Id = value.Id.Trim().ToLowerInvariant(),
+                Purpose = value.Purpose.Trim(),
+                Required = value.Required,
+                Alternatives = NormalizeList(value.Alternatives, 6)
+                    .Select(item => item.ToLowerInvariant())
+                    .ToList()
+            })
+            .GroupBy(value => value.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .Take(8)
+            .ToList();
+        if (normalized.Count == 0 && !string.IsNullOrWhiteSpace(legacyCapability))
+        {
+            normalized.Add(new ExecutorCapabilityRequest
+            {
+                Id = legacyCapability.Trim().ToLowerInvariant(),
+                Purpose = legacyReason.Trim(),
+                Required = legacyRequired
+            });
+        }
+
+        return normalized;
+    }
 }

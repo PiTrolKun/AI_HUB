@@ -4,17 +4,20 @@ namespace AIHub.Services;
 
 public sealed class ExecutorWorkflowService : IDisposable
 {
-    private const int MaximumToolRequestsPerTurn = 3;
     private readonly ExecutorModelArtifactResolver _resolver = new(new HuggingFaceExecutorArtifactSource());
     private readonly ExecutorModelInstaller _installer = new();
     private readonly UserContextService _userContextService;
+    private readonly ModelSemanticPassportService _semanticPassportService;
     private ExecutorSessionService? _session;
     private ISessionEventLog? _sessionLog;
+    private ExecutorModelArtifact? _pendingPassportArtifact;
+    private int _autonomySeconds = CoreAutonomySettings.DefaultSeconds;
     private bool _disposed;
 
     public ExecutorWorkflowService(UserContextService userContextService)
     {
         _userContextService = userContextService;
+        _semanticPassportService = new ModelSemanticPassportService(userContextService);
     }
 
     public event EventHandler<SessionKnowledgeTreeChangedEventArgs>? KnowledgeTreeChanged;
@@ -31,16 +34,36 @@ public sealed class ExecutorWorkflowService : IDisposable
 
     public string ActiveLogPath => _sessionLog?.FilePath ?? string.Empty;
 
+    public bool HasActiveSession => _session is not null;
+
+    public void ConfigureAutonomy(int seconds)
+    {
+        _autonomySeconds = Math.Clamp(
+            seconds,
+            CoreAutonomySettings.MinimumSeconds,
+            CoreAutonomySettings.MaximumSeconds);
+        _session?.ConfigureAutonomy(_autonomySeconds);
+    }
+
     public ExecutorSessionCheckpoint? CreateCheckpoint() =>
         _session?.CreateCheckpoint();
 
-    public Task<ExecutorModelArtifact> ResolveAsync(
+    public async Task<ExecutorModelArtifact> ResolveAsync(
         string requestedModel,
         StorageSettings storageSettings,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _resolver.ResolveAsync(requestedModel, storageSettings, cancellationToken);
+        var artifact = await _resolver.ResolveAsync(
+            requestedModel,
+            storageSettings,
+            cancellationToken);
+        if (artifact.IsInstalled)
+        {
+            _pendingPassportArtifact = artifact;
+        }
+
+        return artifact;
     }
 
     public async Task<ExecutorModelArtifact> InstallAsync(
@@ -70,7 +93,9 @@ public sealed class ExecutorWorkflowService : IDisposable
                 downloaded.SizeBytes,
                 0,
                 "installed"));
-            return _installer.MarkRuntimeVerified(downloaded);
+            var installed = _installer.MarkRuntimeVerified(downloaded);
+            _pendingPassportArtifact = installed;
+            return installed;
         }
         catch (OperationCanceledException)
         {
@@ -88,6 +113,7 @@ public sealed class ExecutorWorkflowService : IDisposable
     public async Task<ExecutorTurnResult> ExecuteAsync(
         ExecutorModelArtifact artifact,
         ExecutorHandoffPackage handoff,
+        SessionFileManifest sessionFileManifest,
         StorageSettings storageSettings,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
@@ -98,11 +124,12 @@ public sealed class ExecutorWorkflowService : IDisposable
             storageSettings,
             handoff.ParentCoreSessionId,
             handoff.ParentRunId);
-        _session = new ExecutorSessionService(_userContextService);
+        _session = new ExecutorSessionService(_userContextService, _autonomySeconds);
         _session.KnowledgeTree.Changed += SessionKnowledgeTree_Changed;
         var turn = await _session.ExecuteAsync(
             artifact,
             handoff,
+            sessionFileManifest,
             storageSettings,
             _sessionLog,
             streamProgress,
@@ -114,6 +141,7 @@ public sealed class ExecutorWorkflowService : IDisposable
     public ExecutorTurnResult Restore(
         ExecutorSessionCheckpoint checkpoint,
         ExecutorModelArtifact installedArtifact,
+        SessionFileManifest sessionFileManifest,
         StorageSettings storageSettings,
         SessionRestorationContext restoration)
     {
@@ -123,11 +151,12 @@ public sealed class ExecutorWorkflowService : IDisposable
             storageSettings,
             restoration.SessionId,
             restoration.RunId);
-        _session = new ExecutorSessionService(_userContextService);
+        _session = new ExecutorSessionService(_userContextService, _autonomySeconds);
         _session.KnowledgeTree.Changed += SessionKnowledgeTree_Changed;
         var turn = _session.Restore(
             checkpoint,
             installedArtifact,
+            sessionFileManifest,
             storageSettings,
             _sessionLog,
             restoration);
@@ -160,8 +189,24 @@ public sealed class ExecutorWorkflowService : IDisposable
         return turn;
     }
 
+    public async Task<ExecutorTurnResult> ContinueApprovedActionAndRunAsync(
+        ExecutorTurnOption approvedOption,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ContinueApprovedActionAsync(
+            approvedOption,
+            streamProgress,
+            cancellationToken);
+        turn = await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
+    }
+
     public async Task<ExecutorTurnResult> UpdateFileManifestAsync(
-        SessionFilePromptManifest fileManifest,
+        SessionFileManifest fileManifest,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
@@ -219,6 +264,26 @@ public sealed class ExecutorWorkflowService : IDisposable
         return turn;
     }
 
+    public async Task<ExecutorTurnResult> ContinueAfterCapabilityRequestAsync(
+        IReadOnlyCollection<ExecutorCapabilityRequest> capabilities,
+        string resultCode,
+        string details,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ContinueAfterCapabilityRequestAsync(
+            capabilities,
+            resultCode,
+            details,
+            streamProgress,
+            cancellationToken);
+        turn = await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
+    }
+
     public async Task<ExecutorResultSnapshot> CreateFinalResultAsync(
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
@@ -238,13 +303,31 @@ public sealed class ExecutorWorkflowService : IDisposable
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
-        for (var request = 1; request <= MaximumToolRequestsPerTurn; request++)
+        if (turn.Action != ExecutorTurnActions.RequestTool)
+        {
+            return turn;
+        }
+
+        var budget = new AutonomyExecutionBudget(_autonomySeconds);
+        budget.Start();
+        var request = 0;
+        var lastFingerprint = string.Empty;
+        while (budget.CanStartNext(request == 0))
         {
             if (turn.Action != ExecutorTurnActions.RequestTool)
             {
                 return turn;
             }
 
+            request++;
+            var fingerprint = string.Join(
+                "|",
+                turn.RequestedTools.Order(StringComparer.Ordinal));
+            if (!budget.RegisterProgress(fingerprint))
+            {
+                return session.CreateToolSafetyPause("tool_request_stagnation");
+            }
+            lastFingerprint = fingerprint;
             _sessionLog?.Write("executor_tool_request", new
             {
                 Request = request,
@@ -276,7 +359,13 @@ public sealed class ExecutorWorkflowService : IDisposable
             }
         }
 
-        return session.CreateToolSafetyPause("tool_request_limit");
+        _sessionLog?.Write("executor_tool_time_budget_reached", new
+        {
+            ElapsedMilliseconds = budget.Elapsed.TotalMilliseconds,
+            LimitMilliseconds = budget.Limit.TotalMilliseconds,
+            LastFingerprint = lastFingerprint
+        });
+        return session.CreateToolSafetyPause("tool_request_time_budget");
     }
 
     public void Stop(string reason)
@@ -296,6 +385,15 @@ public sealed class ExecutorWorkflowService : IDisposable
 
         _session?.Dispose();
         _session = null;
+    }
+
+    public bool QueuePendingSemanticPassportGeneration(StorageSettings storageSettings)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var artifact = _pendingPassportArtifact;
+        _pendingPassportArtifact = null;
+        return artifact is not null
+            && _semanticPassportService.QueueGeneration(artifact, storageSettings);
     }
 
     private void SessionKnowledgeTree_Changed(

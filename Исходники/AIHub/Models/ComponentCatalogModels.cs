@@ -171,6 +171,8 @@ public sealed class ComponentCardViewModel : INotifyPropertyChanged
 
     public required ComponentCatalogEntry Entry { get; init; }
 
+    public string DescriptionText { get; init; } = string.Empty;
+
     public string Status
     {
         get => _status;

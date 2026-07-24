@@ -130,7 +130,7 @@ public sealed class DebugModelDiscoveryService
     {
         try
         {
-            var manifest = JsonSerializer.Deserialize<ExecutorModelManifest>(File.ReadAllText(manifestPath), JsonOptions);
+            var manifest = ExecutorModelManifestStore.Load(manifestPath);
             var directory = Path.GetDirectoryName(manifestPath);
             var path = directory is null ? null : Path.Combine(directory, manifest?.File ?? string.Empty);
             if (manifest is null
@@ -142,6 +142,14 @@ public sealed class DebugModelDiscoveryService
                 return null;
             }
 
+            var passport = ExecutorModelManifestStore.ResolvePassport(manifest);
+            if (passport.Source == "manual_catalog"
+                && manifest.SemanticPassport.Source != "manual_catalog")
+            {
+                manifest.SemanticPassport = passport;
+                ExecutorModelManifestStore.Save(manifestPath, manifest);
+            }
+
             return new DebugModelInfo
             {
                 Name = string.IsNullOrWhiteSpace(manifest.RepoId) ? manifest.RequestedModel : manifest.RepoId,
@@ -150,7 +158,9 @@ public sealed class DebugModelDiscoveryService
                 Role = "executor",
                 Status = manifest.Status,
                 Format = "gguf",
-                IsRunnable = true
+                IsRunnable = true,
+                SemanticDescriptionRu = passport.DescriptionRu,
+                SemanticDescriptionEn = passport.DescriptionEn
             };
         }
         catch

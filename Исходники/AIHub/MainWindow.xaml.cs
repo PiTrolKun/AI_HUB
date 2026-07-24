@@ -78,6 +78,7 @@ public partial class MainWindow : Window
     private bool _choiceScenarioRequestInProgress;
     private bool _isApplyingLanguageSelection;
     private bool _isApplyingCoreVoiceSettings = true;
+    private bool _isApplyingCoreAutonomySettings = true;
     private bool _coreSpeechPresentationActive;
     private long _coreSpeechPresentationId;
     private long _executorSpeechPresentationId;
@@ -136,6 +137,7 @@ public partial class MainWindow : Window
         InitializeComponentCatalogUi();
         RefreshPreviousSessions();
         LoadCoreVoiceSettingsIntoControls();
+        LoadCoreAutonomySettingsIntoControls();
         UpdateCoreVoiceControls();
         _ = RefreshModelCatalogOnStartupAsync();
         UpdatePrimaryActionButton();
@@ -410,6 +412,9 @@ public partial class MainWindow : Window
     {
         _appSettings = _appSettingsStore.LoadOrCreate();
         _appSettings.CoreVoice ??= new CoreVoiceSettings();
+        _appSettings.CoreAutonomy ??= new CoreAutonomySettings();
+        _executorWorkflowService.ConfigureAutonomy(
+            _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds);
         if (!_appSettings.LanguageWasChosen)
         {
             var windowsLanguage = LocalizationService.GetWindowsLanguageCode();
@@ -517,6 +522,10 @@ public partial class MainWindow : Window
         SettingsCoreVoiceVolumeText.Text = L("Settings.CoreVoiceVolume");
         SettingsCoreVoiceRateText.Text = L("Settings.CoreVoiceRate");
         CoreVoiceTestButton.Content = L("Settings.CoreVoiceTest");
+        SettingsCoreAutonomyTitleText.Text = L("Settings.CoreAutonomyTitle");
+        SettingsCoreAutonomyHelpText.Text = L("Settings.CoreAutonomyHelp");
+        SettingsCoreAutonomyTimeText.Text = L("Settings.CoreAutonomyTime");
+        UpdateCoreAutonomyTimeText();
         ProcessingComponentsExpander.Header = L("Components.ProcessingTitle");
         ProcessingComponentsHelpText.Text = L("Components.ProcessingHelp");
         ViewerComponentsExpander.Header = L("Components.ViewersTitle");
@@ -588,6 +597,7 @@ public partial class MainWindow : Window
         ChoiceCustomSubmitButton.Content = L("ChoiceScenario.AcceptCustom");
         ChoiceGoFinalButton.Content = L("ChoiceScenario.GoFinal");
         ChoiceScenarioSummaryTitleText.Text = L("ChoiceScenario.TaskCardTitle");
+        ExecutionRouteTitleText.Text = L("ExecutionRoute.Title");
         ExecutorPrepareButton.Content = L("Executor.Prepare");
         ExecutorDownloadTitleText.Text = L("Executor.DownloadTitle");
         ExecutorCancelDownloadButton.Content = L("ChoiceScenario.Cancel");
@@ -608,6 +618,16 @@ public partial class MainWindow : Window
         BackFromChoiceScenarioButton.Content = L("Settings.Back");
         CancelChoiceScenarioButton.Content = L("ChoiceScenario.Cancel");
         RefreshSessionFileCards();
+        if (_currentChoiceScenarioStep?.TaskCard is { } localizedTaskCard)
+        {
+            RenderExecutionRoute(localizedTaskCard);
+            if (_selectedExecutorCandidate is not null)
+            {
+                ExecutorPrepareButton.Content = localizedTaskCard.ExecutionRoute.HasBlockedRequirements
+                    ? L("Executor.CheckRoute")
+                    : L("Executor.Prepare");
+            }
+        }
 
         DownloadCoreModelButton.Content = L("CoreModel.Download");
         OpenSetupFromCoreModelButton.Content = L("CoreModel.OpenSetup");
@@ -747,6 +767,70 @@ public partial class MainWindow : Window
         _appSettings.CoreVoice.Rate = (int)Math.Round(CoreVoiceRateSlider.Value);
         _appSettingsStore.Save(_appSettings);
         UpdateCoreVoiceControls();
+    }
+
+    private void LoadCoreAutonomySettingsIntoControls()
+    {
+        _isApplyingCoreAutonomySettings = true;
+        try
+        {
+            _appSettings.CoreAutonomy ??= new CoreAutonomySettings();
+            CoreAutonomyTimeSlider.Value =
+                _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds;
+            UpdateCoreAutonomyTimeText();
+        }
+        finally
+        {
+            _isApplyingCoreAutonomySettings = false;
+        }
+    }
+
+    private void CoreAutonomyTimeSlider_ValueChanged(
+        object sender,
+        RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isApplyingCoreAutonomySettings)
+        {
+            return;
+        }
+
+        _appSettings.CoreAutonomy ??= new CoreAutonomySettings();
+        _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds =
+            (int)Math.Round(CoreAutonomyTimeSlider.Value);
+        _appSettingsStore.Save(_appSettings);
+        _executorWorkflowService.ConfigureAutonomy(
+            _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds);
+        UpdateCoreAutonomyTimeText();
+        StatusText.Text = LF(
+            "Status.CoreAutonomySaved",
+            FormatAutonomyDuration(
+                _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds));
+    }
+
+    private void UpdateCoreAutonomyTimeText()
+    {
+        if (CoreAutonomyTimeValueText is null)
+        {
+            return;
+        }
+
+        var seconds = _appSettings.CoreAutonomy?.MaximumIndependentSearchSeconds
+            ?? CoreAutonomySettings.DefaultSeconds;
+        CoreAutonomyTimeValueText.Text = FormatAutonomyDuration(seconds);
+    }
+
+    private string FormatAutonomyDuration(int seconds)
+    {
+        if (seconds < 60)
+        {
+            return LF("Settings.CoreAutonomySeconds", seconds);
+        }
+
+        var minutes = seconds / 60;
+        var remainder = seconds % 60;
+        return remainder == 0
+            ? LF("Settings.CoreAutonomyMinutes", minutes)
+            : LF("Settings.CoreAutonomyMinutesSeconds", minutes, remainder);
     }
 
     private async void CoreVoiceTestButton_Click(object sender, RoutedEventArgs e)
@@ -1800,10 +1884,13 @@ public partial class MainWindow : Window
         card.ExecutorRole = candidate.Role;
         card.ExecutorCapabilityClass = candidate.CapabilityClass;
         card.ExecutorReason = BuildExecutorVerifiedReason(candidate);
+        RenderExecutionRoute(card);
         RenderExecutorCandidates(card);
-        var canPrepare = candidate.UnresolvedCapabilities.Count == 0;
-        ExecutorPrepareButton.Visibility = canPrepare ? Visibility.Visible : Visibility.Collapsed;
-        ExecutorPrepareButton.IsEnabled = canPrepare;
+        ExecutorPrepareButton.Content = card.ExecutionRoute.HasBlockedRequirements
+            ? L("Executor.CheckRoute")
+            : L("Executor.Prepare");
+        ExecutorPrepareButton.Visibility = Visibility.Visible;
+        ExecutorPrepareButton.IsEnabled = true;
     }
 
     private static bool ModelNamesReferToSameExecutor(string left, string right)
@@ -2554,6 +2641,8 @@ public partial class MainWindow : Window
                     string.Empty,
                     BuildCoreRestorationPrompt(_sessionRestorationContext));
             }
+            var filePromptManifest = _sessionFileManifestService.CreatePromptManifest(
+                GetActiveFileManifest());
             var userPrompt = _choiceScenarioService.BuildUserPrompt(
                 _choiceScenarioState.Answers,
                 requestFinal,
@@ -2565,7 +2654,7 @@ public partial class MainWindow : Window
                 _choiceScenarioState.SubstantiveStepsUsed,
                 _choiceScenarioState.StepsRemaining,
                 _choiceScenarioState.CapabilityProfile,
-                _sessionFileManifestService.CreatePromptManifest(GetActiveFileManifest()),
+                filePromptManifest,
                 requestFinal ? "manual_final" : requestTrigger);
             _choiceScenarioLog?.Write("scenario_core_prompt", new
             {
@@ -2574,7 +2663,7 @@ public partial class MainWindow : Window
                 RequestFinal = effectiveRequestFinal,
                 ManualRequestFinal = requestFinal,
                 RequestTrigger = requestFinal ? "manual_final" : requestTrigger,
-                FileManifest = _sessionFileManifestService.CreatePromptManifest(GetActiveFileManifest()),
+                FileManifest = filePromptManifest,
                 MustReturnFinal = mustReturnFinal,
                 CapabilityProfile = _choiceScenarioState.CapabilityProfile,
                 StepBudget = stepBudget,
@@ -2596,7 +2685,9 @@ public partial class MainWindow : Window
                 mustReturnFinal,
                 _userProfile.WorkloadMode,
                 _choiceScenarioState.CapabilityProfile,
-                streamProgress);
+                streamProgress,
+                _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds,
+                filePromptManifest);
             _choiceScenarioLog?.Write("scenario_core_raw_response", new
             {
                 Model = model.Name,
@@ -2640,7 +2731,9 @@ public partial class MainWindow : Window
                         mustReturnFinal,
                         _userProfile.WorkloadMode,
                         _choiceScenarioState.CapabilityProfile,
-                        streamProgress);
+                        streamProgress,
+                        _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds,
+                        filePromptManifest);
                     step = generation.Step ?? step;
                     repeatedStep = !step.IsFinal
                         && (_choiceScenarioState.GetFingerprintCount(step) > 0
@@ -2669,7 +2762,10 @@ public partial class MainWindow : Window
                             mustReturnFinal: true,
                             workloadMode: _userProfile.WorkloadMode,
                             capabilityProfile: _choiceScenarioState.CapabilityProfile,
-                            streamProgress: streamProgress);
+                            streamProgress: streamProgress,
+                            autonomySeconds:
+                                _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds,
+                            fileManifest: filePromptManifest);
                         step = generation.Step ?? step;
                         if (!step.IsFinal)
                         {
@@ -2991,6 +3087,7 @@ public partial class MainWindow : Window
             ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
             ExecutorResultPanel.Visibility = Visibility.Collapsed;
             ExecutorCandidateChoicePanel.Visibility = Visibility.Collapsed;
+            ExecutionRoutePanel.Visibility = Visibility.Collapsed;
             _executorCandidateOptions.Clear();
             return;
         }
@@ -3032,6 +3129,7 @@ public partial class MainWindow : Window
         ChoiceScenarioSummaryPanel.Visibility = Visibility.Visible;
         ChoiceScenarioSummaryText.Text = builder.ToString().Trim();
         _selectedExecutorCandidate = null;
+        RenderExecutionRoute(step.TaskCard);
         RenderExecutorCandidates(step.TaskCard);
         ExecutorPrepareButton.Visibility = Visibility.Collapsed;
         ExecutorPrepareButton.IsEnabled = true;
@@ -3039,6 +3137,7 @@ public partial class MainWindow : Window
         ExecutorResultPanel.Visibility = Visibility.Collapsed;
         ExecutorDownloadProgressBar.Value = 0;
         _pendingExecutorArtifact = null;
+        _pendingExecutorComponentPlan = null;
     }
 
     private void RenderExecutorCandidates(ChoiceTaskCard? card)
@@ -3062,6 +3161,12 @@ public partial class MainWindow : Window
                 candidate,
                 candidate.Model,
                 BuildExecutorAvailabilityStatus(candidate),
+                string.Equals(
+                    _localizationService.CurrentLanguageCode,
+                    "en",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? candidate.SemanticDescriptionEn
+                    : candidate.SemanticDescriptionRu,
                 LF("Executor.Advantage", BuildExecutorVerifiedAdvantage(candidate)),
                 LF("Executor.Limitation", BuildExecutorVerifiedLimitation(candidate)),
                 recommendation,
@@ -3070,6 +3175,47 @@ public partial class MainWindow : Window
 
         ExecutorCandidateItemsControl.IsEnabled = true;
         ExecutorCandidateChoicePanel.Visibility = Visibility.Visible;
+    }
+
+    private void RenderExecutionRoute(ChoiceTaskCard? card)
+    {
+        if (card?.ExecutionRoute is not { Requirements.Count: > 0 } route)
+        {
+            ExecutionRoutePanel.Visibility = Visibility.Collapsed;
+            ExecutionRouteDetailsText.Text = string.Empty;
+            return;
+        }
+
+        var builder = new StringBuilder();
+        if (route.SourceFormats.Count > 0)
+        {
+            builder.AppendLine(LF(
+                "ExecutionRoute.SourceFormats",
+                string.Join(", ", route.SourceFormats)));
+        }
+
+        foreach (var requirement in route.Requirements)
+        {
+            var binding = route.Resolution.Bindings.FirstOrDefault(item =>
+                string.Equals(
+                    item.RequestedCapabilityId,
+                    requirement.Request.Id,
+                    StringComparison.OrdinalIgnoreCase));
+            builder.AppendLine(LF(
+                "ExecutionRoute.Stage",
+                L($"ExecutionRoute.Layer.{requirement.Layer}"),
+                requirement.Request.Id,
+                L($"ExecutionRoute.Status.{binding?.Status ?? CapabilityBindingStatuses.UnknownCapability}")));
+        }
+
+        ExecutionRouteTitleText.Text = L("ExecutionRoute.Title");
+        ExecutionRouteStatusText.Text = route.IsExecutable
+            ? L("ExecutionRoute.Ready")
+            : route.HasBlockedRequirements
+                ? L("ExecutionRoute.Blocked")
+                : L("ExecutionRoute.RequiresPreparation");
+        ExecutionRouteDetailsText.Text = builder.ToString().Trim();
+        ExecutionRoutePanel.Visibility = Visibility.Visible;
     }
 
     private void ExecutorCandidateButton_Click(object sender, RoutedEventArgs e)
@@ -3087,14 +3233,19 @@ public partial class MainWindow : Window
         card.ExecutorCapabilityClass = candidate.CapabilityClass;
         card.ExecutorReason = BuildExecutorVerifiedReason(candidate);
         RenderExecutorCandidates(card);
-        var canPrepare = candidate.UnresolvedCapabilities.Count == 0;
-        ExecutorPrepareButton.Visibility = canPrepare ? Visibility.Visible : Visibility.Collapsed;
-        ExecutorPrepareButton.IsEnabled = canPrepare;
-        StatusText.Text = canPrepare
+        var routeBlocked = card.ExecutionRoute.HasBlockedRequirements;
+        ExecutorPrepareButton.Content = routeBlocked
+            ? L("Executor.CheckRoute")
+            : L("Executor.Prepare");
+        ExecutorPrepareButton.Visibility = Visibility.Visible;
+        ExecutorPrepareButton.IsEnabled = true;
+        StatusText.Text = !routeBlocked
             ? LF("Status.ExecutorCandidateSelected", candidate.Model)
             : LF(
                 "Status.ExecutorUnresolvedCapabilities",
-                string.Join(", ", candidate.UnresolvedCapabilities));
+                string.Join(", ", card.ExecutionRoute.Resolution.Bindings
+                    .Where(binding => binding.Required && !binding.IsExecutable)
+                    .Select(binding => binding.RequestedCapabilityId)));
         _choiceScenarioLog?.Write("executor_candidate_selected", candidate);
         SaveActiveSessionCheckpoint(
             pendingCoreRequest: false,
@@ -3176,13 +3327,27 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_selectedExecutorCandidate.UnresolvedCapabilities.Count > 0)
+        card.ExecutionRoute = new ExecutionRoutePlannerService().Build(
+            card.CapabilityProfile,
+            _sessionFileManifestService.CreatePromptManifest(GetActiveFileManifest()),
+            "Revalidate the execution route before preparing the selected coordinator.");
+        RenderExecutionRoute(card);
+        _choiceScenarioLog?.Write("executor_execution_route_revalidated", card.ExecutionRoute);
+        if (card.ExecutionRoute.HasBlockedRequirements)
         {
+            _pendingExecutorArtifact = null;
+            _pendingExecutorComponentPlan = null;
             StatusText.Text = LF(
                 "Status.ExecutorUnresolvedCapabilities",
-                string.Join(", ", _selectedExecutorCandidate.UnresolvedCapabilities));
-            ExecutorPrepareButton.Visibility = Visibility.Collapsed;
-            ExecutorPrepareButton.IsEnabled = false;
+                string.Join(", ", card.ExecutionRoute.Resolution.Bindings
+                    .Where(binding =>
+                        binding.Required
+                        && binding.Status is CapabilityBindingStatuses.AdapterMissing
+                            or CapabilityBindingStatuses.UnknownCapability)
+                    .Select(binding => binding.RequestedCapabilityId)));
+            ExecutorPrepareButton.Content = L("Executor.CheckRoute");
+            ExecutorPrepareButton.Visibility = Visibility.Visible;
+            ExecutorPrepareButton.IsEnabled = true;
             return;
         }
 
@@ -3198,9 +3363,7 @@ public partial class MainWindow : Window
                 _storageSettings,
                 _executorCts.Token);
             _choiceScenarioLog?.Write("executor_artifact_resolved", _pendingExecutorArtifact);
-            _pendingExecutorComponentPlan = ComponentCapabilityMapper.BuildPlan(
-                card.CapabilityProfile,
-                "Required by the executor work profile.");
+            _pendingExecutorComponentPlan = card.ExecutionRoute.Resolution.Acquisition;
             SaveActiveSessionCheckpoint(
                 pendingCoreRequest: false,
                 pendingCoreRequestFinal: false);
@@ -3366,6 +3529,7 @@ public partial class MainWindow : Window
             var turn = _executorWorkflowService.Restore(
                 checkpoint,
                 artifact,
+                GetActiveFileManifest(),
                 _storageSettings,
                 restoration);
             DisplayExecutorResponse(turn, speak: false);
@@ -3476,6 +3640,7 @@ public partial class MainWindow : Window
             var result = await _executorWorkflowService.ExecuteAsync(
                 artifact,
                 handoff,
+                GetActiveFileManifest(),
                 _storageSettings,
                 streamProgress,
                 _executorCts.Token);
@@ -3521,6 +3686,12 @@ public partial class MainWindow : Window
             ShowCustomChoiceMenu(
                 (System.Windows.Controls.Button)sender,
                 executorContext: true);
+            return;
+        }
+
+        if (option.IsExecutorAction)
+        {
+            await ContinueExecutorActionAsync(option);
             return;
         }
 
@@ -3586,6 +3757,59 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ContinueExecutorActionAsync(ChoiceScenarioOption option)
+    {
+        CancelExecutorSpeech(revealFullText: true, "action_selected");
+        _executorCts?.Dispose();
+        _executorCts = new CancellationTokenSource();
+        SetExecutorInteractionEnabled(false);
+        BackFromChoiceScenarioButton.IsEnabled = false;
+        StartChoiceAiActivity();
+        StatusText.Text = L("Status.ExecutorRunning");
+        try
+        {
+            var result = await _executorWorkflowService.ContinueApprovedActionAndRunAsync(
+                new ExecutorTurnOption
+                {
+                    Title = option.Title,
+                    Intent = option.Intent,
+                    Action = option.Action,
+                    TargetId = option.TargetId,
+                    Effect = option.Effect,
+                    IsRecommended = option.IsRecommended
+                },
+                CreateMatrixStreamProgress(),
+                _executorCts.Token);
+            DisplayExecutorResponse(result);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_executorSessionFinishedByUser)
+            {
+                StatusText.Text = L("Status.ExecutorCancelled");
+            }
+        }
+        catch (Exception ex)
+        {
+            _executorWorkflowService.Write(
+                "executor_action_failed",
+                new
+                {
+                    option.Action,
+                    option.TargetId,
+                    ex.Message,
+                    ErrorType = ex.GetType().FullName
+                });
+            StatusText.Text = LF("Status.ExecutorFailed", ex.Message);
+        }
+        finally
+        {
+            StopChoiceAiActivity();
+            BackFromChoiceScenarioButton.IsEnabled = true;
+            SetExecutorInteractionEnabled(true);
+        }
+    }
+
     private async Task UpdateExecutorFileManifestAsync()
     {
         if (_activeResumableSession is null)
@@ -3602,10 +3826,8 @@ public partial class MainWindow : Window
         StatusText.Text = L("Status.ExecutorFilesUpdating");
         try
         {
-            var promptManifest = _sessionFileManifestService.CreatePromptManifest(
-                _activeResumableSession.FileManifest);
             var result = await _executorWorkflowService.UpdateFileManifestAsync(
-                promptManifest,
+                _activeResumableSession.FileManifest,
                 CreateMatrixStreamProgress(),
                 _executorCts.Token);
             DisplayExecutorResponse(result);
@@ -3723,7 +3945,13 @@ public partial class MainWindow : Window
                 _executorClarificationOptions.Add(new ChoiceScenarioOption
                 {
                     Id = "executor_response",
-                    Title = option
+                    Title = option.Title,
+                    Description = option.Effect,
+                    Intent = option.Intent,
+                    Action = option.Action,
+                    TargetId = option.TargetId,
+                    Effect = option.Effect,
+                    IsRecommended = option.IsRecommended
                 });
             }
         }
@@ -3807,6 +4035,7 @@ public partial class MainWindow : Window
 
     private ExecutorHandoffPackage BuildExecutorHandoff(ExecutorModelArtifact artifact, ChoiceTaskCard card)
     {
+        var activeFileManifest = GetActiveFileManifest();
         var handoff = new ExecutorHandoffPackage
         {
             SuggestedDirection = card.Area,
@@ -3823,7 +4052,8 @@ public partial class MainWindow : Window
             ParentCoreSessionId = _choiceScenarioLog?.SessionId ?? string.Empty,
             ParentRunId = _activeResumableSession?.CurrentRunId ?? string.Empty,
             FileManifest = _sessionFileManifestService.CreatePromptManifest(
-                GetActiveFileManifest()),
+                activeFileManifest,
+                contentAccessAvailable: true),
             Unknowns =
             [
                 "The exact subject or object of the user's work",
@@ -3855,7 +4085,9 @@ public partial class MainWindow : Window
         handoff.ProgramFacts.Add(new ExecutorHandoffItem
         {
             Name = "file_content_access",
-            Value = "unavailable_in_current_version",
+            Value = activeFileManifest.Files.Any(file => file.IsAvailable)
+                ? "available_via_safe_session_file_tools"
+                : "no_available_session_files",
             Source = "program_file_manifest",
             IsAuthoritative = true
         });
@@ -4634,11 +4866,17 @@ public partial class MainWindow : Window
 
     private void CancelExecutorSession(string reason)
     {
+        var hadActiveSession = _executorWorkflowService.HasActiveSession;
         CancelExecutorSpeech(revealFullText: true, reason);
         _executorCts?.Cancel();
         _executorCts?.Dispose();
         _executorCts = null;
         _executorWorkflowService.Stop(reason);
+        if (hadActiveSession
+            && reason is not "app_closed" and not "restoring_archived_session")
+        {
+            _executorWorkflowService.QueuePendingSemanticPassportGeneration(_storageSettings);
+        }
         CloseSessionTreeWindow();
         StopChoiceAiActivity();
     }

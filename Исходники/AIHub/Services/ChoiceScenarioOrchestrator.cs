@@ -5,10 +5,6 @@ namespace AIHub.Services;
 
 public sealed class ChoiceScenarioOrchestrator
 {
-    private const int MaxToolRounds = 6;
-    private const int MaxToolRequests = 8;
-    private const int MaxRepairAttempts = 3;
-
     private static readonly HashSet<string> CoreWebTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "web_search", "web_research", "web_read"
@@ -35,7 +31,9 @@ public sealed class ChoiceScenarioOrchestrator
         bool mustReturnFinal,
         string workloadMode,
         ChoiceCapabilityProfile capabilityProfile,
-        IProgress<ModelStreamChunk>? streamProgress = null)
+        IProgress<ModelStreamChunk>? streamProgress = null,
+        int autonomySeconds = CoreAutonomySettings.DefaultSeconds,
+        SessionFilePromptManifest? fileManifest = null)
     {
         var messages = new List<StructuredChatMessage>
         {
@@ -51,12 +49,16 @@ public sealed class ChoiceScenarioOrchestrator
         var finalRequested = requestFinal || mustReturnFinal;
         var computerPassport = new ComputerPassportService().EnsurePassport();
         ChoiceExecutorCandidatePool? candidatePool = null;
+        var budget = new AutonomyExecutionBudget(autonomySeconds);
+        var round = 0;
 
-        for (var round = 1; round <= MaxToolRounds; round++)
+        while (budget.CanStartNext(round == 0))
         {
+            round++;
             cancellationToken.ThrowIfCancellationRequested();
             if (finalRequested && candidatePool is null)
             {
+                budget.Start();
                 candidatePool = await BuildCandidatePoolAsync(
                     storageSettings,
                     capabilityProfile,
@@ -64,7 +66,8 @@ public sealed class ChoiceScenarioOrchestrator
                     model.Name,
                     computerPassport,
                     sessionLog,
-                    cancellationToken);
+                    cancellationToken,
+                    fileManifest);
                 if (!candidatePool.HasCandidatePair)
                 {
                     return CreatePoolError(candidatePool);
@@ -118,6 +121,7 @@ public sealed class ChoiceScenarioOrchestrator
                 break;
             }
 
+            budget.Start();
             messages.Add(new StructuredChatMessage
             {
                 Role = "assistant",
@@ -125,14 +129,24 @@ public sealed class ChoiceScenarioOrchestrator
                 ToolCalls = response.ToolCalls
             });
 
+            var toolFingerprint = string.Join(
+                "|",
+                response.ToolCalls.Select(toolCall =>
+                    $"{toolCall.Function.Name}:{toolCall.Function.Arguments}"));
+            if (!budget.RegisterProgress(toolFingerprint))
+            {
+                sessionLog.Write("scenario_tool_stagnation", new
+                {
+                    Round = round,
+                    Fingerprint = toolFingerprint
+                });
+                rawResponse = string.Empty;
+                break;
+            }
+
             foreach (var toolCall in response.ToolCalls)
             {
-                if (++toolRequests > MaxToolRequests)
-                {
-                    rawResponse = string.Empty;
-                    sessionLog.Write("scenario_tool_limit_reached", new { MaxToolRequests });
-                    break;
-                }
+                toolRequests++;
 
                 var command = toolCall.Function.Name;
                 string toolResult;
@@ -195,14 +209,22 @@ public sealed class ChoiceScenarioOrchestrator
                 });
             }
 
-            if (toolRequests > MaxToolRequests)
+        }
+
+        if (!budget.CanStartNext())
+        {
+            sessionLog.Write("scenario_autonomy_time_budget_reached", new
             {
-                break;
-            }
+                Round = round,
+                ToolRequests = toolRequests,
+                ElapsedMilliseconds = budget.Elapsed.TotalMilliseconds,
+                LimitMilliseconds = budget.Limit.TotalMilliseconds
+            });
         }
 
         if (IsFinalIntent(rawResponse) && candidatePool is null)
         {
+            budget.Start();
             candidatePool = await BuildCandidatePoolAsync(
                 storageSettings,
                 capabilityProfile,
@@ -210,7 +232,8 @@ public sealed class ChoiceScenarioOrchestrator
                 model.Name,
                 computerPassport,
                 sessionLog,
-                cancellationToken);
+                cancellationToken,
+                fileManifest);
             if (!candidatePool.HasCandidatePair)
             {
                 return CreatePoolError(candidatePool);
@@ -231,8 +254,11 @@ public sealed class ChoiceScenarioOrchestrator
             return new ChoiceScenarioGenerationResult { Step = step, RawResponse = rawResponse };
         }
 
-        for (var attempt = 1; attempt <= MaxRepairAttempts; attempt++)
+        var attempt = 0;
+        budget.Start();
+        while (budget.CanStartNext())
         {
+            attempt++;
             cancellationToken.ThrowIfCancellationRequested();
             sessionLog.Write("scenario_json_repair_request", new { Attempt = attempt, Error = error });
             var repairContext = new List<string>
@@ -271,13 +297,24 @@ public sealed class ChoiceScenarioOrchestrator
                     RepairAttempts = attempt
                 };
             }
+
+            if (!budget.RegisterProgress(
+                    $"repair:{rawResponse.Length}:{StringComparer.Ordinal.GetHashCode(rawResponse)}"))
+            {
+                sessionLog.Write("scenario_json_repair_stagnation", new
+                {
+                    Attempt = attempt,
+                    Error = error
+                });
+                break;
+            }
         }
 
         return new ChoiceScenarioGenerationResult
         {
             RawResponse = rawResponse,
             Error = error,
-            RepairAttempts = MaxRepairAttempts
+            RepairAttempts = attempt
         };
     }
 
@@ -288,7 +325,8 @@ public sealed class ChoiceScenarioOrchestrator
         string currentCoreName,
         ComputerPassport computerPassport,
         ISessionEventLog sessionLog,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SessionFilePromptManifest? fileManifest)
     {
         var pool = await _candidatePoolService.BuildAsync(
             storageSettings,
@@ -297,7 +335,8 @@ public sealed class ChoiceScenarioOrchestrator
             currentCoreName,
             computerPassport,
             sessionLog,
-            cancellationToken);
+            cancellationToken,
+            fileManifest);
         sessionLog.Write("scenario_trusted_candidate_pool", pool);
         return pool;
     }

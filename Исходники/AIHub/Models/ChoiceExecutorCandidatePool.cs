@@ -2,6 +2,8 @@ namespace AIHub.Models;
 
 public sealed class ChoiceExecutorCandidatePool
 {
+    public ExecutionRoutePlan ExecutionRoute { get; set; } = new();
+
     public List<string> RequiredProtocols { get; set; } = [];
 
     public List<string> RequiredCapabilities { get; set; } = [];
@@ -24,7 +26,7 @@ public sealed class ChoiceExecutorCandidatePool
         && AlternativeCandidates.Count > 0;
 
     public bool IsExecutionReady => HasCandidatePair
-        && UnresolvedCapabilities.Count == 0;
+        && ExecutionRoute.IsExecutable;
 
     public bool HasValidPair => IsExecutionReady;
 }
@@ -56,6 +58,10 @@ public sealed class ChoiceExecutorPoolCandidate
     public string HardwareStatus { get; set; } = string.Empty;
 
     public string Evidence { get; set; } = string.Empty;
+
+    public string SemanticDescriptionRu { get; set; } = string.Empty;
+
+    public string SemanticDescriptionEn { get; set; } = string.Empty;
 
     public string RuntimeBackend { get; set; } = string.Empty;
 

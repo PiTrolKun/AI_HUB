@@ -18,6 +18,8 @@ public sealed class ChoiceTaskCard
 
     public ChoiceExecutorSelection ExecutorSelection { get; set; } = new();
 
+    public ExecutionRoutePlan ExecutionRoute { get; set; } = new();
+
     public string ExecutorRole { get; set; } = string.Empty;
 
     public string ExecutorCapabilityClass { get; set; } = string.Empty;
@@ -50,6 +52,10 @@ public sealed class ChoiceExecutorCandidate
     public string Limitation { get; set; } = string.Empty;
 
     public string Reason { get; set; } = string.Empty;
+
+    public string SemanticDescriptionRu { get; set; } = string.Empty;
+
+    public string SemanticDescriptionEn { get; set; } = string.Empty;
 
     public bool IsRecommended { get; set; }
 
@@ -101,6 +107,7 @@ public sealed record ChoiceExecutorCandidateDisplay(
     ChoiceExecutorCandidate Candidate,
     string Model,
     string Status,
+    string Description,
     string Advantage,
     string Limitation,
     string Recommendation,

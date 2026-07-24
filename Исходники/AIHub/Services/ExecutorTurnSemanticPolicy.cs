@@ -57,7 +57,10 @@ public static class ExecutorTurnSemanticPolicy
         }
 
         return !LooksLikeProgramCommand(turn.Question)
-            && turn.Options.All(option => !LooksLikeProgramCommand(option));
+            && turn.Options.All(option =>
+                !LooksLikeProgramCommand(option.Title)
+                && (option.Intent != ExecutorOptionIntents.ApproveAction
+                    || ExecutorToolCatalog.IsSessionFileTool(option.Action)));
     }
 
     public static bool LooksLikeProgramCommand(string value)

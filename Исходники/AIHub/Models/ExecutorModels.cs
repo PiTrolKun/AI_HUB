@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace AIHub.Models;
 
 public sealed class ExecutorModelArtifact
@@ -35,6 +38,28 @@ public sealed class ExecutorModelManifest
     public long TotalBytes { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }
     public DateTimeOffset? RuntimeVerifiedAt { get; set; }
+    public ModelSemanticPassport SemanticPassport { get; set; } = new();
+}
+
+public sealed class ModelSemanticPassport
+{
+    public int SchemaVersion { get; set; } = 1;
+    public string Status { get; set; } = ModelSemanticPassportStatuses.Missing;
+    public string DescriptionRu { get; set; } = string.Empty;
+    public string DescriptionEn { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public string GeneratorModel { get; set; } = string.Empty;
+    public string FactsHash { get; set; } = string.Empty;
+    public DateTimeOffset? GeneratedAt { get; set; }
+    public string LastError { get; set; } = string.Empty;
+}
+
+public static class ModelSemanticPassportStatuses
+{
+    public const string Missing = "missing";
+    public const string Pending = "pending";
+    public const string Generated = "generated";
+    public const string Failed = "failed";
 }
 
 public sealed record ExecutorDownloadProgress(
@@ -101,6 +126,84 @@ public static class ExecutorTurnActions
     public const string Blocked = "blocked";
 }
 
+public static class ExecutorOptionIntents
+{
+    public const string Answer = "answer";
+    public const string ApproveAction = "approve_action";
+    public const string DeclineAction = "decline_action";
+}
+
+[JsonConverter(typeof(ExecutorTurnOptionJsonConverter))]
+public sealed class ExecutorTurnOption
+{
+    public string Title { get; set; } = string.Empty;
+    public string Intent { get; set; } = ExecutorOptionIntents.Answer;
+    public string Action { get; set; } = string.Empty;
+    public string TargetId { get; set; } = string.Empty;
+    public string Effect { get; set; } = string.Empty;
+    public bool IsRecommended { get; set; }
+
+    public static implicit operator ExecutorTurnOption(string title) => new()
+    {
+        Title = title
+    };
+}
+
+public sealed class ExecutorTurnOptionJsonConverter : JsonConverter<ExecutorTurnOption>
+{
+    public override ExecutorTurnOption Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            return new ExecutorTurnOption
+            {
+                Title = reader.GetString() ?? string.Empty
+            };
+        }
+
+        using var document = JsonDocument.ParseValue(ref reader);
+        var root = document.RootElement;
+        return new ExecutorTurnOption
+        {
+            Title = ReadString(root, "title"),
+            Intent = ReadString(root, "intent", ExecutorOptionIntents.Answer),
+            Action = ReadString(root, "action"),
+            TargetId = ReadString(root, "targetId"),
+            Effect = ReadString(root, "effect"),
+            IsRecommended = root.TryGetProperty("isRecommended", out var recommended)
+                && recommended.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && recommended.GetBoolean()
+        };
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        ExecutorTurnOption value,
+        JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("title", value.Title);
+        writer.WriteString("intent", value.Intent);
+        writer.WriteString("action", value.Action);
+        writer.WriteString("targetId", value.TargetId);
+        writer.WriteString("effect", value.Effect);
+        writer.WriteBoolean("isRecommended", value.IsRecommended);
+        writer.WriteEndObject();
+    }
+
+    private static string ReadString(
+        JsonElement element,
+        string name,
+        string fallback = "") =>
+        element.TryGetProperty(name, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? fallback
+            : fallback;
+}
+
 public sealed class ExecutorTurnResult
 {
     public string Status { get; set; } = ExecutorTurnStatuses.Working;
@@ -109,13 +212,14 @@ public sealed class ExecutorTurnResult
     public string StageSummary { get; set; } = string.Empty;
     public string Thought { get; set; } = string.Empty;
     public string Question { get; set; } = string.Empty;
-    public List<string> Options { get; set; } = [];
+    public List<ExecutorTurnOption> Options { get; set; } = [];
     public bool AllowCustom { get; set; } = true;
     public string CurrentResultSummary { get; set; } = string.Empty;
     public string WorkingResultFragment { get; set; } = string.Empty;
     public bool CanFinalize { get; set; }
     public string CompletionReason { get; set; } = string.Empty;
     public List<string> RequestedTools { get; set; } = [];
+    public List<ExecutorCapabilityRequest> RequestedCapabilities { get; set; } = [];
     public string RequestedCapability { get; set; } = string.Empty;
     public string CapabilityReason { get; set; } = string.Empty;
     public bool CapabilityRequired { get; set; }

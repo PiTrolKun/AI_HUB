@@ -160,7 +160,9 @@ public sealed class SessionFileManifestService
         return changed;
     }
 
-    public SessionFilePromptManifest CreatePromptManifest(SessionFileManifest manifest)
+    public SessionFilePromptManifest CreatePromptManifest(
+        SessionFileManifest manifest,
+        bool contentAccessAvailable = false)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         return new SessionFilePromptManifest
@@ -168,7 +170,8 @@ public sealed class SessionFileManifestService
             Intent = manifest.Intent,
             FileCount = manifest.Files.Count,
             TotalSizeBytes = manifest.Files.Where(file => file.IsAvailable).Sum(file => file.SizeBytes),
-            ContentAccessAvailable = false,
+            ContentAccessAvailable = contentAccessAvailable
+                && manifest.Files.Any(file => file.IsAvailable),
             RequiredCapabilities = manifest.Files
                 .Select(file => CapabilityFor(file.Category))
                 .Where(capability => !string.IsNullOrWhiteSpace(capability))

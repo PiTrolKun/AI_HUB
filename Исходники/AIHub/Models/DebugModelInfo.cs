@@ -18,6 +18,10 @@ public sealed class DebugModelInfo
 
     public bool IsRunnable { get; set; } = true;
 
+    public string SemanticDescriptionRu { get; set; } = string.Empty;
+
+    public string SemanticDescriptionEn { get; set; } = string.Empty;
+
     public override string ToString()
     {
         var role = string.IsNullOrWhiteSpace(Role) ? "no manifest" : Role;

@@ -50,7 +50,9 @@ public static class ExecutionCompatibilityService
             }
 
             var providers = ComponentCatalog.FindProviders(capability);
-            if (providers.Count == 0 || providers.All(provider => provider.IsPlanned))
+            if (providers.Count == 0
+                || providers.All(provider => provider.IsPlanned)
+                || !ComponentAdapterRegistry.IsCallable(capability))
             {
                 unresolved.Add(capability);
                 continue;

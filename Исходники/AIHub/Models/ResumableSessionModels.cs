@@ -66,6 +66,8 @@ public sealed class ExecutorSessionCheckpoint
     public SessionKnowledgeTreeSnapshot KnowledgeTree { get; set; } = new();
 
     public List<string> EnabledTools { get; set; } = [];
+
+    public List<string> SuccessfulToolCalls { get; set; } = [];
 }
 
 public sealed class SessionRestorationContext

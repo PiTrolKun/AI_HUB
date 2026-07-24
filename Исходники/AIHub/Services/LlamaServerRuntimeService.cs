@@ -197,6 +197,40 @@ public sealed class LlamaServerRuntimeService : IDisposable
         return result.Content;
     }
 
+    public async Task<string> GenerateUtilityAsync(
+        DebugModelInfo model,
+        string systemPrompt,
+        string userPrompt,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+        var request = new ChatCompletionRequest
+        {
+            Messages =
+            [
+                new ChatMessage { Role = "system", Content = systemPrompt },
+                new ChatMessage { Role = "user", Content = userPrompt }
+            ],
+            Temperature = 0.1,
+            MaxTokens = 700,
+            Stream = false
+        };
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync(
+            $"{Endpoint}/v1/chat/completions",
+            content,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
+            stream,
+            _jsonOptions,
+            cancellationToken);
+        return completion?.Choices.FirstOrDefault()?.Message.Content?.Trim() ?? string.Empty;
+    }
+
     public async Task<StructuredChatResult> GenerateExternalWithToolsAsync(
         DebugModelInfo model,
         string systemPrompt,
@@ -205,7 +239,8 @@ public sealed class LlamaServerRuntimeService : IDisposable
         Action<string> log,
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken,
-        JsonObject? responseFormat = null)
+        JsonObject? responseFormat = null,
+        string? requiredToolName = null)
     {
         await EnsureStartedAsync(model, log, cancellationToken);
         var request = new ChatCompletionRequest
@@ -223,7 +258,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
                 })
             ],
             Tools = tools.Count == 0 ? null : tools.ToList(),
-            ToolChoice = tools.Count == 0 ? null : JsonValue.Create("auto"),
+            ToolChoice = tools.Count == 0 ? null : CreateToolChoice(requiredToolName),
             ResponseFormat = responseFormat,
             Temperature = 0.2,
             Stream = true
