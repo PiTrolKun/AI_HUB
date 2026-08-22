@@ -1571,8 +1571,8 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="22" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="0" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="18" />
                 <RowDefinition Height="Auto" />
@@ -1593,7 +1593,11 @@
                            Margin="0,12,0,0" />
             </StackPanel>
 
-            <StackPanel Grid.Row="2">
+            <ScrollViewer Grid.Row="2"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          PanningMode="VerticalOnly">
+              <StackPanel>
                 <TextBlock x:Name="NewProjectTitleText"
                            Text="Новый проект"
                            Foreground="{DynamicResource TextPrimaryBrush}"
@@ -1602,11 +1606,50 @@
                            Margin="0,0,0,12" />
 
                 <Border Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource AccentBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="24"
+                        MaxWidth="720"
+                        HorizontalAlignment="Left">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock x:Name="ImageAnalysisScenarioTitleText"
+                                       Text="Анализ изображений"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="20"
+                                       FontWeight="SemiBold" />
+                            <TextBlock x:Name="ImageAnalysisScenarioDescriptionText"
+                                       Text="Профильный сценарий для исследования изображений с комплектом моделей, подобранным под мощность компьютера."
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="14"
+                                       LineHeight="22"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,20,0" />
+                        </StackPanel>
+
+                        <Button x:Name="SelectImageAnalysisButton"
+                                Grid.Column="1"
+                                Content="Выбрать сценарий"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                MinWidth="148"
+                                VerticalAlignment="Bottom"
+                                Click="SelectImageAnalysisButton_Click" />
+                    </Grid>
+                </Border>
+
+                <Border Background="{DynamicResource PanelBrush}"
                         BorderBrush="{DynamicResource LineBrush}"
                         BorderThickness="1"
                         CornerRadius="8"
                         Padding="24"
                         MaxWidth="720"
+                        Margin="0,14,0,0"
                         HorizontalAlignment="Left">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -1638,7 +1681,8 @@
                                 Click="SelectReasoningModeButton_Click" />
                     </Grid>
                 </Border>
-            </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
 
             <Expander x:Name="PreviousWorkExpander"
                       Grid.Row="4"
@@ -1841,6 +1885,23 @@
                         Click="BackFromWorkStartButton_Click" />
             </StackPanel>
         </Grid>
+
+        <controls:ImageAnalysisBundleSelectorControl
+            x:Name="ImageAnalysisBundleSelectorPage"
+            Grid.Row="1"
+            Margin="42,26,42,28"
+            Visibility="Collapsed"
+            BackRequested="ImageAnalysisBundleSelectorPage_BackRequested"
+            BundleSelected="ImageAnalysisBundleSelectorPage_BundleSelected"
+            UnavailableBundleRequested="ImageAnalysisBundleSelectorPage_UnavailableBundleRequested" />
+
+        <controls:ImageAnalysisBundleConfirmationControl
+            x:Name="ImageAnalysisBundleConfirmationPage"
+            Grid.Row="1"
+            Margin="56,34,56,36"
+            Visibility="Collapsed"
+            BackToBundlesRequested="ImageAnalysisBundleConfirmationPage_BackToBundlesRequested"
+            BackToWorkStartRequested="ImageAnalysisBundleConfirmationPage_BackToWorkStartRequested" />
 
         <Grid x:Name="ChoiceScenarioPage"
               Grid.Row="1"

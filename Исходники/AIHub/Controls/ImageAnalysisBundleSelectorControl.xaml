@@ -1,0 +1,273 @@
+<UserControl x:Class="AIHub.Controls.ImageAnalysisBundleSelectorControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignWidth="1040"
+             d:DesignHeight="620">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+
+        <Style x:Key="BundleCardButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="408" />
+            <Setter Property="Margin" Value="6" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="BaseBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="10">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                            </Border>
+                            <Border x:Name="RecommendationGlow"
+                                    BorderBrush="{DynamicResource AccentBrush}"
+                                    BorderThickness="3"
+                                    CornerRadius="10"
+                                    IsHitTestVisible="False"
+                                    Opacity="0.22"
+                                    Visibility="Collapsed">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#2563EB"
+                                                      BlurRadius="18"
+                                                      ShadowDepth="0"
+                                                      Opacity="0.72" />
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsRecommended}" Value="True">
+                                <Setter TargetName="BaseBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="BaseBorder" Property="BorderThickness" Value="2" />
+                                <Setter TargetName="RecommendationGlow" Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding AnimateRecommendation}" Value="True">
+                                <DataTrigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="RecommendationGlow"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             From="0.18"
+                                                             To="0.9"
+                                                             Duration="0:0:0.55"
+                                                             AutoReverse="True"
+                                                             RepeatBehavior="3x" />
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </DataTrigger.EnterActions>
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BaseBorder" Property="BorderBrush" Value="{DynamicResource AccentDarkBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="BaseBorder" Property="BorderBrush" Value="{DynamicResource AccentDarkBrush}" />
+                                <Setter TargetName="BaseBorder" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <TextBlock x:Name="TitleText"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       FontSize="30"
+                       FontWeight="SemiBold" />
+            <TextBlock x:Name="DescriptionText"
+                       Foreground="{DynamicResource TextSecondaryBrush}"
+                       FontSize="14"
+                       LineHeight="22"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+        </StackPanel>
+
+        <Border x:Name="RecommendationSummaryPanel"
+                Grid.Row="1"
+                Background="{DynamicResource StepBadgeBrush}"
+                BorderBrush="{DynamicResource AccentBrush}"
+                BorderThickness="1"
+                CornerRadius="7"
+                Padding="12,9"
+                Margin="0,14,0,8">
+            <TextBlock x:Name="RecommendationSummaryText"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       FontSize="13"
+                       TextWrapping="Wrap" />
+        </Border>
+
+        <ScrollViewer Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      PanningMode="VerticalOnly">
+            <ItemsControl x:Name="BundleItemsControl"
+                          HorizontalAlignment="Stretch">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1" Columns="3" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button Style="{StaticResource BundleCardButtonStyle}"
+                                Tag="{Binding Definition}"
+                                AutomationProperties.Name="{Binding AutomationName}"
+                                Click="BundleCardButton_Click">
+                            <Grid Margin="16">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <DockPanel>
+                                    <TextBlock Text="{Binding Title}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="21"
+                                               FontWeight="SemiBold" />
+                                    <Border DockPanel.Dock="Right"
+                                            Background="{DynamicResource StepBadgeBrush}"
+                                            CornerRadius="5"
+                                            Padding="7,3"
+                                            Margin="8,0,0,0">
+                                        <TextBlock Text="{Binding Status}"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap" />
+                                    </Border>
+                                </DockPanel>
+
+                                <TextBlock Grid.Row="1"
+                                           Text="{Binding RecommendationLabel}"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           FontSize="12"
+                                           FontWeight="Bold"
+                                           Margin="0,7,0,0"
+                                           Visibility="{Binding IsRecommended, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                                <TextBlock Grid.Row="2"
+                                           Text="{Binding Purpose}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="12"
+                                           LineHeight="18"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0" />
+
+                                <TextBlock Grid.Row="3"
+                                           Text="{Binding ModelsHeader}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Margin="0,12,0,3" />
+
+                                <ItemsControl Grid.Row="4" ItemsSource="{Binding Components}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Margin="0,3,0,4">
+                                                <TextBlock Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"
+                                                           TextWrapping="Wrap">
+                                                    <Run Text="{Binding Role}" />
+                                                    <Run Text=": " />
+                                                    <Run Text="{Binding Model}" />
+                                                </TextBlock>
+                                                <TextBlock Text="{Binding Placement}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontSize="10"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <TextBlock Grid.Row="5"
+                                           Text="{Binding RequirementsText}"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="11"
+                                           LineHeight="17"
+                                           TextWrapping="Wrap"
+                                           Margin="0,9,0,0" />
+
+                                <TextBlock Grid.Row="6"
+                                           Text="{Binding HardwareText}"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                           FontSize="10.5"
+                                           LineHeight="16"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,6" />
+
+                                <Border Grid.Row="7"
+                                        Background="{DynamicResource SecondaryButtonBackgroundBrush}"
+                                        BorderBrush="{DynamicResource LineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="10,7">
+                                    <TextBlock Text="{Binding ActionText}"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               TextWrapping="Wrap" />
+                                </Border>
+                            </Grid>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <Border x:Name="NoticePanel"
+                Grid.Row="3"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource AccentBrush}"
+                BorderThickness="1"
+                CornerRadius="7"
+                Padding="12,9"
+                Margin="6,8,6,0"
+                Visibility="Collapsed">
+            <TextBlock x:Name="NoticeText"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       FontSize="13"
+                       TextWrapping="Wrap" />
+        </Border>
+
+        <Button x:Name="BackButton"
+                Grid.Row="4"
+                MinWidth="112"
+                Height="40"
+                Padding="18,0"
+                HorizontalAlignment="Left"
+                Margin="6,12,0,0"
+                Style="{DynamicResource SecondaryButtonStyle}"
+                Click="BackButton_Click" />
+    </Grid>
+</UserControl>

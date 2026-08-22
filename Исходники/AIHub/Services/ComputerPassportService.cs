@@ -29,7 +29,15 @@ public sealed class ComputerPassportService
         try
         {
             var json = File.ReadAllText(AppDataPaths.ComputerPassportPath);
-            return JsonSerializer.Deserialize<ComputerPassport>(json, JsonOptions) ?? RegeneratePassport();
+            var passport = JsonSerializer.Deserialize<ComputerPassport>(json, JsonOptions)
+                ?? RegeneratePassport();
+            if (passport.LogicalProcessorCount <= 0)
+            {
+                passport.LogicalProcessorCount = GetLogicalProcessorCount();
+                SavePassport(passport);
+            }
+
+            return passport;
         }
         catch
         {
@@ -49,15 +57,23 @@ public sealed class ComputerPassportService
             OperatingSystemArchitecture = RuntimeInformation.OSArchitecture.ToString(),
             UserName = Environment.UserName,
             CpuName = GetCpuName(),
+            LogicalProcessorCount = GetLogicalProcessorCount(),
             RamTotalGb = GetTotalMemoryGb(),
             Gpus = GetGpus(),
             Drives = GetDrives()
         };
 
-        var json = JsonSerializer.Serialize(passport, JsonOptions);
-        File.WriteAllText(AppDataPaths.ComputerPassportPath, json);
+        SavePassport(passport);
 
         return passport;
+    }
+
+    private static int GetLogicalProcessorCount() => Math.Max(1, Environment.ProcessorCount);
+
+    private static void SavePassport(ComputerPassport passport)
+    {
+        var json = JsonSerializer.Serialize(passport, JsonOptions);
+        File.WriteAllText(AppDataPaths.ComputerPassportPath, json);
     }
 
     private static string GetCpuName()

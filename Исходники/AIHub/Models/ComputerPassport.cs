@@ -14,6 +14,8 @@ public sealed class ComputerPassport
 
     public string CpuName { get; set; } = "unknown";
 
+    public int LogicalProcessorCount { get; set; }
+
     public double RamTotalGb { get; set; }
 
     public List<GpuPassport> Gpus { get; set; } = [];
