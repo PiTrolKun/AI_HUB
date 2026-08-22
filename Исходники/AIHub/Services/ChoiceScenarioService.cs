@@ -364,11 +364,11 @@ public sealed class ChoiceScenarioService
             return false;
         }
         var selection = card.ExecutorSelection;
-        if (string.IsNullOrWhiteSpace(selection.InstalledCandidateId)
-            || string.IsNullOrWhiteSpace(selection.AlternativeCandidateId)
-            || string.IsNullOrWhiteSpace(selection.PreferredCandidateId))
+        if (string.IsNullOrWhiteSpace(selection.PreferredCandidateId)
+            || string.IsNullOrWhiteSpace(selection.InstalledCandidateId)
+                && string.IsNullOrWhiteSpace(selection.AlternativeCandidateId))
         {
-            error = "Final task card must select installed, alternative and preferred trusted candidate IDs.";
+            error = "Final task card must select at least one trusted candidate and one preferred candidate ID.";
             return false;
         }
         if (!string.Equals(selection.PreferredCandidateId, selection.InstalledCandidateId, StringComparison.OrdinalIgnoreCase)

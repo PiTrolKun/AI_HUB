@@ -90,6 +90,14 @@ public sealed class ExecutorHandoffPackage
     public string ParentRunId { get; set; } = string.Empty;
 
     public SessionFilePromptManifest FileManifest { get; set; } = new();
+
+    public WorkPatternSelectionResult WorkPatterns { get; set; } = new();
+
+    public ArtifactContract ArtifactContract { get; set; } = new();
+
+    public ExecutionOutcomeContract OutcomeContract { get; set; } = new();
+
+    public ExecutionBundlePlan ExecutionBundle { get; set; } = new();
 }
 
 public sealed class ExecutorHandoffItem
@@ -239,5 +247,16 @@ public sealed class ExecutorResultSnapshot
     public string Title { get; set; } = string.Empty;
     public string Markdown { get; set; } = string.Empty;
     public bool IsFinal { get; set; }
+    public string ArtifactPath { get; set; } = string.Empty;
+    public string ArtifactKind { get; set; } = string.Empty;
+    public string ArtifactMimeType { get; set; } = string.Empty;
+    public string ArtifactQualityLevel { get; set; } = ArtifactQualityLevels.Emergency;
+    public string ArtifactValidationStatus { get; set; } = ArtifactValidationStatuses.Pending;
+    public string EvidenceValidationStatus { get; set; } = EvidenceValidationStatuses.Pending;
+    public string TaskFulfillmentStatus { get; set; } = TaskFulfillmentStatuses.Pending;
+    public string ActionGraphId { get; set; } = string.Empty;
+    public List<string> EvidenceReceiptIds { get; set; } = [];
+    public string RecipeId { get; set; } = string.Empty;
+    public List<string> ArtifactWarnings { get; set; } = [];
     public string DisplayName => $"v{Version} - {Title}";
 }

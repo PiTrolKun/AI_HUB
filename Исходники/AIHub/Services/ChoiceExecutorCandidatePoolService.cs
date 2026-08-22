@@ -23,7 +23,8 @@ public sealed class ChoiceExecutorCandidatePoolService
         ComputerPassport computerPassport,
         ISessionEventLog sessionLog,
         CancellationToken cancellationToken,
-        SessionFilePromptManifest? fileManifest = null)
+        SessionFilePromptManifest? fileManifest = null,
+        WorkPatternSelectionResult? workPatterns = null)
     {
         var inventory = _inventoryService.Create(storageSettings);
         var request = BuildCatalogRequest(capabilityProfile, workloadMode);
@@ -39,7 +40,8 @@ public sealed class ChoiceExecutorCandidatePoolService
             capabilityProfile,
             workloadMode,
             computerPassport,
-            fileManifest: fileManifest);
+            fileManifest: fileManifest,
+            workPatterns: workPatterns);
         if (pool.HasCandidatePair)
         {
             return pool;
@@ -58,12 +60,15 @@ public sealed class ChoiceExecutorCandidatePoolService
             workloadMode,
             computerPassport,
             ExecutionCompatibilityService.CoordinatorFallbackMatch,
-            fileManifest);
+            fileManifest,
+            workPatterns);
         pool.AlternativeCandidates.AddRange(coordinatorPool.AlternativeCandidates);
         pool.Warnings.AddRange(coordinatorCatalog.Warnings);
         pool.AlternativeCandidates = pool.AlternativeCandidates
             .GroupBy(candidate => $"{candidate.Family}|{candidate.Model}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
+            .OrderByDescending(candidate => candidate.ConditionalMatchPercent)
+            .ThenBy(candidate => candidate.Model, StringComparer.OrdinalIgnoreCase)
             .Take(6)
             .ToList();
         AssignIds(pool);
@@ -79,7 +84,13 @@ public sealed class ChoiceExecutorCandidatePoolService
             cancellationToken);
         pool.UsedLiveSearch = true;
         sessionLog.Write("scenario_candidate_live_search", live);
-        AddLiveCandidates(pool, live, workloadMode, computerPassport);
+        AddLiveCandidates(
+            pool,
+            live,
+            workloadMode,
+            computerPassport,
+            capabilityProfile,
+            workPatterns);
         AssignIds(pool);
         return pool;
     }
@@ -135,9 +146,21 @@ public sealed class ChoiceExecutorCandidatePoolService
     public static ModelCatalogSearchRequest BuildCoordinatorCatalogRequest(
         ModelCatalogSearchRequest source) => new()
         {
-            Directions = ["text_knowledge"],
-            TaskType = "general_reasoning",
-            RequiredCapabilities = [],
+            Directions = source.Directions
+                .Append("text_knowledge")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            TaskType = string.IsNullOrWhiteSpace(source.TaskType)
+                ? "general_reasoning"
+                : source.TaskType,
+            RequiredCapabilities = source.RequiredCapabilities
+                .Where(capability =>
+                    !capability.StartsWith("read.", StringComparison.OrdinalIgnoreCase)
+                    && !capability.StartsWith("edit.", StringComparison.OrdinalIgnoreCase)
+                    && !capability.StartsWith("generate.", StringComparison.OrdinalIgnoreCase)
+                    && !capability.StartsWith("analyze.", StringComparison.OrdinalIgnoreCase))
+                .Take(8)
+                .ToList(),
             LoadLevel = source.LoadLevel,
             Limit = source.Limit
         };
@@ -149,15 +172,52 @@ public sealed class ChoiceExecutorCandidatePoolService
         string workloadMode,
         ComputerPassport computerPassport,
         string catalogMatchScope = ExecutionCompatibilityService.TaskProfileMatch,
-        SessionFilePromptManifest? fileManifest = null)
+        SessionFilePromptManifest? fileManifest = null,
+        WorkPatternSelectionResult? workPatterns = null,
+        ExecutionRoutePlannerService? routePlanner = null)
     {
-        var executionRoute = new ExecutionRoutePlannerService().Build(
+        workPatterns ??= new WorkPatternSelectionResult
+        {
+            Selections =
+            [
+                new WorkPatternSelection
+                {
+                    PatternId = "other.custom",
+                    MatchPercent = 100,
+                    Reason = "Compatibility fallback for callers without Sandbox classification."
+                }
+            ],
+            Source = "program_fallback",
+            UsedFallback = true
+        };
+        var catalogService = new WorkPatternCatalogService();
+        var selectedPatterns = catalogService.ResolveSelected(workPatterns);
+        var artifactContract = new ArtifactContractBuilder().Build(
+            selectedPatterns,
+            fileManifest);
+        var outcomeContract = new ExecutionOutcomeContractService().Build(
+            BuildOutcomeGoal(selectedPatterns, capabilityProfile),
             capabilityProfile,
             fileManifest,
-            "Prepare the verified execution route before selecting a coordinator.");
+            selectedPatterns,
+            artifactContract);
+        var executionRoute = (routePlanner ?? new ExecutionRoutePlannerService()).Build(
+            capabilityProfile,
+            fileManifest,
+            "Prepare the verified execution route before selecting a coordinator.",
+            selectedPatterns,
+            outcomeContract: outcomeContract);
+        var executionBundle = new ExecutionBundlePlannerService().Build(
+            workPatterns,
+            artifactContract,
+            executionRoute);
         var capabilityResolution = CreateCapabilityResolution(executionRoute);
         var pool = new ChoiceExecutorCandidatePool
         {
+            WorkPatterns = workPatterns,
+            ArtifactContract = artifactContract,
+            OutcomeContract = outcomeContract,
+            ExecutionBundle = executionBundle,
             ExecutionRoute = executionRoute,
             RequiredProtocols = BuildRequiredProtocols(
                 capabilityProfile,
@@ -167,6 +227,12 @@ public sealed class ChoiceExecutorCandidatePoolService
             AvailableCapabilities = capabilityResolution.Available.ToList(),
             MissingCapabilities = capabilityResolution.Missing.ToList(),
             UnresolvedCapabilities = capabilityResolution.Unresolved.ToList(),
+            AvailableComponentIds = ComponentCatalog.Processing
+                .Where(entry => entry.IsVisibleToAi)
+                .Select(entry => entry.Id)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
             Warnings = catalog.Warnings.ToList()
         };
         pool.Warnings.AddRange(executionRoute.Warnings);
@@ -208,6 +274,12 @@ public sealed class ChoiceExecutorCandidatePoolService
                 ExecutionCompatibilityService.TaskProfileMatch);
             if (installedCandidate.RuntimeCompatible)
             {
+                ApplyConditionalMatch(
+                    installedCandidate,
+                    selectedPatterns,
+                    capabilityProfile,
+                    installed: true);
+                installedCandidate.RouteCoveragePercent = executionRoute.OutcomeCoveragePercent;
                 pool.InstalledCandidates.Add(installedCandidate);
             }
         }
@@ -222,11 +294,6 @@ public sealed class ChoiceExecutorCandidatePoolService
             }
 
             var family = GetFamilyKey(candidate.RepoId, candidate.ModelType, candidate.BaseModels);
-            if (pool.InstalledCandidates.Count == 1
-                && string.Equals(pool.InstalledCandidates[0].Family, family, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
 
             var alternativeCandidate = new ChoiceExecutorPoolCandidate
             {
@@ -249,13 +316,25 @@ public sealed class ChoiceExecutorCandidatePoolService
                 catalogMatchScope);
             if (alternativeCandidate.RuntimeCompatible)
             {
+                ApplyConditionalMatch(
+                    alternativeCandidate,
+                    selectedPatterns,
+                    capabilityProfile,
+                    installed: false);
+                alternativeCandidate.RouteCoveragePercent = executionRoute.OutcomeCoveragePercent;
                 pool.AlternativeCandidates.Add(alternativeCandidate);
             }
         }
 
+        pool.InstalledCandidates = pool.InstalledCandidates
+            .OrderByDescending(candidate => candidate.ConditionalMatchPercent)
+            .ThenBy(candidate => candidate.Model, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         pool.AlternativeCandidates = pool.AlternativeCandidates
             .GroupBy(candidate => $"{candidate.Family}|{candidate.Model}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
+            .OrderByDescending(candidate => candidate.ConditionalMatchPercent)
+            .ThenBy(candidate => candidate.Model, StringComparer.OrdinalIgnoreCase)
             .Take(6)
             .ToList();
         AssignIds(pool);
@@ -265,9 +344,15 @@ public sealed class ChoiceExecutorCandidatePoolService
     public static bool TryApplySelection(
         ChoiceTaskCard card,
         ChoiceExecutorCandidatePool pool,
-        out string error)
+        out string error,
+        ExecutionRoutePlannerService? routePlanner = null)
     {
         error = string.Empty;
+        if (!TryValidateExecutionPlan(card.ExecutionPlan, pool, out error))
+        {
+            return false;
+        }
+
         var selection = card.ExecutorSelection;
         var installed = pool.InstalledCandidates.FirstOrDefault(candidate => string.Equals(
             candidate.Id,
@@ -277,40 +362,70 @@ public sealed class ChoiceExecutorCandidatePoolService
             candidate.Id,
             selection.AlternativeCandidateId,
             StringComparison.OrdinalIgnoreCase));
-        if (installed is null || alternative is null)
+        if (installed is null && alternative is null)
         {
-            error = "Executor selection must use one installed ID and one alternative ID from the trusted candidate pool.";
+            error = "Executor selection must contain at least one trusted coordinator candidate ID.";
             return false;
         }
 
-        if (string.Equals(installed.Family, alternative.Family, StringComparison.OrdinalIgnoreCase))
+        var selectedSources = new[] { installed, alternative }
+            .Where(candidate => candidate is not null)
+            .Cast<ChoiceExecutorPoolCandidate>()
+            .DistinctBy(candidate => candidate.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (!selectedSources.Any(candidate => string.Equals(
+                selection.PreferredCandidateId,
+                candidate.Id,
+                StringComparison.OrdinalIgnoreCase)))
         {
-            error = "The downloadable alternative must belong to a different model family than the installed choice.";
+            error = "preferredCandidateId must match one of the selected trusted coordinator IDs.";
             return false;
         }
 
-        if (!string.Equals(selection.PreferredCandidateId, installed.Id, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(selection.PreferredCandidateId, alternative.Id, StringComparison.OrdinalIgnoreCase))
+        card.ExecutorCandidates = selectedSources
+            .Select(candidate => CreateResolvedCandidate(
+                candidate,
+                string.Equals(
+                    selection.PreferredCandidateId,
+                    candidate.Id,
+                    StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        card.WorkPatterns = pool.WorkPatterns;
+        card.ArtifactContract = pool.ArtifactContract;
+        card.OutcomeContract = CloneOutcomeContract(pool.OutcomeContract, card.Goal);
+        card.ExecutionRoute = (routePlanner ?? new ExecutionRoutePlannerService()).ApplyExecutionPlan(
+            pool.ExecutionRoute,
+            card.ExecutionPlan,
+            "Validate the complete execution bundle authored by the core.",
+            card.OutcomeContract);
+        card.ExecutionBundle = new ExecutionBundlePlannerService().Build(
+            card.WorkPatterns,
+            card.ArtifactContract,
+            card.ExecutionRoute);
+        if (alternative is not null
+            && (card.ExecutionRoute.HasBlockedRequirements
+                || !card.ExecutionRoute.HasCompleteOutcomeCoverage))
         {
-            error = "preferredCandidateId must match one of the two selected trusted candidate IDs.";
+            error = "A downloadable coordinator may be offered only with a complete execution bundle. "
+                + "Remove alternativeCandidateId or choose trusted components with working adapters for every required capability.";
             return false;
         }
 
-        var installedChoice = CreateResolvedCandidate(
-            installed,
-            string.Equals(selection.PreferredCandidateId, installed.Id, StringComparison.OrdinalIgnoreCase));
-        var alternativeChoice = CreateResolvedCandidate(
-            alternative,
-            string.Equals(selection.PreferredCandidateId, alternative.Id, StringComparison.OrdinalIgnoreCase));
-        card.ExecutorCandidates = [installedChoice, alternativeChoice];
-        card.ExecutionRoute = pool.ExecutionRoute;
+        foreach (var candidate in card.ExecutorCandidates)
+        {
+            ApplyResolvedRoute(candidate, card.ExecutionRoute);
+        }
 
-        var preferred = installedChoice.IsRecommended ? installedChoice : alternativeChoice;
+        var preferred = card.ExecutorCandidates.Single(candidate => candidate.IsRecommended);
         card.RecommendedExecutor = preferred.Model;
         card.ExecutorStatus = preferred.Status;
-        card.ExecutorRole = preferred.Role;
+        card.ExecutorRole = string.IsNullOrWhiteSpace(card.ExecutionPlan.ExecutorRole)
+            ? preferred.Role
+            : card.ExecutionPlan.ExecutorRole.Trim();
         card.ExecutorCapabilityClass = preferred.CapabilityClass;
-        card.ExecutorReason = preferred.Reason;
+        card.ExecutorReason = string.IsNullOrWhiteSpace(card.ExecutionPlan.Rationale)
+            ? preferred.Reason
+            : card.ExecutionPlan.Rationale.Trim();
         ApplyToolProtocols(card);
         return true;
     }
@@ -319,11 +434,13 @@ public sealed class ChoiceExecutorCandidatePoolService
     {
         var builder = new StringBuilder();
         builder.AppendLine("TRUSTED_EXECUTOR_CANDIDATE_POOL");
-        builder.AppendLine("Program already verified identity, installation status, family, runtime, artifact format, component plan and PC fit.");
-        builder.AppendLine("Choose IDs only. Do not rewrite model names, status, family, role or capability class.");
-        builder.AppendLine("A coordinator model does not directly provide specialist file/media operations. Those are separate component capabilities.");
-        builder.AppendLine("The program owns the execution route. You are selecting only its LLM coordinator node.");
-        builder.AppendLine("Before choosing, silently test this abstract question: can the coordinator plus the listed ready adapters actually complete the described work without inventing access? Base the answer on the plain-language passports and adapter status, not model popularity.");
+        builder.AppendLine("Program verified factual inventory: identity, installation status, runtime, adapters, package state and PC fit.");
+        builder.AppendLine("You own the semantic execution plan. Choose the coordinator and compose the complete bundle of required and optional capabilities.");
+        builder.AppendLine("The program may reject impossible facts, but it must not replace your capability plan with a scripted task route.");
+        builder.AppendLine("Choose candidate and component IDs only from this inventory. Do not rewrite their verified facts.");
+        builder.AppendLine("A coordinator model does not directly provide specialist file/media operations. Add the exact component capabilities needed for decoding, semantic understanding, transformation and output.");
+        builder.AppendLine("The installed coordinator may be selected for an incomplete but useful route. A downloadable recommendation is worthy only when its complete bundle covers every required action and has a small reserve.");
+        builder.AppendLine("Before choosing, silently test: can this coordinator plus the selected capabilities complete the actual abstract task and produce the requested artifact without inventing access?");
         builder.AppendLine("A downloaded or installed package with adapterReady=false is not an executable model tool. Do not describe it as ready.");
         builder.AppendLine("Required capability protocols:");
         foreach (var protocol in pool.RequiredProtocols)
@@ -331,24 +448,56 @@ public sealed class ChoiceExecutorCandidatePoolService
             builder.AppendLine($"- {protocol}");
         }
 
+        builder.AppendLine("Sandbox work-pattern matches:");
+        foreach (var pattern in pool.WorkPatterns.Selections)
+        {
+            builder.AppendLine(
+                $"- id={pattern.PatternId}; conditionalMatch={pattern.MatchPercent}%; "
+                + $"reason={NormalizePromptValue(pattern.Reason)}");
+        }
+
+        builder.AppendLine(
+            $"Artifact contract: kind={pool.ArtifactContract.ArtifactKind}; "
+            + $"extension={pool.ArtifactContract.PreferredExtension}; "
+            + $"mime={pool.ArtifactContract.MimeType}; "
+            + $"emergencyResult={NormalizePromptValue(pool.ArtifactContract.EmergencyAcceptableResult)}");
+        builder.AppendLine(
+            $"Execution bundle: selectedRoute={pool.ExecutionBundle.SelectedRouteLevel}; "
+            + $"preferredStartable={pool.ExecutionBundle.PreferredRoute.IsStartable}; "
+            + $"degradedStartable={pool.ExecutionBundle.DegradedRoute.IsStartable}; "
+            + $"emergencyStartable={pool.ExecutionBundle.EmergencyRoute.IsStartable}; "
+            + $"downloads={pool.ExecutionBundle.AcquisitionPlan.Items.Count}");
+        builder.AppendLine("Program-owned required outcome actions (you may add detail but must not remove or weaken them):");
+        foreach (var action in pool.OutcomeContract.Actions)
+        {
+            builder.AppendLine(
+                $"- id={action.Id}; kind={action.Kind}; required={action.Required.ToString().ToLowerInvariant()}; "
+                + $"capabilities={string.Join(',', action.CapabilityIds)}; purpose={NormalizePromptValue(action.Purpose)}");
+        }
         AppendExecutionRoute(builder, pool.ExecutionRoute);
-        AppendComponentPassports(builder, pool.RequiredCapabilities);
+        AppendComponentPassports(builder, pool.AvailableComponentIds);
         builder.AppendLine("Installed runnable candidates:");
         foreach (var candidate in pool.InstalledCandidates)
         {
             AppendCandidate(builder, candidate);
         }
 
-        builder.AppendLine("Download alternatives from other families:");
+        builder.AppendLine("Downloadable coordinator alternatives:");
         foreach (var candidate in pool.AlternativeCandidates)
         {
             AppendCandidate(builder, candidate);
         }
 
-        builder.AppendLine("Return final_task_card with executorSelection only:");
-        builder.AppendLine("- installedCandidateId: exactly one installed_* ID;");
-        builder.AppendLine("- alternativeCandidateId: exactly one alternative_* ID from a different family;");
-        builder.AppendLine("- preferredCandidateId: either selected ID. Prefer installed when it is sufficient; downloading is not automatically better;");
+        builder.AppendLine("Return final_task_card with executorSelection and executionPlan:");
+        builder.AppendLine("- installedCandidateId: one installed_* ID, or an empty string when no installed comparison is useful;");
+        builder.AppendLine("- alternativeCandidateId: one alternative_* ID, or an empty string when no downloadable comparison is materially better;");
+        builder.AppendLine("- preferredCandidateId: exactly one non-empty selected candidate ID;");
+        builder.AppendLine("- executionPlan.requiredCapabilities: every capability needed to finish the expected task, including file decode, semantic specialist work, transformations and output;");
+        builder.AppendLine("- executionPlan.optionalCapabilities: useful reserve capabilities that improve quality but are not required;");
+        builder.AppendLine("- executionPlan.preferredComponentIds: component IDs from the verified passports that you intentionally want used;");
+        builder.AppendLine("- executionPlan.executorRole: a short adaptive professional role for the coordinator;");
+        builder.AppendLine("- executionPlan.rationale: why this complete combination is appropriate, including honest missing parts;");
+        builder.AppendLine("- if any required capability has no trusted working adapter, leave alternativeCandidateId empty; do not advertise a downloadable coordinator as the solution;");
         builder.AppendLine("Program generates all technical advantages, limitations and reasons from verified candidate facts.");
         return builder.ToString().Trim();
     }
@@ -388,8 +537,23 @@ public sealed class ChoiceExecutorCandidatePoolService
         ChoiceExecutorCandidatePool pool,
         HuggingFaceFindModelResponse live,
         string workloadMode,
-        ComputerPassport computerPassport)
+        ComputerPassport computerPassport,
+        ChoiceCapabilityProfile capabilityProfile,
+        WorkPatternSelectionResult? workPatterns)
     {
+        var selectedPatterns = new WorkPatternCatalogService().ResolveSelected(
+            workPatterns ?? new WorkPatternSelectionResult
+            {
+                Selections =
+                [
+                    new WorkPatternSelection
+                    {
+                        PatternId = "other.custom",
+                        MatchPercent = 100,
+                        Reason = "Live-search compatibility fallback."
+                    }
+                ]
+            });
         foreach (var candidate in live.Candidates)
         {
             var parameterCount = ModelHardwareCompatibilityService.TryReadParameterCountFromName(candidate.RepoId);
@@ -432,6 +596,12 @@ public sealed class ChoiceExecutorCandidatePoolService
                 ExecutionCompatibilityService.CoordinatorFallbackMatch);
             if (liveCandidate.RuntimeCompatible)
             {
+                ApplyConditionalMatch(
+                    liveCandidate,
+                    selectedPatterns,
+                    capabilityProfile,
+                    installed: false);
+                liveCandidate.RouteCoveragePercent = pool.ExecutionRoute.OutcomeCoveragePercent;
                 pool.AlternativeCandidates.Add(liveCandidate);
             }
         }
@@ -439,6 +609,8 @@ public sealed class ChoiceExecutorCandidatePoolService
         pool.AlternativeCandidates = pool.AlternativeCandidates
             .GroupBy(candidate => $"{candidate.Family}|{candidate.Model}", StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
+            .OrderByDescending(candidate => candidate.ConditionalMatchPercent)
+            .ThenBy(candidate => candidate.Model, StringComparer.OrdinalIgnoreCase)
             .Take(6)
             .ToList();
     }
@@ -557,7 +729,11 @@ public sealed class ChoiceExecutorCandidatePoolService
             RequiredCapabilities = candidate.RequiredCapabilities.ToList(),
             AvailableCapabilities = candidate.AvailableCapabilities.ToList(),
             MissingCapabilities = candidate.MissingCapabilities.ToList(),
-            UnresolvedCapabilities = candidate.UnresolvedCapabilities.ToList()
+            UnresolvedCapabilities = candidate.UnresolvedCapabilities.ToList(),
+            ConditionalMatchPercent = candidate.ConditionalMatchPercent,
+            CoordinatorMatchPercent = candidate.CoordinatorMatchPercent,
+            RouteCoveragePercent = candidate.RouteCoveragePercent,
+            MatchReason = candidate.MatchReason
         };
 
     private static void AppendCandidate(StringBuilder builder, ChoiceExecutorPoolCandidate candidate)
@@ -569,6 +745,9 @@ public sealed class ChoiceExecutorCandidatePoolService
             + $"runtime={candidate.RuntimeBackend}; artifact={candidate.ArtifactFormat}; "
             + $"matchScope={candidate.CatalogMatchScope}; missingComponents={string.Join(',', candidate.MissingCapabilities)}; "
             + $"unresolvedCapabilities={string.Join(',', candidate.UnresolvedCapabilities)}; "
+            + $"coordinatorMatch={candidate.CoordinatorMatchPercent}%; "
+            + $"routeCoverage={candidate.RouteCoveragePercent}%; "
+            + $"matchReason={NormalizePromptValue(candidate.MatchReason)}; "
             + $"hardware={candidate.HardwareStatus}; evidence={candidate.Evidence}; "
             + $"semanticPassportRu={NormalizePromptValue(candidate.SemanticDescriptionRu)}");
     }
@@ -578,7 +757,9 @@ public sealed class ChoiceExecutorCandidatePoolService
         ExecutionRoutePlan route)
     {
         builder.AppendLine("Verified execution route:");
-        builder.AppendLine($"- sourceFormats={string.Join(',', route.SourceFormats)}; executable={route.IsExecutable.ToString().ToLowerInvariant()}");
+        builder.AppendLine(
+            $"- sourceFormats={string.Join(',', route.SourceFormats)}; executable={route.IsExecutable.ToString().ToLowerInvariant()}; "
+            + $"outcomeCoverage={route.OutcomeCoveragePercent}%; missingOutcomeActions={string.Join(',', route.MissingOutcomeActionIds)}");
         foreach (var requirement in route.Requirements)
         {
             var binding = route.Resolution.Bindings.FirstOrDefault(item =>
@@ -597,11 +778,12 @@ public sealed class ChoiceExecutorCandidatePoolService
 
     private static void AppendComponentPassports(
         StringBuilder builder,
-        IEnumerable<string> requiredCapabilities)
+        IEnumerable<string> componentIds)
     {
-        var providers = requiredCapabilities
-            .SelectMany(ComponentCatalog.FindProviders)
-            .Where(entry => entry.IsVisibleToAi)
+        var providers = componentIds
+            .Select(ComponentCatalog.Find)
+            .Where(entry => entry is { IsVisibleToAi: true })
+            .Cast<ComponentCatalogEntry>()
             .DistinctBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (providers.Count == 0)
@@ -609,9 +791,13 @@ public sealed class ChoiceExecutorCandidatePoolService
             return;
         }
 
+        var statuses = new ComponentManager()
+            .GetStatus(ComponentKinds.Processing)
+            .ToDictionary(status => status.Entry.Id, StringComparer.OrdinalIgnoreCase);
         builder.AppendLine("Verified component passports:");
         foreach (var provider in providers)
         {
+            statuses.TryGetValue(provider.Id, out var status);
             var adapters = provider.Capabilities
                 .Select(ComponentAdapterRegistry.Find)
                 .Where(adapter => adapter is not null)
@@ -619,11 +805,119 @@ public sealed class ChoiceExecutorCandidatePoolService
                 .ToList();
             builder.AppendLine(
                 $"- id={provider.Id}; capabilities={string.Join(',', provider.Capabilities)}; "
+                + $"available={(status?.IsAvailable == true).ToString().ToLowerInvariant()}; "
+                + $"planned={provider.IsPlanned.ToString().ToLowerInvariant()}; "
                 + $"adapterReady={(adapters.Count > 0).ToString().ToLowerInvariant()}; "
                 + $"tools={string.Join(',', adapters.SelectMany(adapter => adapter!.ToolNames).Distinct(StringComparer.Ordinal))}; "
                 + $"usage={NormalizePromptValue(string.Join(' ', adapters.Select(adapter => adapter!.UsageSummary)))}; "
+                + $"downloadBytes={provider.DownloadSizeBytes}; license={provider.License}; source={provider.Source}; "
                 + $"description={NormalizePromptValue(ComponentSemanticPassportCatalog.Get(provider).Ru)}");
         }
+    }
+
+    private static bool TryValidateExecutionPlan(
+        ChoiceExecutionPlan plan,
+        ChoiceExecutorCandidatePool pool,
+        out string error)
+    {
+        error = string.Empty;
+        if (plan is null)
+        {
+            error = "The core must provide executionPlan.";
+            return false;
+        }
+
+        plan.RequiredCapabilities = NormalizeCapabilities(plan.RequiredCapabilities);
+        plan.OptionalCapabilities = NormalizeCapabilities(plan.OptionalCapabilities)
+            .Except(plan.RequiredCapabilities, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        plan.PreferredComponentIds = plan.PreferredComponentIds
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(16)
+            .ToList();
+        plan.ExecutorRole = NormalizePromptValue(plan.ExecutorRole);
+        plan.Rationale = NormalizePromptValue(plan.Rationale);
+
+        if (plan.RequiredCapabilities.Count == 0)
+        {
+            error = "executionPlan.requiredCapabilities must describe at least one capability needed for the task.";
+            return false;
+        }
+
+        if (plan.ExecutorRole.Length == 0 || plan.Rationale.Length == 0)
+        {
+            error = "executionPlan must include a short executorRole and rationale.";
+            return false;
+        }
+
+        var knownIds = pool.AvailableComponentIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unknownIds = plan.PreferredComponentIds
+            .Where(id => !knownIds.Contains(id))
+            .ToList();
+        if (unknownIds.Count > 0)
+        {
+            error = $"executionPlan contains component IDs outside the trusted catalog: {string.Join(", ", unknownIds)}.";
+            return false;
+        }
+
+        var requested = ComponentCapabilityAliasCatalog.Expand(
+                plan.RequiredCapabilities.Concat(plan.OptionalCapabilities))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var componentId in plan.PreferredComponentIds)
+        {
+            var component = ComponentCatalog.Find(componentId);
+            if (component is null
+                || !component.Capabilities.Any(capability => requested.Contains(capability)))
+            {
+                error = $"Preferred component '{componentId}' does not provide a requested execution capability.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static List<string> NormalizeCapabilities(IEnumerable<string> values) =>
+        values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(ComponentCapabilityAliasCatalog.Canonicalize)
+            .Where(value => Regex.IsMatch(value, @"^[a-z0-9][a-z0-9._-]{1,79}$"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(24)
+            .ToList();
+
+    private static void ApplyResolvedRoute(
+        ChoiceExecutorCandidate candidate,
+        ExecutionRoutePlan route)
+    {
+        candidate.RequiredCapabilities = route.Requirements
+            .Where(requirement => requirement.Request.Required)
+            .Select(requirement => requirement.Request.Id)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        candidate.AvailableCapabilities = route.Resolution.Bindings
+            .Where(binding => binding.IsExecutable)
+            .Select(binding => binding.RequestedCapabilityId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        candidate.MissingCapabilities = route.Resolution.Bindings
+            .Where(binding =>
+                binding.Required
+                && binding.Status == CapabilityBindingStatuses.PackageMissing)
+            .Select(binding => binding.RequestedCapabilityId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        candidate.UnresolvedCapabilities = route.Resolution.Bindings
+            .Where(binding => binding.Required && !binding.IsExecutable)
+            .Select(binding => binding.RequestedCapabilityId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        candidate.RouteCoveragePercent = route.OutcomeCoveragePercent;
+        candidate.Limitation = candidate.UnresolvedCapabilities.Count == 0
+            ? candidate.Limitation
+            : $"The complete bundle still requires: {string.Join(", ", candidate.UnresolvedCapabilities)}.";
     }
 
     private static string NormalizePromptValue(string value) =>
@@ -639,6 +933,48 @@ public sealed class ChoiceExecutorCandidatePoolService
         {
             pool.AlternativeCandidates[index].Id = $"alternative_{index + 1}";
         }
+    }
+
+    private static void ApplyConditionalMatch(
+        ChoiceExecutorPoolCandidate candidate,
+        IReadOnlyList<SandboxWorkPattern> selectedPatterns,
+        ChoiceCapabilityProfile capabilityProfile,
+        bool installed)
+    {
+        var assessment = new CoordinatorMatchScoringService().Score(
+            candidate,
+            selectedPatterns,
+            capabilityProfile,
+            installed);
+        candidate.CoordinatorMatchPercent = assessment.Percent;
+        candidate.ConditionalMatchPercent = assessment.Percent;
+        candidate.MatchReason = assessment.Reason;
+    }
+
+    private static string BuildOutcomeGoal(
+        IReadOnlyList<SandboxWorkPattern> patterns,
+        ChoiceCapabilityProfile profile)
+    {
+        var patternGoals = patterns
+            .Select(pattern => pattern.DescriptionRu)
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        var profileValues = profile.Dimensions
+            .Where(dimension => dimension.Status is ChoiceDimensionStatuses.Resolved
+                or ChoiceDimensionStatuses.Provisional)
+            .SelectMany(dimension => dimension.Values)
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        return string.Join(" ", patternGoals.Concat(profileValues).Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static ExecutionOutcomeContract CloneOutcomeContract(
+        ExecutionOutcomeContract source,
+        string goal)
+    {
+        var json = JsonSerializer.Serialize(source, JsonOptions);
+        var clone = JsonSerializer.Deserialize<ExecutionOutcomeContract>(json, JsonOptions)
+            ?? new ExecutionOutcomeContract();
+        clone.Goal = string.IsNullOrWhiteSpace(goal) ? source.Goal : goal.Trim();
+        return clone;
     }
 
     private static bool IsAllowedByWorkload(long? parameterCount, string workloadMode) =>

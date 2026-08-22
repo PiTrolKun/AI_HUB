@@ -80,6 +80,23 @@ public sealed class LlamaServerRuntimeService : IDisposable
         Action<string> log,
         CancellationToken cancellationToken)
     {
+        return await GenerateJsonAsync(
+            model,
+            systemPrompt,
+            userMessage,
+            ChoiceScenarioJsonContract.CreateResponseFormat(),
+            log,
+            cancellationToken);
+    }
+
+    public async Task<string> GenerateJsonAsync(
+        DebugModelInfo model,
+        string systemPrompt,
+        string userMessage,
+        JsonObject responseFormat,
+        Action<string> log,
+        CancellationToken cancellationToken)
+    {
         await EnsureStartedAsync(model, log, cancellationToken);
 
         var request = new ChatCompletionRequest
@@ -100,7 +117,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
                 },
                 new ChatMessage { Role = "user", Content = userMessage }
             ],
-            ResponseFormat = ChoiceScenarioJsonContract.CreateResponseFormat(),
+            ResponseFormat = responseFormat,
             Temperature = 0.1,
             Stream = false
         };

@@ -2243,13 +2243,29 @@
                                      </ItemsControl.ItemTemplate>
                                  </ItemsControl>
                              </StackPanel>
-                             <Button x:Name="ExecutorPrepareButton"
-                                    Content="Подготовить исполнителя"
-                                    Style="{StaticResource PrimaryButtonStyle}"
-                                    HorizontalAlignment="Stretch"
-                                    Margin="0,16,0,0"
-                                    Visibility="Collapsed"
-                                    Click="ExecutorPrepareButton_Click" />
+                             <Grid x:Name="ExecutorPreparationActionsPanel"
+                                   Margin="0,16,0,0"
+                                   Visibility="Collapsed">
+                                 <Grid.ColumnDefinitions>
+                                     <ColumnDefinition Width="*" />
+                                     <ColumnDefinition Width="*" />
+                                 </Grid.ColumnDefinitions>
+                                 <Button x:Name="ExecutorPrepareButton"
+                                         Grid.Column="0"
+                                         Content="Скачать и улучшить"
+                                         Style="{StaticResource PrimaryButtonStyle}"
+                                         HorizontalAlignment="Stretch"
+                                         Margin="0,0,5,0"
+                                         Click="ExecutorPrepareButton_Click" />
+                                 <Button x:Name="ExecutorContinueAvailableButton"
+                                         Grid.Column="1"
+                                         Content="Продолжить доступными средствами"
+                                         Style="{StaticResource SecondaryButtonStyle}"
+                                         HorizontalAlignment="Stretch"
+                                         Margin="5,0,0,0"
+                                         Visibility="Collapsed"
+                                         Click="ExecutorContinueAvailableButton_Click" />
+                             </Grid>
                             <StackPanel x:Name="ExecutorDownloadPanel"
                                         Margin="0,16,0,0"
                                         Visibility="Collapsed">

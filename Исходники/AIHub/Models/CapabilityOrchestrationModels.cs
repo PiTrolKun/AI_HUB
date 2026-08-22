@@ -61,7 +61,8 @@ public sealed class CapabilityResolutionPlan
 
     public bool RequiresExternalDiscovery =>
         Bindings.Any(binding =>
-            binding.Status == CapabilityBindingStatuses.UnknownCapability);
+            binding.Status is CapabilityBindingStatuses.AdapterMissing
+                or CapabilityBindingStatuses.UnknownCapability);
 
     public bool IsExecutable => Bindings.All(binding =>
         !binding.Required || binding.IsExecutable);
@@ -92,7 +93,20 @@ public sealed class ExecutionRoutePlan
 
     public List<string> Warnings { get; set; } = [];
 
-    public bool IsExecutable => Resolution.IsExecutable;
+    public int RequiredOutcomeActionCount { get; set; }
+
+    public int CoveredOutcomeActionCount { get; set; }
+
+    public int OutcomeCoveragePercent { get; set; } = 100;
+
+    public List<string> MissingOutcomeActionIds { get; set; } = [];
+
+    public bool HasCompleteOutcomeCoverage => RequiredOutcomeActionCount == 0
+        || (CoveredOutcomeActionCount >= RequiredOutcomeActionCount
+            && MissingOutcomeActionIds.Count == 0);
+
+    public bool IsExecutable => Resolution.IsExecutable
+        && HasCompleteOutcomeCoverage;
 
     public bool RequiresAcquisition => Resolution.Bindings.Any(binding =>
         binding.Required

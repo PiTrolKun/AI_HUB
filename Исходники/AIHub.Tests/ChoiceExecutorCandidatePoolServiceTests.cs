@@ -7,20 +7,21 @@ namespace AIHub.Tests;
 public sealed class ChoiceExecutorCandidatePoolServiceTests
 {
     [TestMethod]
-    public void CreatePool_KeepsInstalledAndDifferentFamilyAlternatives()
+    public void CreatePool_KeepsAllVerifiedCoordinatorAlternatives()
     {
         var pool = ChoiceExecutorCandidatePoolService.CreatePool(
             CreateInventory(),
             CreateCatalog(),
             CreateProfile(),
             UserWorkloadModes.Balanced,
-            CreatePassport());
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
 
         Assert.AreEqual(1, pool.InstalledCandidates.Count);
         Assert.AreEqual("installed_1", pool.InstalledCandidates[0].Id);
-        Assert.IsFalse(pool.AlternativeCandidates.Any(candidate => candidate.Family == "qwen"));
+        Assert.IsTrue(pool.AlternativeCandidates.Any(candidate => candidate.Family == "qwen"));
         CollectionAssert.AreEquivalent(
-            new[] { "gpt-oss", "gemma" },
+            new[] { "qwen", "gpt-oss", "gemma" },
             pool.AlternativeCandidates.Select(candidate => candidate.Family).ToArray());
     }
 
@@ -32,19 +33,72 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
             CreateCatalog(),
             CreateProfile(),
             UserWorkloadModes.Balanced,
-            CreatePassport());
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
         var card = CreateCard(pool.InstalledCandidates[0].Id, pool.AlternativeCandidates[0].Id);
         card.ExecutorSelection.PreferredCandidateId = pool.InstalledCandidates[0].Id;
 
-        Assert.IsTrue(ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var error), error);
+        Assert.IsTrue(TryApplySelection(card, pool, out var error), error);
         Assert.AreEqual("sm54/Qwen3.6-27B-Q4_K_M-GGUF", card.RecommendedExecutor);
         Assert.AreEqual(2, card.ExecutorCandidates.Count);
         Assert.AreEqual(1, card.ExecutorCandidates.Count(candidate => candidate.IsRecommended));
-        Assert.AreSame(pool.ExecutionRoute, card.ExecutionRoute);
+        Assert.AreNotSame(pool.ExecutionRoute, card.ExecutionRoute);
+        CollectionAssert.Contains(
+            card.ExecutionRoute.Requirements.Select(item => item.Request.Id).ToList(),
+            "read.text");
     }
 
     [TestMethod]
-    public void TryApplySelection_RejectsAlternativeFromSameFamily()
+    public void TryApplySelection_AllowsSingleTrustedCoordinator()
+    {
+        var pool = ChoiceExecutorCandidatePoolService.CreatePool(
+            CreateInventory(),
+            new ModelCatalogSearchResponse(),
+            CreateProfile(),
+            UserWorkloadModes.Balanced,
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
+        var card = CreateCard(pool.InstalledCandidates[0].Id, string.Empty);
+        card.ExecutorSelection.PreferredCandidateId = pool.InstalledCandidates[0].Id;
+
+        Assert.IsTrue(
+            TryApplySelection(card, pool, out var applyError),
+            applyError);
+        Assert.IsTrue(
+            ChoiceExecutorPairValidator.Validate(
+                card,
+                pool,
+                UserWorkloadModes.Balanced,
+                "Qwen3-8B-GGUF",
+                CreatePassport(),
+                out var validationError),
+            validationError);
+        Assert.AreEqual(1, card.ExecutorCandidates.Count);
+    }
+
+    [TestMethod]
+    public void TryApplySelection_AppliesPreferredComponentFromTrustedCatalog()
+    {
+        var pool = ChoiceExecutorCandidatePoolService.CreatePool(
+            CreateInventory(),
+            CreateCatalog(),
+            CreateProfile(),
+            UserWorkloadModes.Balanced,
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
+        var provider = ComponentCatalog.FindProviders("read.text").First();
+        var card = CreateCard(pool.InstalledCandidates[0].Id, pool.AlternativeCandidates[0].Id);
+        card.ExecutionPlan.PreferredComponentIds = [provider.Id];
+
+        Assert.IsTrue(
+            TryApplySelection(card, pool, out var error),
+            error);
+        Assert.IsTrue(card.ExecutionRoute.Resolution.Bindings.Any(binding =>
+            string.Equals(binding.ComponentId, provider.Id, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void TryApplySelection_AllowsSameFamilyWhenCoreSelectsIt()
     {
         var pool = new ChoiceExecutorCandidatePool
         {
@@ -67,8 +121,8 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
         };
         var card = CreateCard("installed_1", "alternative_1");
 
-        Assert.IsFalse(ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var error));
-        StringAssert.Contains(error, "different model family");
+        Assert.IsTrue(TryApplySelection(card, pool, out var error), error);
+        Assert.AreEqual(2, card.ExecutorCandidates.Count);
     }
 
     [TestMethod]
@@ -97,7 +151,7 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
         };
         var card = CreateCard("installed_1", "alternative_1");
 
-        Assert.IsTrue(ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var applyError), applyError);
+        Assert.IsTrue(TryApplySelection(card, pool, out var applyError), applyError);
         Assert.IsTrue(
             ChoiceExecutorPairValidator.Validate(
                 card,
@@ -145,7 +199,8 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
             catalog,
             CreateProfile(),
             UserWorkloadModes.Balanced,
-            CreatePassport());
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
 
         Assert.IsFalse(pool.AlternativeCandidates.Any(candidate =>
             candidate.Model == "org/video-specialist-20b"));
@@ -155,7 +210,7 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
     }
 
     [TestMethod]
-    public void CreatePool_KeepsCoordinatorChoicesButBlocksExecutionForUnresolvedCapability()
+    public void CreatePool_KeepsCoordinatorChoicesAndOffersDegradedRouteForUnresolvedCapability()
     {
         var profile = CreateProfile();
         profile.Dimensions.Add(new ChoiceCapabilityDimension
@@ -171,10 +226,13 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
             CreateCatalog(),
             profile,
             UserWorkloadModes.Balanced,
-            CreatePassport());
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
 
         Assert.IsTrue(pool.HasCandidatePair);
-        Assert.IsFalse(pool.IsExecutionReady);
+        Assert.IsTrue(pool.IsExecutionReady);
+        Assert.IsFalse(pool.ExecutionBundle.PreferredRoute.IsStartable);
+        Assert.IsTrue(pool.ExecutionBundle.DegradedRoute.IsStartable);
         CollectionAssert.Contains(pool.UnresolvedCapabilities, "generate.audio");
         Assert.IsTrue(pool.InstalledCandidates.All(candidate =>
             candidate.RuntimeCompatible
@@ -182,9 +240,9 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
 
         var card = CreateCard(
             pool.InstalledCandidates[0].Id,
-            pool.AlternativeCandidates[0].Id);
+            string.Empty);
         Assert.IsTrue(
-            ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var applyError),
+            TryApplySelection(card, pool, out var applyError),
             applyError);
         Assert.IsTrue(
             ChoiceExecutorPairValidator.Validate(
@@ -245,22 +303,32 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
             profile,
             UserWorkloadModes.Balanced,
             CreatePassport(),
-            fileManifest: manifest);
+            fileManifest: manifest,
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
 
         Assert.IsTrue(pool.HasCandidatePair);
-        Assert.IsFalse(pool.IsExecutionReady);
+        Assert.IsTrue(pool.IsExecutionReady);
+        Assert.IsFalse(pool.ExecutionBundle.PreferredRoute.IsStartable);
+        Assert.IsTrue(pool.ExecutionBundle.DegradedRoute.IsStartable);
         CollectionAssert.Contains(pool.RequiredCapabilities, "read.image_extended");
         CollectionAssert.Contains(pool.RequiredCapabilities, "analyze.image.semantic");
-        CollectionAssert.Contains(pool.UnresolvedCapabilities, "read.image_extended");
-        CollectionAssert.Contains(pool.UnresolvedCapabilities, "analyze.image.semantic");
+        CollectionAssert.Contains(pool.MissingCapabilities, "analyze.image.semantic");
+        CollectionAssert.DoesNotContain(pool.UnresolvedCapabilities, "analyze.image.semantic");
+        Assert.IsTrue(pool.ExecutionRoute.Resolution.Bindings.Any(binding =>
+            binding.RequestedCapabilityId == "read.image_extended"
+            && binding.AdapterAvailable
+            && binding.Status != CapabilityBindingStatuses.AdapterMissing));
 
         var card = CreateCard(
             pool.InstalledCandidates[0].Id,
-            pool.AlternativeCandidates[0].Id);
+            string.Empty);
         Assert.IsTrue(
-            ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var error),
+            TryApplySelection(card, pool, out var error),
             error);
-        Assert.AreSame(pool.ExecutionRoute, card.ExecutionRoute);
+        Assert.AreNotSame(pool.ExecutionRoute, card.ExecutionRoute);
+        CollectionAssert.Contains(
+            card.ExecutionRoute.Requirements.Select(item => item.Request.Id).ToList(),
+            "read.text");
     }
 
     [TestMethod]
@@ -271,25 +339,62 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
             CreateCatalog(),
             CreateProfile(),
             UserWorkloadModes.Balanced,
-            CreatePassport());
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
         var card = CreateCard(pool.InstalledCandidates[0].Id, pool.AlternativeCandidates[0].Id);
         card.ExecutorSelection.InstalledAssessment.Advantage = "Can directly edit every media format.";
 
-        Assert.IsTrue(ChoiceExecutorCandidatePoolService.TryApplySelection(card, pool, out var error), error);
+        Assert.IsTrue(TryApplySelection(card, pool, out var error), error);
         Assert.AreEqual("verified_installed_coordinator", card.ExecutorCandidates[0].Advantage);
         Assert.AreEqual(
             ExecutionCompatibilityService.CoordinatorRole,
             card.ExecutorCandidates[0].Role);
     }
 
+    [TestMethod]
+    public void TryApplySelection_RejectsDownloadableCandidateWithBlockedBundle()
+    {
+        var profile = CreateProfile();
+        profile.Dimensions.Add(new ChoiceCapabilityDimension
+        {
+            Dimension = ChoiceDecisionDimensions.SpecializationNeed,
+            Status = ChoiceDimensionStatuses.Resolved,
+            Values = ["audio_generation"],
+            Evidence = "user choice"
+        });
+        var pool = ChoiceExecutorCandidatePoolService.CreatePool(
+            CreateInventory(),
+            CreateCatalog(),
+            profile,
+            UserWorkloadModes.Balanced,
+            CreatePassport(),
+            routePlanner: TestComponentManagerFactory.CreateEmptyRoutePlanner());
+        var card = CreateCard(
+            pool.InstalledCandidates[0].Id,
+            pool.AlternativeCandidates[0].Id);
+        card.ExecutionPlan.RequiredCapabilities = ["generate.audio"];
+
+        Assert.IsFalse(
+            TryApplySelection(card, pool, out var error));
+        StringAssert.Contains(error, "complete execution bundle");
+    }
+
     private static ChoiceTaskCard CreateCard(string installedId, string alternativeId) => new()
     {
         CapabilityProfile = CreateProfile(),
+        ExecutionPlan = new ChoiceExecutionPlan
+        {
+            RequiredCapabilities = ["read.text"],
+            ExecutorRole = "Research coordinator",
+            Rationale = "Coordinate the verified task and use the selected execution capabilities."
+        },
         ExecutorSelection = new ChoiceExecutorSelection
         {
             InstalledCandidateId = installedId,
             AlternativeCandidateId = alternativeId,
-            PreferredCandidateId = alternativeId,
+            PreferredCandidateId = string.IsNullOrWhiteSpace(alternativeId)
+                ? installedId
+                : alternativeId,
             InstalledAssessment = new ChoiceExecutorAssessment
             {
                 Advantage = "Запускается сразу",
@@ -367,6 +472,16 @@ public sealed class ChoiceExecutorCandidatePoolServiceTests
         },
         MatchReasons = ["direction match"]
     };
+
+    private static bool TryApplySelection(
+        ChoiceTaskCard card,
+        ChoiceExecutorCandidatePool pool,
+        out string error) =>
+        ChoiceExecutorCandidatePoolService.TryApplySelection(
+            card,
+            pool,
+            out error,
+            TestComponentManagerFactory.CreateEmptyRoutePlanner());
 
     private static ComputerPassport CreatePassport() => new()
     {

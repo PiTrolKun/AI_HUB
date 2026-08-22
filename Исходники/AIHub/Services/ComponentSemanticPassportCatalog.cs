@@ -76,6 +76,12 @@ public static class ComponentSemanticPassportCatalog
             ["model.whisper.small"] = new(
                 "Многоязычная модель Whisper small переводит речь в текст. Она не анализирует музыку и другие звуки как события.",
                 "Multilingual Whisper small converts speech to text. It does not analyze music or other sounds as semantic events."),
+            ["model.vision.smolvlm2.projector"] = new(
+                "Связывает пиксели изображения с локальной моделью SmolVLM2. Самостоятельно изображение не описывает и работает только вместе с совместимой моделью.",
+                "Connects image pixels to the local SmolVLM2 model. It cannot describe images by itself and only works with a compatible model."),
+            ["model.vision.smolvlm2.q4km"] = new(
+                "Локально описывает видимое содержание прикреплённых изображений через проверенный llama.cpp и совместимый проектор. Не гарантирует распознавание личности, точный OCR или достоверность невидимых деталей.",
+                "Describes visible content of attached images locally through verified llama.cpp and a compatible projector. It does not guarantee identity recognition, exact OCR, or unseen details."),
             ["runtime.comfyui"] = new(
                 "Запланированный runtime генерации изображений. Пока отключён до отдельной безопасной интеграции.",
                 "Planned image-generation runtime. It remains disabled until a separate safe integration is implemented."),

@@ -13,40 +13,9 @@ public static class ChoiceExecutorPairValidator
         out string error)
     {
         error = string.Empty;
-        if (card.ExecutorCandidates.Count != 2)
+        if (card.ExecutorCandidates.Count is < 1 or > 2)
         {
-            error = "The resolved executor choice must contain exactly two candidates.";
-            return false;
-        }
-
-        var installed = card.ExecutorCandidates.SingleOrDefault(candidate =>
-            candidate.Status == ChoiceExecutorCandidateStatuses.Installed);
-        var alternative = card.ExecutorCandidates.SingleOrDefault(candidate =>
-            candidate.Status == ChoiceExecutorCandidateStatuses.NotInstalled);
-        if (installed is null || alternative is null)
-        {
-            error = "The resolved executor choice requires one installed and one downloadable candidate.";
-            return false;
-        }
-
-        var installedSource = pool.InstalledCandidates.FirstOrDefault(candidate =>
-            string.Equals(candidate.Model, installed.Model, StringComparison.OrdinalIgnoreCase));
-        var alternativeSource = pool.AlternativeCandidates.FirstOrDefault(candidate =>
-            string.Equals(candidate.Model, alternative.Model, StringComparison.OrdinalIgnoreCase));
-        if (installedSource is null || alternativeSource is null)
-        {
-            error = "The resolved executor choice contains a model outside the trusted candidate pool.";
-            return false;
-        }
-        if (!installedSource.RuntimeCompatible || !alternativeSource.RuntimeCompatible)
-        {
-            error = "The resolved executor choice contains a model without a verified coordinator runtime.";
-            return false;
-        }
-
-        if (string.Equals(installedSource.Family, alternativeSource.Family, StringComparison.OrdinalIgnoreCase))
-        {
-            error = "The downloadable alternative must be from a different model family.";
+            error = "The resolved executor choice must contain one or two trusted coordinator candidates.";
             return false;
         }
 
@@ -60,9 +29,25 @@ public static class ChoiceExecutorPairValidator
 
         foreach (var candidate in card.ExecutorCandidates)
         {
-            var source = candidate.Status == ChoiceExecutorCandidateStatuses.Installed
-                ? installedSource
-                : alternativeSource;
+            var source = candidate.Status switch
+            {
+                ChoiceExecutorCandidateStatuses.Installed => pool.InstalledCandidates.FirstOrDefault(item =>
+                    string.Equals(item.Model, candidate.Model, StringComparison.OrdinalIgnoreCase)),
+                ChoiceExecutorCandidateStatuses.NotInstalled => pool.AlternativeCandidates.FirstOrDefault(item =>
+                    string.Equals(item.Model, candidate.Model, StringComparison.OrdinalIgnoreCase)),
+                _ => null
+            };
+            if (source is null)
+            {
+                error = $"Executor candidate '{candidate.Model}' is outside the trusted candidate pool.";
+                return false;
+            }
+            if (!source.RuntimeCompatible)
+            {
+                error = $"Executor candidate '{candidate.Model}' has no verified coordinator runtime.";
+                return false;
+            }
+
             var policyMetadata = new ModelCatalogCandidate
             {
                 RepoId = source.Model,

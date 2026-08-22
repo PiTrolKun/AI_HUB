@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -72,6 +73,7 @@ public partial class MainWindow : Window
     private ExecutorModelArtifact? _pendingExecutorArtifact;
     private ComponentAcquisitionPlan? _pendingExecutorComponentPlan;
     private ChoiceExecutorCandidate? _selectedExecutorCandidate;
+    private bool _startExecutorWithAvailableComponents;
     private readonly CancellationTokenSource _catalogStartupCts = new();
     private ISessionEventLog? _choiceScenarioLog;
     private int _choiceScenarioInvalidJsonCount;
@@ -599,6 +601,7 @@ public partial class MainWindow : Window
         ChoiceScenarioSummaryTitleText.Text = L("ChoiceScenario.TaskCardTitle");
         ExecutionRouteTitleText.Text = L("ExecutionRoute.Title");
         ExecutorPrepareButton.Content = L("Executor.Prepare");
+        ExecutorContinueAvailableButton.Content = L("Executor.ContinueAvailable");
         ExecutorDownloadTitleText.Text = L("Executor.DownloadTitle");
         ExecutorCancelDownloadButton.Content = L("ChoiceScenario.Cancel");
         ExecutorConfirmDownloadButton.Content = L("Executor.DownloadAndRun");
@@ -623,9 +626,7 @@ public partial class MainWindow : Window
             RenderExecutionRoute(localizedTaskCard);
             if (_selectedExecutorCandidate is not null)
             {
-                ExecutorPrepareButton.Content = localizedTaskCard.ExecutionRoute.HasBlockedRequirements
-                    ? L("Executor.CheckRoute")
-                    : L("Executor.Prepare");
+                UpdateExecutorPreparationActions(localizedTaskCard);
             }
         }
 
@@ -1886,11 +1887,7 @@ public partial class MainWindow : Window
         card.ExecutorReason = BuildExecutorVerifiedReason(candidate);
         RenderExecutionRoute(card);
         RenderExecutorCandidates(card);
-        ExecutorPrepareButton.Content = card.ExecutionRoute.HasBlockedRequirements
-            ? L("Executor.CheckRoute")
-            : L("Executor.Prepare");
-        ExecutorPrepareButton.Visibility = Visibility.Visible;
-        ExecutorPrepareButton.IsEnabled = true;
+        UpdateExecutorPreparationActions(card);
     }
 
     private static bool ModelNamesReferToSameExecutor(string left, string right)
@@ -3084,6 +3081,8 @@ public partial class MainWindow : Window
             ChoiceScenarioSummaryPanel.Visibility = Visibility.Collapsed;
             ChoiceScenarioSummaryText.Text = string.Empty;
             ExecutorPrepareButton.Visibility = Visibility.Collapsed;
+            ExecutorPreparationActionsPanel.Visibility = Visibility.Collapsed;
+            ExecutorContinueAvailableButton.Visibility = Visibility.Collapsed;
             ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
             ExecutorResultPanel.Visibility = Visibility.Collapsed;
             ExecutorCandidateChoicePanel.Visibility = Visibility.Collapsed;
@@ -3132,6 +3131,8 @@ public partial class MainWindow : Window
         RenderExecutionRoute(step.TaskCard);
         RenderExecutorCandidates(step.TaskCard);
         ExecutorPrepareButton.Visibility = Visibility.Collapsed;
+        ExecutorPreparationActionsPanel.Visibility = Visibility.Collapsed;
+        ExecutorContinueAvailableButton.Visibility = Visibility.Collapsed;
         ExecutorPrepareButton.IsEnabled = true;
         ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
         ExecutorResultPanel.Visibility = Visibility.Collapsed;
@@ -3143,7 +3144,7 @@ public partial class MainWindow : Window
     private void RenderExecutorCandidates(ChoiceTaskCard? card)
     {
         _executorCandidateOptions.Clear();
-        if (card is null || card.ExecutorCandidates.Count != 2)
+        if (card is null || card.ExecutorCandidates.Count == 0)
         {
             ExecutorCandidateChoicePanel.Visibility = Visibility.Collapsed;
             return;
@@ -3179,7 +3180,7 @@ public partial class MainWindow : Window
 
     private void RenderExecutionRoute(ChoiceTaskCard? card)
     {
-        if (card?.ExecutionRoute is not { Requirements.Count: > 0 } route)
+        if (card?.ExecutionRoute is not { } route)
         {
             ExecutionRoutePanel.Visibility = Visibility.Collapsed;
             ExecutionRouteDetailsText.Text = string.Empty;
@@ -3192,6 +3193,38 @@ public partial class MainWindow : Window
             builder.AppendLine(LF(
                 "ExecutionRoute.SourceFormats",
                 string.Join(", ", route.SourceFormats)));
+        }
+
+        if (card.WorkPatterns.Selections.Count > 0)
+        {
+            builder.AppendLine(LF(
+                "ExecutionRoute.PatternMatches",
+                string.Join(
+                    ", ",
+                    card.WorkPatterns.Selections.Select(selection =>
+                        $"{selection.PatternId} ({Math.Clamp(selection.MatchPercent, 0, 100)}%)"))));
+        }
+
+        builder.AppendLine(LF(
+            "ExecutionRoute.Artifact",
+            card.ArtifactContract.ArtifactKind,
+            card.ArtifactContract.PreferredExtension));
+        builder.AppendLine(LF(
+            "ExecutionRoute.SelectedLevel",
+            L($"ExecutionRoute.Level.{card.ExecutionBundle.SelectedRouteLevel}")));
+        builder.AppendLine(LF(
+            "ExecutionRoute.DownloadCount",
+            card.ExecutionBundle.AcquisitionPlan.Items.Count));
+        builder.AppendLine(LF(
+            "ExecutionRoute.OutcomeCoverage",
+            route.CoveredOutcomeActionCount,
+            route.RequiredOutcomeActionCount,
+            Math.Clamp(route.OutcomeCoveragePercent, 0, 100)));
+        if (route.MissingOutcomeActionIds.Count > 0)
+        {
+            builder.AppendLine(LF(
+                "ExecutionRoute.MissingOutcomeActions",
+                string.Join(", ", route.MissingOutcomeActionIds)));
         }
 
         foreach (var requirement in route.Requirements)
@@ -3208,12 +3241,39 @@ public partial class MainWindow : Window
                 L($"ExecutionRoute.Status.{binding?.Status ?? CapabilityBindingStatuses.UnknownCapability}")));
         }
 
+        if (card.ExternalDiscovery.Searches.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine(L("ExecutionRoute.ExternalCandidates"));
+            foreach (var search in card.ExternalDiscovery.Searches)
+            {
+                if (search.Candidates.Count == 0)
+                {
+                    builder.AppendLine(LF(
+                        "ExecutionRoute.ExternalNoCandidates",
+                        search.CapabilityId));
+                    continue;
+                }
+
+                foreach (var candidate in search.Candidates.Take(2))
+                {
+                    builder.AppendLine(LF(
+                        "ExecutionRoute.ExternalCandidate",
+                        search.CapabilityId,
+                        candidate.Title,
+                        candidate.Url));
+                }
+            }
+            builder.AppendLine(L("ExecutionRoute.ExternalWarning"));
+        }
+
         ExecutionRouteTitleText.Text = L("ExecutionRoute.Title");
         ExecutionRouteStatusText.Text = route.IsExecutable
             ? L("ExecutionRoute.Ready")
-            : route.HasBlockedRequirements
-                ? L("ExecutionRoute.Blocked")
-                : L("ExecutionRoute.RequiresPreparation");
+            : card is not null
+              && CanStartExecutorBundle(card)
+                ? L("ExecutionRoute.RequiresPreparation")
+                : L("ExecutionRoute.Blocked");
         ExecutionRouteDetailsText.Text = builder.ToString().Trim();
         ExecutionRoutePanel.Visibility = Visibility.Visible;
     }
@@ -3233,16 +3293,12 @@ public partial class MainWindow : Window
         card.ExecutorCapabilityClass = candidate.CapabilityClass;
         card.ExecutorReason = BuildExecutorVerifiedReason(candidate);
         RenderExecutorCandidates(card);
-        var routeBlocked = card.ExecutionRoute.HasBlockedRequirements;
-        ExecutorPrepareButton.Content = routeBlocked
-            ? L("Executor.CheckRoute")
-            : L("Executor.Prepare");
-        ExecutorPrepareButton.Visibility = Visibility.Visible;
-        ExecutorPrepareButton.IsEnabled = true;
-        StatusText.Text = !routeBlocked
+        UpdateExecutorPreparationActions(card);
+        StatusText.Text = card.ExecutionRoute.IsExecutable
             ? LF("Status.ExecutorCandidateSelected", candidate.Model)
             : LF(
-                "Status.ExecutorUnresolvedCapabilities",
+                "Status.ExecutorAvailableRoute",
+                candidate.Model,
                 string.Join(", ", card.ExecutionRoute.Resolution.Bindings
                     .Where(binding => binding.Required && !binding.IsExecutable)
                     .Select(binding => binding.RequestedCapabilityId)));
@@ -3273,16 +3329,26 @@ public partial class MainWindow : Window
 
     private string BuildExecutorAvailabilityStatus(ChoiceExecutorCandidate candidate)
     {
+        var match = string.Join(
+            Environment.NewLine,
+            LF(
+                "Executor.CoordinatorMatch",
+                Math.Clamp(candidate.CoordinatorMatchPercent, 0, 100)),
+            LF(
+                "Executor.RouteCoverage",
+                Math.Clamp(candidate.RouteCoveragePercent, 0, 100)));
         if (candidate.UnresolvedCapabilities.Count > 0)
         {
-            return candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+            var availability = candidate.Status == ChoiceExecutorCandidateStatuses.Installed
                 ? L("Executor.StatusInstalledIncomplete")
                 : L("Executor.StatusDownloadIncomplete");
+            return $"{match}\n{availability}";
         }
 
-        return candidate.Status == ChoiceExecutorCandidateStatuses.Installed
+        var readyStatus = candidate.Status == ChoiceExecutorCandidateStatuses.Installed
             ? L("Executor.StatusInstalled")
             : L("Executor.StatusDownload");
+        return $"{match}\n{readyStatus}";
     }
 
     private string BuildExecutorVerifiedLimitation(ChoiceExecutorCandidate candidate)
@@ -3316,8 +3382,84 @@ public partial class MainWindow : Window
                 ? L("Executor.VerifiedTaskMatchReason")
                 : L("Executor.VerifiedFallbackReason");
 
+    private void UpdateExecutorPreparationActions(ChoiceTaskCard card)
+    {
+        var hasSelectedCandidate = _selectedExecutorCandidate is not null;
+        var selectedInstalled = _selectedExecutorCandidate?.Status
+            == ChoiceExecutorCandidateStatuses.Installed;
+        var needsAcquisition = HasTrustedExecutorAcquisition(card);
+        var needsExternalDiscovery = card.ExecutionRoute.HasBlockedRequirements
+            && !needsAcquisition;
+        ExecutorPrepareButton.Content = needsExternalDiscovery
+            ? L("Executor.FindExternalComponents")
+            : needsAcquisition
+                ? L("Executor.DownloadAndImprove")
+                : L("Executor.Prepare");
+        ExecutorPrepareButton.IsEnabled = hasSelectedCandidate
+            && (CanStartExecutorBundle(card) || needsExternalDiscovery);
+        ExecutorContinueAvailableButton.Content = L("Executor.ContinueAvailable");
+        ExecutorContinueAvailableButton.Visibility = hasSelectedCandidate
+            && selectedInstalled
+            && !card.ExecutionRoute.IsExecutable
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        ExecutorContinueAvailableButton.IsEnabled = selectedInstalled
+            && card.ExecutionBundle.DegradedRoute.IsStartable;
+        ExecutorPreparationActionsPanel.Visibility = hasSelectedCandidate
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ExecutorPrepareButton.Visibility = hasSelectedCandidate
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private static bool HasTrustedExecutorAcquisition(ChoiceTaskCard card) =>
+        card.ExecutionRoute.Resolution.Acquisition.Items.Any(item => !item.AlreadyAvailable)
+        || card.ExecutionBundle.AcquisitionPlan.RequiresConfirmation;
+
+    private void RevalidateExecutorExecutionBundle(
+        ChoiceTaskCard card,
+        string reason,
+        string logEvent)
+    {
+        var promptManifest = _sessionFileManifestService.CreatePromptManifest(
+            GetActiveFileManifest());
+        var selectedPatterns = new WorkPatternCatalogService().ResolveSelected(
+            card.WorkPatterns);
+        card.ArtifactContract = new ArtifactContractBuilder().Build(
+            selectedPatterns,
+            promptManifest);
+        card.OutcomeContract = new ExecutionOutcomeContractService().Build(
+            card.Goal,
+            card.CapabilityProfile,
+            promptManifest,
+            selectedPatterns,
+            card.ArtifactContract);
+        card.ExecutionRoute = new ExecutionRoutePlannerService().Build(
+            card.CapabilityProfile,
+            promptManifest,
+            reason,
+            selectedPatterns,
+            card.ExecutionPlan,
+            card.OutcomeContract);
+        card.ExecutionBundle = new ExecutionBundlePlannerService().Build(
+            card.WorkPatterns,
+            card.ArtifactContract,
+            card.ExecutionRoute);
+        RenderExecutionRoute(card);
+        _choiceScenarioLog?.Write(logEvent, new
+        {
+            card.WorkPatterns,
+            card.ArtifactContract,
+            card.OutcomeContract,
+            card.ExecutionBundle
+        });
+    }
+
     private async void ExecutorPrepareButton_Click(object sender, RoutedEventArgs e)
     {
+        var useAvailableComponents = _startExecutorWithAvailableComponents;
+        _startExecutorWithAvailableComponents = false;
         var card = _currentChoiceScenarioStep?.TaskCard;
         if (card is null
             || _selectedExecutorCandidate is null
@@ -3327,31 +3469,37 @@ public partial class MainWindow : Window
             return;
         }
 
-        card.ExecutionRoute = new ExecutionRoutePlannerService().Build(
-            card.CapabilityProfile,
-            _sessionFileManifestService.CreatePromptManifest(GetActiveFileManifest()),
-            "Revalidate the execution route before preparing the selected coordinator.");
-        RenderExecutionRoute(card);
-        _choiceScenarioLog?.Write("executor_execution_route_revalidated", card.ExecutionRoute);
-        if (card.ExecutionRoute.HasBlockedRequirements)
+        RevalidateExecutorExecutionBundle(
+            card,
+            "Revalidate the execution route before preparing the selected coordinator.",
+            "executor_execution_bundle_revalidated");
+        var trustedAcquisitionAvailable = HasTrustedExecutorAcquisition(card);
+        if (useAvailableComponents)
         {
-            _pendingExecutorArtifact = null;
-            _pendingExecutorComponentPlan = null;
-            StatusText.Text = LF(
-                "Status.ExecutorUnresolvedCapabilities",
-                string.Join(", ", card.ExecutionRoute.Resolution.Bindings
-                    .Where(binding =>
-                        binding.Required
-                        && binding.Status is CapabilityBindingStatuses.AdapterMissing
-                            or CapabilityBindingStatuses.UnknownCapability)
-                    .Select(binding => binding.RequestedCapabilityId)));
-            ExecutorPrepareButton.Content = L("Executor.CheckRoute");
-            ExecutorPrepareButton.Visibility = Visibility.Visible;
-            ExecutorPrepareButton.IsEnabled = true;
+            SelectDegradedExecutorRoute(card);
+        }
+        else if (card.ExecutionRoute.HasBlockedRequirements
+                 && !trustedAcquisitionAvailable)
+        {
+            ExecutorPrepareButton.IsEnabled = false;
+            ExecutorContinueAvailableButton.IsEnabled = false;
+            ExecutorCandidateItemsControl.IsEnabled = false;
+            _executorCts?.Dispose();
+            _executorCts = new CancellationTokenSource();
+            await DiscoverMissingRouteComponentsAsync(card, _executorCts.Token);
+            ExecutorCandidateItemsControl.IsEnabled = true;
+            UpdateExecutorPreparationActions(card);
+            return;
+        }
+        else if (!CanStartExecutorBundle(card)
+                 && !trustedAcquisitionAvailable)
+        {
+            StatusText.Text = L("ExecutionRoute.Blocked");
             return;
         }
 
         ExecutorPrepareButton.IsEnabled = false;
+        ExecutorContinueAvailableButton.IsEnabled = false;
         ExecutorCandidateItemsControl.IsEnabled = false;
         _executorCts?.Dispose();
         _executorCts = new CancellationTokenSource();
@@ -3369,14 +3517,22 @@ public partial class MainWindow : Window
                 pendingCoreRequestFinal: false);
             if (_pendingExecutorArtifact.IsInstalled)
             {
-                if (!await EnsureExecutorComponentsReadyAsync(
-                        _pendingExecutorComponentPlan,
-                        confirmationAlreadyGranted: false,
-                        _executorCts.Token))
+                if (!useAvailableComponents
+                    && !await EnsureExecutorComponentsReadyAsync(
+                             _pendingExecutorComponentPlan,
+                             confirmationAlreadyGranted: false,
+                             _executorCts.Token))
                 {
-                    ExecutorPrepareButton.IsEnabled = true;
-                    ExecutorCandidateItemsControl.IsEnabled = true;
+                    RestoreExecutorPreparationControls();
                     return;
+                }
+                RevalidateExecutorExecutionBundle(
+                    card,
+                    "Revalidate the execution route after preparing trusted components.",
+                    "executor_execution_bundle_after_component_preparation");
+                if (card.ExecutionRoute.HasBlockedRequirements)
+                {
+                    SelectDegradedExecutorRoute(card);
                 }
                 await RunExecutorAsync(_pendingExecutorArtifact, card);
                 return;
@@ -3412,6 +3568,7 @@ public partial class MainWindow : Window
         {
             StatusText.Text = L("Status.ExecutorCancelled");
             ExecutorPrepareButton.IsEnabled = true;
+            ExecutorContinueAvailableButton.IsEnabled = true;
             ExecutorCandidateItemsControl.IsEnabled = true;
         }
         catch (Exception ex)
@@ -3419,8 +3576,20 @@ public partial class MainWindow : Window
             _choiceScenarioLog?.Write("executor_artifact_error", new { ex.Message, ErrorType = ex.GetType().FullName });
             StatusText.Text = LF("Status.ExecutorResolveFailed", ex.Message);
             ExecutorPrepareButton.IsEnabled = true;
+            ExecutorContinueAvailableButton.IsEnabled = true;
             ExecutorCandidateItemsControl.IsEnabled = true;
         }
+    }
+
+    private void ExecutorContinueAvailableButton_Click(object sender, RoutedEventArgs e)
+    {
+        _startExecutorWithAvailableComponents = true;
+        _choiceScenarioLog?.Write("executor_continue_available_selected", new
+        {
+            Model = _selectedExecutorCandidate?.Model,
+            Route = ExecutionRouteLevels.Degraded
+        });
+        ExecutorPrepareButton_Click(sender, e);
     }
 
     private async void ExecutorConfirmDownloadButton_Click(object sender, RoutedEventArgs e)
@@ -3434,6 +3603,7 @@ public partial class MainWindow : Window
         _executorCts = new CancellationTokenSource();
         ExecutorConfirmDownloadButton.IsEnabled = false;
         ExecutorPrepareButton.IsEnabled = false;
+        ExecutorContinueAvailableButton.IsEnabled = false;
         var progress = new Progress<ExecutorDownloadProgress>(UpdateExecutorDownloadProgress);
         try
         {
@@ -3450,9 +3620,16 @@ public partial class MainWindow : Window
                     confirmationAlreadyGranted: true,
                     _executorCts.Token))
             {
-                ExecutorPrepareButton.IsEnabled = true;
-                ExecutorCandidateItemsControl.IsEnabled = true;
+                RestoreExecutorPreparationControls();
                 return;
+            }
+            RevalidateExecutorExecutionBundle(
+                card,
+                "Revalidate the execution route after downloading the coordinator and trusted components.",
+                "executor_execution_bundle_after_download");
+            if (card.ExecutionRoute.HasBlockedRequirements)
+            {
+                SelectDegradedExecutorRoute(card);
             }
             if (_resumeExecutorAfterDownload
                 && _activeResumableSession?.Executor is { } checkpoint
@@ -3471,6 +3648,7 @@ public partial class MainWindow : Window
             StatusText.Text = L("Status.ExecutorDownloadCancelled");
             ExecutorConfirmDownloadButton.IsEnabled = true;
             ExecutorPrepareButton.IsEnabled = true;
+            ExecutorContinueAvailableButton.IsEnabled = true;
             ExecutorCandidateItemsControl.IsEnabled = true;
         }
         catch (Exception ex)
@@ -3479,8 +3657,33 @@ public partial class MainWindow : Window
             StatusText.Text = LF("Status.ExecutorDownloadFailed", ex.Message);
             ExecutorConfirmDownloadButton.IsEnabled = true;
             ExecutorPrepareButton.IsEnabled = true;
+            ExecutorContinueAvailableButton.IsEnabled = true;
             ExecutorCandidateItemsControl.IsEnabled = true;
         }
+    }
+
+    private static bool CanStartExecutorBundle(ChoiceTaskCard card) =>
+        card.ExecutionRoute.IsExecutable
+        || card.ExecutionRoute.RequiresAcquisition
+        || card.ExecutionBundle.DegradedRoute.IsStartable;
+
+    private void RestoreExecutorPreparationControls()
+    {
+        ExecutorPrepareButton.IsEnabled = true;
+        ExecutorContinueAvailableButton.IsEnabled = true;
+        ExecutorCandidateItemsControl.IsEnabled = true;
+    }
+
+    private void SelectDegradedExecutorRoute(ChoiceTaskCard card)
+    {
+        card.ExecutionBundle.SelectedRouteLevel = ExecutionRouteLevels.Degraded;
+        _choiceScenarioLog?.Write("executor_degraded_route_selected", new
+        {
+            card.ExecutionBundle.SelectedRouteLevel,
+            card.ExecutionBundle.DegradedRoute.MissingCapabilities,
+            card.ArtifactContract.EmergencyAcceptableResult
+        });
+        StatusText.Text = L("ExecutionRoute.RequiresPreparation");
     }
 
     private void ExecutorCancelDownloadButton_Click(object sender, RoutedEventArgs e)
@@ -3488,6 +3691,7 @@ public partial class MainWindow : Window
         _executorCts?.Cancel();
         ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
         ExecutorPrepareButton.IsEnabled = true;
+        ExecutorContinueAvailableButton.IsEnabled = true;
         ExecutorCandidateItemsControl.IsEnabled = true;
         StatusText.Text = L("Status.ExecutorDownloadCancelled");
     }
@@ -3542,8 +3746,10 @@ public partial class MainWindow : Window
         {
             ExecutorResultPanel.Visibility = Visibility.Collapsed;
             ChoiceScenarioPreparationViewbox.Visibility = Visibility.Visible;
-            ExecutorPrepareButton.Visibility = Visibility.Visible;
-            ExecutorPrepareButton.IsEnabled = true;
+            if (_currentChoiceScenarioStep?.TaskCard is { } card)
+            {
+                UpdateExecutorPreparationActions(card);
+            }
             throw;
         }
         finally
@@ -3564,6 +3770,8 @@ public partial class MainWindow : Window
         ExecutorCandidateChoicePanel.Visibility = Visibility.Collapsed;
         ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
         ExecutorPrepareButton.Visibility = Visibility.Collapsed;
+        ExecutorPreparationActionsPanel.Visibility = Visibility.Collapsed;
+        ExecutorContinueAvailableButton.Visibility = Visibility.Collapsed;
         ChoiceScenarioPreparationViewbox.Visibility = Visibility.Collapsed;
         ExecutorResultPanel.Visibility = Visibility.Visible;
         ExecutorLivePreviewPanel.Visibility = Visibility.Collapsed;
@@ -3597,6 +3805,8 @@ public partial class MainWindow : Window
         ExecutorCandidateChoicePanel.Visibility = Visibility.Collapsed;
         ExecutorDownloadPanel.Visibility = Visibility.Collapsed;
         ExecutorPrepareButton.Visibility = Visibility.Collapsed;
+        ExecutorPreparationActionsPanel.Visibility = Visibility.Collapsed;
+        ExecutorContinueAvailableButton.Visibility = Visibility.Collapsed;
         ChoiceScenarioPreparationViewbox.Visibility = Visibility.Collapsed;
         ExecutorResultPanel.Visibility = Visibility.Visible;
         ExecutorResultTitleText.Text = L("Executor.ResultTitle");
@@ -3663,8 +3873,7 @@ public partial class MainWindow : Window
             StatusText.Text = LF("Status.ExecutorFailed", ex.Message);
             ExecutorResultPanel.Visibility = Visibility.Collapsed;
             ChoiceScenarioPreparationViewbox.Visibility = Visibility.Visible;
-            ExecutorPrepareButton.Visibility = Visibility.Visible;
-            ExecutorPrepareButton.IsEnabled = true;
+            UpdateExecutorPreparationActions(card);
         }
         finally
         {
@@ -4051,6 +4260,10 @@ public partial class MainWindow : Window
             AnswerPreferences = _userProfile.AnswerPreferences,
             ParentCoreSessionId = _choiceScenarioLog?.SessionId ?? string.Empty,
             ParentRunId = _activeResumableSession?.CurrentRunId ?? string.Empty,
+            WorkPatterns = card.WorkPatterns,
+            ArtifactContract = card.ArtifactContract,
+            OutcomeContract = card.OutcomeContract,
+            ExecutionBundle = card.ExecutionBundle,
             FileManifest = _sessionFileManifestService.CreatePromptManifest(
                 activeFileManifest,
                 contentAccessAvailable: true),
@@ -4061,6 +4274,13 @@ public partial class MainWindow : Window
                 "Subject-specific constraints and source data"
             ]
         };
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "outcome_contract",
+            Value = JsonSerializer.Serialize(card.OutcomeContract),
+            Source = "program_execution_contract",
+            IsAuthoritative = true
+        });
         handoff.ProgramFacts.Add(new ExecutorHandoffItem
         {
             Name = "selected_executor",
@@ -4103,6 +4323,30 @@ public partial class MainWindow : Window
             Name = "required_file_capabilities",
             Value = string.Join(", ", ComponentCapabilityMapper.FromProfile(card.CapabilityProfile)),
             Source = "program_component_plan",
+            IsAuthoritative = true
+        });
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "sandbox_work_patterns",
+            Value = string.Join(
+                ", ",
+                card.WorkPatterns.Selections.Select(item =>
+                    $"{item.PatternId}:{item.MatchPercent}%")),
+            Source = "core_pattern_classification",
+            IsAuthoritative = false
+        });
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "artifact_contract",
+            Value = $"{card.ArtifactContract.ArtifactKind} {card.ArtifactContract.PreferredExtension} {card.ArtifactContract.MimeType}",
+            Source = "program_artifact_contract",
+            IsAuthoritative = true
+        });
+        handoff.ProgramFacts.Add(new ExecutorHandoffItem
+        {
+            Name = "selected_execution_route",
+            Value = card.ExecutionBundle.SelectedRouteLevel,
+            Source = "program_execution_bundle",
             IsAuthoritative = true
         });
         foreach (var answer in _choiceScenarioState.Answers)
@@ -4521,7 +4765,8 @@ public partial class MainWindow : Window
                 L("Executor.ResultWindowVersion"),
                 finalResult
                     ? L("Executor.FinalResultWindowHint")
-                    : L("Executor.ResultWindowHint"))
+                    : L("Executor.ResultWindowHint"),
+                L)
             {
                 Owner = this
             };

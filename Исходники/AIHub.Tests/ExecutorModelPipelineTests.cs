@@ -349,9 +349,187 @@ public sealed class ExecutorModelPipelineTests
         StringAssert.Contains(schema, "canFinalize");
         StringAssert.Contains(schema, "completionReason");
         StringAssert.Contains(schema, ExecutorTurnActions.SuggestFinalization);
+        StringAssert.Contains(schema, ExecutorTurnActions.RequestCapability);
+        StringAssert.Contains(schema, "requestedCapabilities");
+        Assert.IsFalse(schema.Contains("\"requestedCapability\"", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("\"capabilityReason\"", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("\"capabilityRequired\"", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("\"maxLength\"", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("continue_work", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("present_result", StringComparison.Ordinal));
         Assert.IsFalse(schema.Contains("result_ready", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void ResultParser_ReadsCapabilityRequestWithoutLegacyDuplicateFields()
+    {
+        const string response = """
+            {
+              "status":"working",
+              "action":"request_capability",
+              "stageId":"task_definition",
+              "stageSummary":"",
+              "thought":"Для понимания изображения нужен OCR.",
+              "question":"",
+              "options":[],
+              "allowCustom":false,
+              "currentResultSummary":"",
+              "workingResultFragment":"",
+              "canFinalize":false,
+              "completionReason":"",
+              "requestedTools":[],
+              "requestedCapabilities":[
+                {
+                  "id":"extract.image_ocr",
+                  "purpose":"Извлечь текст с изображения до формирования точной задачи.",
+                  "required":true,
+                  "alternatives":["read.image_pixels"]
+                }
+              ],
+              "missingCriticalInputs":[],
+              "assumptions":[],
+              "result":"",
+              "sources":[],
+              "warnings":[]
+            }
+            """;
+
+        var parsed = ExecutorResultParser.TryReadTurn(response, out var turn);
+
+        Assert.IsTrue(parsed);
+        Assert.AreEqual(ExecutorTurnActions.RequestCapability, turn.Action);
+        Assert.AreEqual("extract.image_ocr", turn.RequestedCapability);
+        Assert.AreEqual(
+            "Извлечь текст с изображения до формирования точной задачи.",
+            turn.CapabilityReason);
+        Assert.IsTrue(turn.CapabilityRequired);
+        Assert.AreEqual("read.image_pixels", turn.RequestedCapabilities[0].Alternatives[0]);
+    }
+
+    [TestMethod]
+    public void TurnStagePolicy_AllowsCapabilityRequestBeforeBriefConfirmation()
+    {
+        var turn = new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.RequestCapability,
+            StageId = ExecutorStageIds.TaskDefinition,
+            RequestedCapabilities =
+            [
+                new ExecutorCapabilityRequest
+                {
+                    Id = "extract.image_ocr",
+                    Purpose = "Понять содержимое изображения.",
+                    Required = true
+                }
+            ]
+        };
+
+        Assert.IsTrue(ExecutorTurnStagePolicy.IsAllowed(
+            turn,
+            ExecutorStageIds.TaskDefinition,
+            briefConfirmed: false));
+    }
+
+    [TestMethod]
+    public void TurnStagePolicy_AllowsCapabilityRequestAfterBriefConfirmation()
+    {
+        var turn = new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.RequestCapability,
+            StageId = ExecutorStageIds.PracticalClarification,
+            RequestedCapabilities =
+            [
+                new ExecutorCapabilityRequest
+                {
+                    Id = "extract.image_ocr",
+                    Purpose = "Уточнить текстовую деталь рабочего результата.",
+                    Required = true
+                }
+            ]
+        };
+
+        Assert.IsTrue(ExecutorTurnStagePolicy.IsAllowed(
+            turn,
+            ExecutorStageIds.PracticalClarification,
+            briefConfirmed: true));
+    }
+
+    [TestMethod]
+    public void TurnStagePolicy_RejectsCapabilityRequestWithoutPurpose()
+    {
+        var turn = new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.RequestCapability,
+            RequestedCapabilities =
+            [
+                new ExecutorCapabilityRequest
+                {
+                    Id = "extract.image_ocr",
+                    Purpose = ""
+                }
+            ]
+        };
+
+        Assert.IsFalse(ExecutorTurnStagePolicy.IsAllowed(
+            turn,
+            ExecutorStageIds.TaskDefinition,
+            briefConfirmed: false));
+    }
+
+    [TestMethod]
+    public void TurnStagePolicy_ReportsMissingWorkingFragmentInsteadOfFormatFailure()
+    {
+        var turn = new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            Question = "Добавить заключение?",
+            CurrentResultSummary = "Основной художественный анализ уже сохранён.",
+            WorkingResultFragment = string.Empty
+        };
+
+        var reason = ExecutorTurnStagePolicy.GetRejectionReason(
+            turn,
+            ExecutorStageIds.PracticalClarification,
+            briefConfirmed: true);
+
+        Assert.AreEqual("working_result_fragment_missing", reason);
+    }
+
+    [TestMethod]
+    public void RepairFingerprint_StopsRepeatedSemanticTurnBeforeFourRepairs()
+    {
+        var first = new ExecutorTurnResult
+        {
+            Status = ExecutorTurnStatuses.Working,
+            Action = ExecutorTurnActions.AskUser,
+            Question = "Добавить заключение?",
+            CurrentResultSummary = "Анализ готов.",
+            WorkingResultFragment = string.Empty,
+            CanFinalize = false,
+            Warnings = ["first serialization detail"]
+        };
+        var repeated = new ExecutorTurnResult
+        {
+            Status = first.Status,
+            Action = first.Action,
+            Question = "  ДОБАВИТЬ   ЗАКЛЮЧЕНИЕ? ",
+            CurrentResultSummary = "Другая служебная формулировка.",
+            WorkingResultFragment = string.Empty,
+            CanFinalize = false,
+            Warnings = ["different serialization detail"]
+        };
+        var firstFingerprint = ExecutorSessionService.BuildTurnRepairFingerprint(first);
+        var repeatedFingerprint = ExecutorSessionService.BuildTurnRepairFingerprint(repeated);
+        var budget = new AutonomyExecutionBudget(60);
+
+        Assert.AreEqual(firstFingerprint, repeatedFingerprint);
+        Assert.IsTrue(budget.RegisterProgress(firstFingerprint));
+        Assert.IsTrue(budget.RegisterProgress(repeatedFingerprint));
+        Assert.IsFalse(budget.RegisterProgress(repeatedFingerprint));
     }
 
     [TestMethod]

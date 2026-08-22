@@ -16,9 +16,21 @@ public sealed class ChoiceTaskCard
 
     public ChoiceCapabilityProfile CapabilityProfile { get; set; } = new();
 
+    public WorkPatternSelectionResult WorkPatterns { get; set; } = new();
+
+    public ArtifactContract ArtifactContract { get; set; } = new();
+
+    public ExecutionOutcomeContract OutcomeContract { get; set; } = new();
+
     public ChoiceExecutorSelection ExecutorSelection { get; set; } = new();
 
+    public ChoiceExecutionPlan ExecutionPlan { get; set; } = new();
+
     public ExecutionRoutePlan ExecutionRoute { get; set; } = new();
+
+    public ExecutionBundlePlan ExecutionBundle { get; set; } = new();
+
+    public ExternalComponentDiscoveryReport ExternalDiscovery { get; set; } = new();
 
     public string ExecutorRole { get; set; } = string.Empty;
 
@@ -72,6 +84,14 @@ public sealed class ChoiceExecutorCandidate
     public List<string> MissingCapabilities { get; set; } = [];
 
     public List<string> UnresolvedCapabilities { get; set; } = [];
+
+    public int ConditionalMatchPercent { get; set; }
+
+    public int CoordinatorMatchPercent { get; set; }
+
+    public int RouteCoveragePercent { get; set; }
+
+    public string MatchReason { get; set; } = string.Empty;
 }
 
 public sealed class ChoiceExecutorSelection
@@ -85,6 +105,19 @@ public sealed class ChoiceExecutorSelection
     public ChoiceExecutorAssessment InstalledAssessment { get; set; } = new();
 
     public ChoiceExecutorAssessment AlternativeAssessment { get; set; } = new();
+}
+
+public sealed class ChoiceExecutionPlan
+{
+    public List<string> RequiredCapabilities { get; set; } = [];
+
+    public List<string> OptionalCapabilities { get; set; } = [];
+
+    public List<string> PreferredComponentIds { get; set; } = [];
+
+    public string ExecutorRole { get; set; } = string.Empty;
+
+    public string Rationale { get; set; } = string.Empty;
 }
 
 public sealed class ChoiceExecutorAssessment

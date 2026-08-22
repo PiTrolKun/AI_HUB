@@ -37,20 +37,72 @@ public sealed class ExecutionRoutePlannerService
     public ExecutionRoutePlan Build(
         ChoiceCapabilityProfile profile,
         SessionFilePromptManifest? fileManifest,
-        string reason)
+        string reason,
+        IReadOnlyList<SandboxWorkPattern>? workPatterns = null,
+        ChoiceExecutionPlan? executionPlan = null,
+        ExecutionOutcomeContract? outcomeContract = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
-        var requirements = BuildRequirements(profile, fileManifest);
+        var requirements = BuildRequirements(
+            profile,
+            fileManifest,
+            workPatterns,
+            outcomeContract);
+        ApplyCoreExecutionPlan(requirements, executionPlan);
         var plan = new ExecutionRoutePlan
         {
             SourceFormats = GetSourceFormats(fileManifest),
             Requirements = requirements,
             Resolution = _resolver.Resolve(
                 requirements.Select(requirement => requirement.Request),
-                reason)
+                reason,
+                executionPlan?.PreferredComponentIds)
         };
+        ApplyOutcomeCoverage(plan, outcomeContract);
+        AddResolutionWarnings(plan);
+        return plan;
+    }
 
+    public ExecutionRoutePlan ApplyExecutionPlan(
+        ExecutionRoutePlan baseline,
+        ChoiceExecutionPlan executionPlan,
+        string reason,
+        ExecutionOutcomeContract? outcomeContract = null)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        ArgumentNullException.ThrowIfNull(executionPlan);
+
+        var requirements = baseline.Requirements
+            .Select(requirement => new ExecutionRouteRequirement
+            {
+                Layer = requirement.Layer,
+                Request = new ExecutorCapabilityRequest
+                {
+                    Id = requirement.Request.Id,
+                    Purpose = requirement.Request.Purpose,
+                    Required = requirement.Request.Required,
+                    Alternatives = requirement.Request.Alternatives.ToList()
+                }
+            })
+            .ToList();
+        ApplyCoreExecutionPlan(requirements, executionPlan);
+        var plan = new ExecutionRoutePlan
+        {
+            SourceFormats = baseline.SourceFormats.ToList(),
+            Requirements = requirements,
+            Resolution = _resolver.Resolve(
+                requirements.Select(requirement => requirement.Request),
+                reason,
+                executionPlan.PreferredComponentIds)
+        };
+        ApplyOutcomeCoverage(plan, outcomeContract);
+        AddResolutionWarnings(plan);
+        return plan;
+    }
+
+    private static void AddResolutionWarnings(ExecutionRoutePlan plan)
+    {
         if (plan.Resolution.Bindings.Any(binding =>
                 binding.Required
                 && binding.Status == CapabilityBindingStatuses.AdapterMissing))
@@ -66,13 +118,68 @@ public sealed class ExecutionRoutePlannerService
             plan.Warnings.Add(
                 "One or more required route stages have no trusted provider in the local catalog.");
         }
+    }
 
-        return plan;
+    private static void ApplyCoreExecutionPlan(
+        ICollection<ExecutionRouteRequirement> requirements,
+        ChoiceExecutionPlan? executionPlan)
+    {
+        if (executionPlan is null)
+        {
+            return;
+        }
+
+        foreach (var capability in executionPlan.RequiredCapabilities)
+        {
+            UpsertCoreRequirement(requirements, capability, required: true);
+        }
+
+        foreach (var capability in executionPlan.OptionalCapabilities)
+        {
+            UpsertCoreRequirement(requirements, capability, required: false);
+        }
+    }
+
+    private static void UpsertCoreRequirement(
+        ICollection<ExecutionRouteRequirement> requirements,
+        string capability,
+        bool required)
+    {
+        capability = Normalize(capability);
+        if (capability.Length == 0)
+        {
+            return;
+        }
+
+        var existing = requirements.FirstOrDefault(requirement => string.Equals(
+            requirement.Request.Id,
+            capability,
+            StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            if (required)
+            {
+                existing.Request.Required = true;
+            }
+
+            return;
+        }
+
+        AddRequirement(
+            requirements,
+            InferLayer(capability),
+            capability,
+            required
+                ? "Required by the core-authored execution plan."
+                : "Optional reserve capability chosen by the core.",
+            required);
     }
 
     public static List<ExecutionRouteRequirement> BuildRequirements(
         ChoiceCapabilityProfile profile,
-        SessionFilePromptManifest? fileManifest)
+        SessionFilePromptManifest? fileManifest,
+        IReadOnlyList<SandboxWorkPattern>? workPatterns = null,
+        ExecutionOutcomeContract? outcomeContract = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
@@ -88,6 +195,12 @@ public sealed class ExecutionRoutePlannerService
             .ToList() ?? [];
         var requirements = new List<ExecutionRouteRequirement>();
 
+        foreach (var action in outcomeContract?.Actions.Where(action =>
+                     action.RequiresExecutionComponent) ?? [])
+        {
+            AddOutcomeRequirement(requirements, action);
+        }
+
         foreach (var capability in ComponentCapabilityMapper.FromProfile(profile))
         {
             if (capability is "read.image_pixels" or "read.audio" or "read.video")
@@ -99,7 +212,41 @@ public sealed class ExecutionRoutePlannerService
                 requirements,
                 InferLayer(capability),
                 capability,
-                $"Required by the task capability profile: {capability}.");
+                $"Required by the task capability profile: {capability}.",
+                required: outcomeContract is null);
+        }
+
+        foreach (var pattern in workPatterns ?? [])
+        {
+            foreach (var capability in pattern.RequiredCapabilities)
+            {
+                if (ComponentCapabilityMapper.IsExplicitlyDenied(profile, capability))
+                {
+                    continue;
+                }
+
+                AddRequirement(
+                    requirements,
+                    InferLayer(capability),
+                    capability,
+                    $"Required by Sandbox work pattern '{pattern.Id}'.",
+                    required: outcomeContract is null);
+            }
+
+            foreach (var capability in pattern.OptionalCapabilities)
+            {
+                if (ComponentCapabilityMapper.IsExplicitlyDenied(profile, capability))
+                {
+                    continue;
+                }
+
+                AddRequirement(
+                    requirements,
+                    InferLayer(capability),
+                    capability,
+                    $"Optional improvement for Sandbox work pattern '{pattern.Id}'.",
+                    required: false);
+            }
         }
 
         foreach (var file in manifestFiles)
@@ -267,16 +414,22 @@ public sealed class ExecutionRoutePlannerService
 
     private static string InferLayer(string capability) =>
         capability.StartsWith("read.", StringComparison.OrdinalIgnoreCase)
-            || capability.StartsWith("extract.", StringComparison.OrdinalIgnoreCase)
-                ? ExecutionRouteLayers.FileAccess
+        || capability.StartsWith("extract.", StringComparison.OrdinalIgnoreCase)
+            ? ExecutionRouteLayers.FileAccess
+            : capability.StartsWith("analyze.", StringComparison.OrdinalIgnoreCase)
+            || capability.StartsWith("transcribe.", StringComparison.OrdinalIgnoreCase)
+            || capability.StartsWith("ocr.", StringComparison.OrdinalIgnoreCase)
+                ? ExecutionRouteLayers.SemanticAnalysis
                 : ExecutionRouteLayers.Action;
 
     private static void AddRequirement(
         ICollection<ExecutionRouteRequirement> requirements,
         string layer,
         string capability,
-        string purpose)
+        string purpose,
+        bool required = true)
     {
+        capability = ComponentCapabilityAliasCatalog.Canonicalize(capability);
         if (string.IsNullOrWhiteSpace(capability)
             || requirements.Any(requirement => string.Equals(
                 requirement.Request.Id,
@@ -293,9 +446,86 @@ public sealed class ExecutionRoutePlannerService
             {
                 Id = capability,
                 Purpose = purpose,
-                Required = true
+                Required = required
             }
         });
+    }
+
+    private static void AddOutcomeRequirement(
+        ICollection<ExecutionRouteRequirement> requirements,
+        ExecutionOutcomeAction action)
+    {
+        var capabilities = action.CapabilityIds
+            .Select(ComponentCapabilityAliasCatalog.Canonicalize)
+            .Where(capability => capability.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (capabilities.Count == 0)
+        {
+            return;
+        }
+
+        AddRequirement(
+            requirements,
+            InferLayer(capabilities[0]),
+            capabilities[0],
+            action.Purpose,
+            action.Required);
+        var requirement = requirements.First(item => string.Equals(
+            item.Request.Id,
+            capabilities[0],
+            StringComparison.OrdinalIgnoreCase));
+        requirement.Request.Alternatives = capabilities.Skip(1).ToList();
+    }
+
+    private static void ApplyOutcomeCoverage(
+        ExecutionRoutePlan plan,
+        ExecutionOutcomeContract? outcomeContract)
+    {
+        var actions = outcomeContract?.Actions
+            .Where(action => action.Required && action.RequiresExecutionComponent)
+            .ToList() ?? [];
+        plan.RequiredOutcomeActionCount = actions.Count;
+        if (actions.Count == 0)
+        {
+            plan.CoveredOutcomeActionCount = 0;
+            plan.OutcomeCoveragePercent = 100;
+            return;
+        }
+
+        foreach (var action in actions)
+        {
+            var capabilities = action.CapabilityIds
+                .Select(ComponentCapabilityAliasCatalog.Canonicalize)
+                .Where(capability => capability.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var covered = plan.Resolution.Bindings.Any(binding =>
+                binding.AdapterAvailable
+                && binding.Status is (CapabilityBindingStatuses.Ready
+                    or CapabilityBindingStatuses.ExternalCliFound
+                    or CapabilityBindingStatuses.PackageMissing)
+                && (capabilities.Contains(ComponentCapabilityAliasCatalog.Canonicalize(
+                        binding.RequestedCapabilityId))
+                    || capabilities.Contains(ComponentCapabilityAliasCatalog.Canonicalize(
+                        binding.CapabilityId))));
+            if (covered)
+            {
+                plan.CoveredOutcomeActionCount++;
+            }
+            else
+            {
+                plan.MissingOutcomeActionIds.Add(action.Id);
+            }
+        }
+
+        plan.OutcomeCoveragePercent = (int)Math.Round(
+            100d * plan.CoveredOutcomeActionCount / plan.RequiredOutcomeActionCount,
+            MidpointRounding.AwayFromZero);
+        if (!plan.HasCompleteOutcomeCoverage)
+        {
+            plan.Warnings.Add(
+                $"The execution route covers {plan.OutcomeCoveragePercent}% of required outcome actions.");
+        }
     }
 
     private static List<string> GetSourceFormats(SessionFilePromptManifest? manifest) =>
@@ -318,5 +548,6 @@ public sealed class ExecutionRoutePlannerService
     private static bool ContainsAny(string value, IEnumerable<string> markers) =>
         markers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
-    private static string Normalize(string value) => value.Trim().ToLowerInvariant();
+    private static string Normalize(string value) =>
+        ComponentCapabilityAliasCatalog.Canonicalize(value);
 }

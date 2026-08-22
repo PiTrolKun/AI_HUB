@@ -68,6 +68,10 @@ public sealed class ExecutorSessionCheckpoint
     public List<string> EnabledTools { get; set; } = [];
 
     public List<string> SuccessfulToolCalls { get; set; } = [];
+
+    public ExecutionActionGraph ActionGraph { get; set; } = new();
+
+    public List<ExecutionEvidenceReceipt> EvidenceReceipts { get; set; } = [];
 }
 
 public sealed class SessionRestorationContext

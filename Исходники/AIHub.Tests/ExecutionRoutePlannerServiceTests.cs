@@ -29,7 +29,7 @@ public sealed class ExecutionRoutePlannerServiceTests
             ]
         };
 
-        var route = new ExecutionRoutePlannerService().Build(
+        var route = TestComponentManagerFactory.CreateEmptyRoutePlanner().Build(
             profile,
             manifest,
             "unit test");
@@ -37,17 +37,24 @@ public sealed class ExecutionRoutePlannerServiceTests
         CollectionAssert.Contains(route.SourceFormats, ".webp");
         AssertRequirement(route, ExecutionRouteLayers.Decode, "read.image_extended");
         AssertRequirement(route, ExecutionRouteLayers.SemanticAnalysis, "analyze.image.semantic");
-        Assert.IsTrue(route.HasBlockedRequirements);
+        Assert.IsFalse(route.HasBlockedRequirements);
         Assert.IsFalse(route.IsExecutable);
+        Assert.IsTrue(route.RequiresAcquisition);
         Assert.IsTrue(route.Resolution.Bindings.Any(binding =>
             binding.RequestedCapabilityId == "read.image_extended"
-            && binding.Status == CapabilityBindingStatuses.AdapterMissing));
+            && binding.AdapterAvailable
+            && binding.Status != CapabilityBindingStatuses.AdapterMissing));
+        Assert.IsTrue(route.Resolution.Bindings.Any(binding =>
+            binding.RequestedCapabilityId == "analyze.image.semantic"
+            && binding.Status == CapabilityBindingStatuses.PackageMissing
+            && binding.AdapterAvailable
+            && binding.ComponentId == "model.vision.smolvlm2.q4km"));
     }
 
     [TestMethod]
     public void Build_SupportedImageStillRequiresSeparateSemanticModule()
     {
-        var route = new ExecutionRoutePlannerService().Build(
+        var route = TestComponentManagerFactory.CreateEmptyRoutePlanner().Build(
             CreateProfile(
                 (ChoiceDecisionDimensions.InputModality, "file:image"),
                 (ChoiceDecisionDimensions.TaskType, "image_description")),
@@ -61,7 +68,7 @@ public sealed class ExecutionRoutePlannerServiceTests
     [TestMethod]
     public void Build_TextFileDoesNotInventMediaRequirements()
     {
-        var route = new ExecutionRoutePlannerService().Build(
+        var route = TestComponentManagerFactory.CreateEmptyRoutePlanner().Build(
             CreateProfile(
                 (ChoiceDecisionDimensions.InputModality, "file:text"),
                 (ChoiceDecisionDimensions.TaskType, "content_summarization")),

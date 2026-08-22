@@ -4,6 +4,16 @@ namespace AIHub.Services;
 
 public static class ComponentCapabilityMapper
 {
+    private static readonly HashSet<string> OcrDenialValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "no_ocr",
+        "without_ocr",
+        "ocr_not_required",
+        "ocr_not_needed",
+        "exclude_ocr",
+        "disable_ocr"
+    };
+
     private static readonly string[] GenerationMarkers =
     [
         "generat", "synthes", "creation", "create", "compos"
@@ -64,12 +74,34 @@ public static class ComponentCapabilityMapper
         AddIf(inputValues, capabilities, "read.video", "video");
 
         AddMediaOperationCapabilities(values, capabilities);
-        AddIf(values, capabilities, "extract.image_ocr", "ocr", "scan", "scanned_document");
+        if (!IsExplicitlyDenied(profile, "extract.image_ocr"))
+        {
+            AddIf(values, capabilities, "extract.image_ocr", "ocr", "scan", "scanned_document");
+        }
         AddIf(values, capabilities, "extract.audio_transcript", "speech", "transcription", "voice");
         AddIf(values, capabilities, "extract.video_frames", "video_analysis", "frames");
         AddIf(values, capabilities, "convert.legacy_office", "doc", "xls", "ppt", "odt", "legacy_office");
 
         return capabilities.Order(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public static bool IsExplicitlyDenied(
+        ChoiceCapabilityProfile profile,
+        string capability)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        var canonical = ComponentCapabilityAliasCatalog.Canonicalize(capability);
+        if (!string.Equals(canonical, "extract.image_ocr", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return profile.Dimensions
+            .Where(dimension => dimension.Status is ChoiceDimensionStatuses.Resolved
+                or ChoiceDimensionStatuses.Provisional)
+            .SelectMany(dimension => dimension.Values)
+            .Select(Normalize)
+            .Any(OcrDenialValues.Contains);
     }
 
     public static ComponentAcquisitionPlan BuildPlan(

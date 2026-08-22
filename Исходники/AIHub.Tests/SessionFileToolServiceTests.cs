@@ -202,6 +202,7 @@ public sealed class SessionFileToolServiceTests
                 call,
                 new StorageSettings(),
                 manifest,
+                "ru",
                 log,
                 CancellationToken.None);
 
@@ -209,6 +210,87 @@ public sealed class SessionFileToolServiceTests
             Assert.IsTrue(execution.Content.Contains("file_not_allowed", StringComparison.Ordinal));
             Assert.IsFalse(execution.Content.Contains(root, StringComparison.OrdinalIgnoreCase));
             Assert.IsFalse(execution.Content.Contains(path, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task Gateway_ImageToolRepairsInvalidIdWhenManifestIsUnambiguous()
+    {
+        var root = CreateRoot();
+        try
+        {
+            Directory.CreateDirectory(root);
+            var path = Path.Combine(root, "pixel.png");
+            WritePixelPng(path);
+            var manifest = CreateManifest(path);
+            var call = new StructuredToolCall
+            {
+                Id = "call-image-repair",
+                Function = new StructuredToolCallFunction
+                {
+                    Name = "session_image_inspect_pixels",
+                    Arguments = """{"file_id":"corrupted-id"}"""
+                }
+            };
+
+            using var log = new NullSessionEventLog();
+            var execution = await new ExecutorToolGateway().ExecuteAsync(
+                call,
+                new StorageSettings(),
+                manifest,
+                "ru",
+                log,
+                CancellationToken.None);
+
+            Assert.IsTrue(execution.Success);
+            StringAssert.Contains(execution.Content, "\"width\": 1");
+            StringAssert.Contains(call.Function.Arguments, manifest.Files[0].Id);
+            Assert.IsFalse(call.Function.Arguments.Contains("corrupted-id", StringComparison.Ordinal));
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task Gateway_ImageToolDoesNotGuessWhenMultipleImagesAreAvailable()
+    {
+        var root = CreateRoot();
+        try
+        {
+            Directory.CreateDirectory(root);
+            var firstPath = Path.Combine(root, "first.png");
+            var secondPath = Path.Combine(root, "second.png");
+            WritePixelPng(firstPath);
+            WritePixelPng(secondPath);
+            var manifest = CreateManifest(firstPath, secondPath);
+            var call = new StructuredToolCall
+            {
+                Id = "call-image-ambiguous",
+                Function = new StructuredToolCallFunction
+                {
+                    Name = "session_image_inspect_pixels",
+                    Arguments = """{"file_id":"corrupted-id"}"""
+                }
+            };
+
+            using var log = new NullSessionEventLog();
+            var execution = await new ExecutorToolGateway().ExecuteAsync(
+                call,
+                new StorageSettings(),
+                manifest,
+                "ru",
+                log,
+                CancellationToken.None);
+
+            Assert.IsFalse(execution.Success);
+            StringAssert.Contains(execution.Content, "file_unavailable");
+            StringAssert.Contains(call.Function.Arguments, "corrupted-id");
         }
         finally
         {
@@ -225,6 +307,12 @@ public sealed class SessionFileToolServiceTests
 
     private static string CreateRoot() =>
         Path.Combine(Path.GetTempPath(), "AIHubSessionFileToolTests", Guid.NewGuid().ToString("N"));
+
+    private static void WritePixelPng(string path) =>
+        File.WriteAllBytes(
+            path,
+            Convert.FromBase64String(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9WlS8AAAAASUVORK5CYII="));
 
     private static void DeleteRoot(string root)
     {

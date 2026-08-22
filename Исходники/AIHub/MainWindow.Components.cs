@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using AIHub.Models;
 using AIHub.Services;
@@ -386,6 +387,96 @@ public partial class MainWindow
         }
     }
 
+    private async Task DiscoverMissingRouteComponentsAsync(
+        ChoiceTaskCard card,
+        CancellationToken cancellationToken)
+    {
+        var unresolved = card.ExecutionRoute.Resolution.Bindings
+            .Where(binding =>
+                binding.Required
+                && !binding.IsExecutable
+                && binding.Status is CapabilityBindingStatuses.AdapterMissing
+                    or CapabilityBindingStatuses.UnknownCapability)
+            .DistinctBy(
+                binding => binding.CapabilityId,
+                StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (unresolved.Count == 0)
+        {
+            StatusText.Text = L("ExecutionRoute.Blocked");
+            return;
+        }
+
+        try
+        {
+            if (!card.ExternalDiscovery.CoversCapabilities(
+                    unresolved.Select(binding => binding.CapabilityId)))
+            {
+                StatusText.Text = L("Status.ExternalComponentSearch");
+                card.ExternalDiscovery = await new SandboxExternalComponentDiscoveryService()
+                    .SearchAsync(
+                        unresolved,
+                        _storageSettings,
+                        cancellationToken,
+                        card.OutcomeContract,
+                        card.WorkPatterns,
+                        card.Goal);
+                _choiceScenarioLog?.Write("executor_initial_external_discovery_completed", new
+                {
+                    card.ExternalDiscovery.HasCandidates,
+                    card.ExternalDiscovery.CandidateCount,
+                    Searches = card.ExternalDiscovery.Searches
+                });
+                SaveActiveSessionCheckpoint(
+                    pendingCoreRequest: false,
+                    pendingCoreRequestFinal: false);
+                RenderExecutionRoute(card);
+            }
+
+            if (!card.ExternalDiscovery.HasCandidates
+                || card.ExternalDiscovery.FindBestCandidate() is not { } bestCandidate)
+            {
+                StatusText.Text = L("Status.ExternalComponentSearchEmpty");
+                return;
+            }
+
+            StatusText.Text = LF(
+                "Status.ExternalComponentCandidatesFound",
+                card.ExternalDiscovery.CandidateCount);
+            WpfMessageBox.Show(
+                this,
+                LF(
+                    "Components.ExternalDiscoveryFound",
+                    card.ExternalDiscovery.CandidateCount,
+                    bestCandidate.Title,
+                    bestCandidate.Url),
+                L("Components.ExternalDiscoveryTitle"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            _choiceScenarioLog?.Write("executor_external_references_recorded", new
+            {
+                bestCandidate.Title,
+                bestCandidate.Url,
+                bestCandidate.RelevanceScore,
+                bestCandidate.CandidateKind,
+                bestCandidate.AcquisitionStatus
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = L("Status.ExecutorCancelled");
+        }
+        catch (Exception ex)
+        {
+            _choiceScenarioLog?.Write("executor_initial_external_discovery_failed", new
+            {
+                ex.Message,
+                ErrorType = ex.GetType().FullName
+            });
+            StatusText.Text = LF("Status.ExternalComponentSearchFailed", ex.Message);
+        }
+    }
+
     private async Task HandleExecutorCapabilityRequestAsync(ExecutorTurnResult turn)
     {
         var requests = turn.RequestedCapabilities.Count > 0
@@ -402,31 +493,55 @@ public partial class MainWindow
         var resolver = new CapabilityResolverService(_componentManager);
         var plan = resolver.Resolve(requests, turn.CapabilityReason);
         var externalDiscoveryAllowed = false;
+        var externalDiscoveryDetails = string.Empty;
         if (plan.RequiresExternalDiscovery)
         {
-            var unknown = plan.Bindings
-                .Where(binding =>
-                    binding.Status == CapabilityBindingStatuses.UnknownCapability)
-                .Select(binding => $"• {binding.CapabilityId}: {binding.Purpose}");
-            var externalConfirmation = WpfMessageBox.Show(
-                this,
-                string.Join(
-                    Environment.NewLine,
-                    L("Components.ExternalDiscoveryWarning"),
-                    string.Empty,
-                    string.Join(Environment.NewLine, unknown)),
-                L("Components.ExternalDiscoveryTitle"),
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-            externalDiscoveryAllowed = externalConfirmation == MessageBoxResult.Yes;
+            externalDiscoveryAllowed = true;
+            try
+            {
+                StatusText.Text = L("Status.ExternalComponentSearch");
+                var taskCard = _currentChoiceScenarioStep?.TaskCard;
+                var discovery = await new SandboxExternalComponentDiscoveryService()
+                    .SearchAsync(
+                        plan.Bindings,
+                        _storageSettings,
+                        _executorCts?.Token ?? CancellationToken.None,
+                        taskCard?.OutcomeContract,
+                        taskCard?.WorkPatterns,
+                        taskCard?.Goal);
+                externalDiscoveryDetails = discovery.ToPromptText();
+                _executorWorkflowService.Write("capability_external_discovery_completed", new
+                {
+                    discovery.HasCandidates,
+                    Searches = discovery.Searches
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                externalDiscoveryDetails =
+                    $"external_discovery_status=failed; error_type={ex.GetType().Name}; message={ex.Message}";
+                _executorWorkflowService.Write("capability_external_discovery_failed", new
+                {
+                    ex.Message,
+                    ErrorType = ex.GetType().FullName
+                });
+            }
         }
 
         if (plan.IsExecutable)
         {
             await ContinueExecutorAfterCapabilityAsync(
                 requests,
+                plan.Bindings,
                 "capability_bundle_ready",
-                BuildCapabilityResolutionDetails(plan, externalDiscoveryAllowed));
+                BuildCapabilityResolutionDetails(
+                    plan,
+                    externalDiscoveryAllowed,
+                    externalDiscoveryDetails));
             return;
         }
 
@@ -437,10 +552,14 @@ public partial class MainWindow
         {
             await ContinueExecutorAfterCapabilityAsync(
                 requests,
+                plan.Bindings,
                 externalDiscoveryAllowed
                     ? "capability_external_discovery_authorized"
                     : "capability_bundle_unavailable",
-                BuildCapabilityResolutionDetails(plan, externalDiscoveryAllowed));
+                BuildCapabilityResolutionDetails(
+                    plan,
+                    externalDiscoveryAllowed,
+                    externalDiscoveryDetails));
             return;
         }
 
@@ -463,11 +582,15 @@ public partial class MainWindow
         {
             await ContinueExecutorAfterCapabilityAsync(
                 requests,
+                plan.Bindings,
                 externalDiscoveryAllowed
                     ? "capability_download_denied_external_discovery_authorized"
                     : "capability_download_denied",
                 "The user declined the component acquisition plan. "
-                + BuildCapabilityResolutionDetails(plan, externalDiscoveryAllowed));
+                + BuildCapabilityResolutionDetails(
+                    plan,
+                    externalDiscoveryAllowed,
+                    externalDiscoveryDetails));
             return;
         }
 
@@ -517,13 +640,18 @@ public partial class MainWindow
                     : "capability_needs_manual_install";
             await ContinueExecutorAfterCapabilityAsync(
                 requests,
+                refreshed.Bindings,
                 result,
-                BuildCapabilityResolutionDetails(refreshed, externalDiscoveryAllowed));
+                BuildCapabilityResolutionDetails(
+                    refreshed,
+                    externalDiscoveryAllowed,
+                    externalDiscoveryDetails));
         }
         catch (Exception ex)
         {
             await ContinueExecutorAfterCapabilityAsync(
                 requests,
+                plan.Bindings,
                 "capability_bundle_install_failed",
                 ex.Message);
         }
@@ -548,12 +676,14 @@ public partial class MainWindow
                     Required = true
                 }
             ],
+            [],
             resultCode,
             details);
     }
 
     private async Task ContinueExecutorAfterCapabilityAsync(
         IReadOnlyCollection<ExecutorCapabilityRequest> capabilities,
+        IReadOnlyCollection<CapabilityAdapterBinding> bindings,
         string resultCode,
         string details)
     {
@@ -566,6 +696,7 @@ public partial class MainWindow
         {
             var result = await _executorWorkflowService.ContinueAfterCapabilityRequestAsync(
                 capabilities,
+                bindings,
                 resultCode,
                 details,
                 CreateMatrixStreamProgress(),
@@ -597,7 +728,8 @@ public partial class MainWindow
 
     private static string BuildCapabilityResolutionDetails(
         CapabilityResolutionPlan plan,
-        bool externalDiscoveryAllowed)
+        bool externalDiscoveryAllowed,
+        string externalDiscoveryDetails = "")
     {
         var lines = plan.Bindings.Select(binding =>
         {
@@ -614,10 +746,13 @@ public partial class MainWindow
                 $"usage={adapter?.UsageSummary ?? string.Empty}",
                 binding.Details);
         });
-        return string.Join(
+        var details = string.Join(
             Environment.NewLine,
             lines.Append(
                 $"external_discovery_authorized={externalDiscoveryAllowed.ToString().ToLowerInvariant()}"));
+        return string.IsNullOrWhiteSpace(externalDiscoveryDetails)
+            ? details
+            : string.Join(Environment.NewLine, details, externalDiscoveryDetails);
     }
 
     private string BuildExecutorComponentPlanText(ComponentAcquisitionPlan? plan)

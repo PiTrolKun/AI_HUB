@@ -12,6 +12,7 @@ public sealed class ChoiceScenarioOrchestrator
 
     private readonly ChoiceScenarioService _scenarioService;
     private readonly ChoiceExecutorCandidatePoolService _candidatePoolService = new();
+    private readonly SandboxWorkPatternSelectionService _workPatternSelectionService = new();
     private readonly ToolGateway _toolGateway = new();
 
     public ChoiceScenarioOrchestrator(ChoiceScenarioService scenarioService)
@@ -49,6 +50,7 @@ public sealed class ChoiceScenarioOrchestrator
         var finalRequested = requestFinal || mustReturnFinal;
         var computerPassport = new ComputerPassportService().EnsurePassport();
         ChoiceExecutorCandidatePool? candidatePool = null;
+        WorkPatternSelectionResult? workPatterns = null;
         var budget = new AutonomyExecutionBudget(autonomySeconds);
         var round = 0;
 
@@ -59,6 +61,14 @@ public sealed class ChoiceScenarioOrchestrator
             if (finalRequested && candidatePool is null)
             {
                 budget.Start();
+                workPatterns ??= await _workPatternSelectionService.SelectAsync(
+                    runtime,
+                    model,
+                    userPrompt,
+                    capabilityProfile,
+                    fileManifest,
+                    sessionLog,
+                    cancellationToken);
                 candidatePool = await BuildCandidatePoolAsync(
                     storageSettings,
                     capabilityProfile,
@@ -67,8 +77,9 @@ public sealed class ChoiceScenarioOrchestrator
                     computerPassport,
                     sessionLog,
                     cancellationToken,
-                    fileManifest);
-                if (!candidatePool.HasCandidatePair)
+                    fileManifest,
+                    workPatterns);
+                if (!candidatePool.HasCoordinatorCandidate)
                 {
                     return CreatePoolError(candidatePool);
                 }
@@ -83,7 +94,7 @@ public sealed class ChoiceScenarioOrchestrator
             var response = await runtime.GenerateWithToolsAsync(
                 model,
                 messages,
-                finalRequested ? [] : tools,
+                tools,
                 _ => { },
                 cancellationToken,
                 CoreInteractionMode.ScenarioPlanner,
@@ -225,6 +236,14 @@ public sealed class ChoiceScenarioOrchestrator
         if (IsFinalIntent(rawResponse) && candidatePool is null)
         {
             budget.Start();
+            workPatterns ??= await _workPatternSelectionService.SelectAsync(
+                runtime,
+                model,
+                userPrompt,
+                capabilityProfile,
+                fileManifest,
+                sessionLog,
+                cancellationToken);
             candidatePool = await BuildCandidatePoolAsync(
                 storageSettings,
                 capabilityProfile,
@@ -233,8 +252,9 @@ public sealed class ChoiceScenarioOrchestrator
                 computerPassport,
                 sessionLog,
                 cancellationToken,
-                fileManifest);
-            if (!candidatePool.HasCandidatePair)
+                fileManifest,
+                workPatterns);
+            if (!candidatePool.HasCoordinatorCandidate)
             {
                 return CreatePoolError(candidatePool);
             }
@@ -326,7 +346,8 @@ public sealed class ChoiceScenarioOrchestrator
         ComputerPassport computerPassport,
         ISessionEventLog sessionLog,
         CancellationToken cancellationToken,
-        SessionFilePromptManifest? fileManifest)
+        SessionFilePromptManifest? fileManifest,
+        WorkPatternSelectionResult workPatterns)
     {
         var pool = await _candidatePoolService.BuildAsync(
             storageSettings,
@@ -336,7 +357,8 @@ public sealed class ChoiceScenarioOrchestrator
             computerPassport,
             sessionLog,
             cancellationToken,
-            fileManifest);
+            fileManifest,
+            workPatterns);
         sessionLog.Write("scenario_trusted_candidate_pool", pool);
         return pool;
     }
@@ -387,9 +409,7 @@ public sealed class ChoiceScenarioOrchestrator
 
     private static ChoiceScenarioGenerationResult CreatePoolError(ChoiceExecutorCandidatePool pool)
     {
-        var error = pool.InstalledCandidates.Count == 0
-            ? "AI HUB не нашёл установленную и запускаемую модель-исполнителя, подходящую режиму нагрузки."
-            : "AI HUB не нашёл загружаемую альтернативу из другого семейства, совместимую с текущим ПК.";
+        var error = "AI HUB не нашёл ни одной проверенной модели-координатора, совместимой с текущим ПК и режимом нагрузки.";
         return new ChoiceScenarioGenerationResult { Error = error };
     }
 

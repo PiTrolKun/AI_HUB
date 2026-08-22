@@ -72,6 +72,11 @@
                     <ComboBox x:Name="SnapshotSelector"
                               DisplayMemberPath="DisplayName"
                               SelectionChanged="SnapshotSelector_SelectionChanged" />
+                    <TextBlock x:Name="ArtifactDetailsText"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Margin="0,7,0,0" />
                 </StackPanel>
             </Grid>
         </Border>

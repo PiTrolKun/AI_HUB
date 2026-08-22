@@ -13,13 +13,21 @@ public sealed class ComponentStateStore
     };
 
     private readonly object _sync = new();
+    private readonly string _statePath;
+
+    public ComponentStateStore(string? statePath = null)
+    {
+        _statePath = string.IsNullOrWhiteSpace(statePath)
+            ? AppDataPaths.ComponentStatePath
+            : Path.GetFullPath(statePath);
+    }
 
     public ComponentStateDocument Load()
     {
         lock (_sync)
         {
-            AppDataPaths.EnsureComponentDirectories();
-            if (!File.Exists(AppDataPaths.ComponentStatePath))
+            EnsureStateDirectory();
+            if (!File.Exists(_statePath))
             {
                 return new ComponentStateDocument();
             }
@@ -27,7 +35,7 @@ public sealed class ComponentStateStore
             try
             {
                 return JsonSerializer.Deserialize<ComponentStateDocument>(
-                    File.ReadAllText(AppDataPaths.ComponentStatePath),
+                    File.ReadAllText(_statePath),
                     JsonOptions) ?? new ComponentStateDocument();
             }
             catch
@@ -42,10 +50,26 @@ public sealed class ComponentStateStore
         ArgumentNullException.ThrowIfNull(state);
         lock (_sync)
         {
-            AppDataPaths.EnsureComponentDirectories();
-            var temporaryPath = AppDataPaths.ComponentStatePath + ".tmp";
+            EnsureStateDirectory();
+            var temporaryPath = _statePath + ".tmp";
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(state, JsonOptions));
-            File.Move(temporaryPath, AppDataPaths.ComponentStatePath, true);
+            File.Move(temporaryPath, _statePath, true);
         }
+    }
+
+    private void EnsureStateDirectory()
+    {
+        if (string.Equals(
+            _statePath,
+            AppDataPaths.ComponentStatePath,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            AppDataPaths.EnsureComponentDirectories();
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(_statePath)
+            ?? throw new InvalidOperationException("Component state path has no parent directory.");
+        Directory.CreateDirectory(directory);
     }
 }

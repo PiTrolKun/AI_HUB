@@ -284,6 +284,28 @@ public sealed class ExecutorWorkflowService : IDisposable
         return turn;
     }
 
+    public async Task<ExecutorTurnResult> ContinueAfterCapabilityRequestAsync(
+        IReadOnlyCollection<ExecutorCapabilityRequest> capabilities,
+        IReadOnlyCollection<CapabilityAdapterBinding> bindings,
+        string resultCode,
+        string details,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var session = _session ?? throw new InvalidOperationException("Executor session is not active.");
+        var turn = await session.ContinueAfterCapabilityRequestAsync(
+            capabilities,
+            bindings,
+            resultCode,
+            details,
+            streamProgress,
+            cancellationToken);
+        turn = await ResolveRequestedToolsAsync(session, turn, streamProgress, cancellationToken);
+        CheckpointChanged?.Invoke(this, EventArgs.Empty);
+        return turn;
+    }
+
     public async Task<ExecutorResultSnapshot> CreateFinalResultAsync(
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)

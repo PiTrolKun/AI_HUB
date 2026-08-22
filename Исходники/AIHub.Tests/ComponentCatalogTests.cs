@@ -12,7 +12,7 @@ public sealed class ComponentCatalogTests
         Assert.IsTrue(ComponentCatalog.Viewers.Count > 0);
         Assert.IsTrue(ComponentCatalog.Viewers.All(entry => !entry.IsVisibleToAi));
         Assert.IsTrue(ComponentCatalog.Viewers.All(entry => entry.Capabilities.Count == 0));
-        Assert.IsFalse(new ComponentManager().GetAvailableCapabilities()
+        Assert.IsFalse(TestComponentManagerFactory.CreateEmpty().GetAvailableCapabilities()
             .Any(capability => capability.Contains("viewer", StringComparison.OrdinalIgnoreCase)));
     }
 
@@ -160,7 +160,7 @@ public sealed class ComponentCatalogTests
     [TestMethod]
     public void CapabilityResolver_UsesCallableAlternative()
     {
-        var resolver = new CapabilityResolverService(new ComponentManager());
+        var resolver = new CapabilityResolverService(TestComponentManagerFactory.CreateEmpty());
         var plan = resolver.Resolve(
         [
             new ExecutorCapabilityRequest
@@ -183,7 +183,7 @@ public sealed class ComponentCatalogTests
     [TestMethod]
     public void CapabilityResolver_DoesNotDownloadPackageWithoutAdapter()
     {
-        var resolver = new CapabilityResolverService(new ComponentManager());
+        var resolver = new CapabilityResolverService(TestComponentManagerFactory.CreateEmpty());
         var plan = resolver.Resolve(
         [
             new ExecutorCapabilityRequest
@@ -199,6 +199,202 @@ public sealed class ComponentCatalogTests
         Assert.IsFalse(binding.AdapterAvailable);
         Assert.AreEqual(0, plan.Acquisition.Items.Count);
         Assert.IsFalse(plan.IsExecutable);
+    }
+
+    [TestMethod]
+    public void CapabilityResolver_OffersTrustedOcrPackageAndCallableAdapter()
+    {
+        var resolver = new CapabilityResolverService(TestComponentManagerFactory.CreateEmpty());
+        var plan = resolver.Resolve(
+        [
+            new ExecutorCapabilityRequest
+            {
+                Id = "ocr.image",
+                Purpose = "Extract printed text from the attached image.",
+                Required = true
+            }
+        ],
+        "unit test");
+
+        var binding = plan.Bindings.Single();
+        Assert.AreEqual("extract.image_ocr", binding.CapabilityId);
+        Assert.AreEqual("runtime.tesseract", binding.ComponentId);
+        Assert.AreEqual("adapter.tesseract.ocr", binding.AdapterId);
+        CollectionAssert.Contains(binding.ToolNames, "session_image_extract_text");
+        CollectionAssert.Contains(
+            plan.Acquisition.Items.Select(item => item.ComponentId).ToList(),
+            "runtime.tesseract");
+    }
+
+    [TestMethod]
+    public void CapabilityResolver_OffersTrustedImageTransformPackageAndCallableAdapter()
+    {
+        var resolver = new CapabilityResolverService(TestComponentManagerFactory.CreateEmpty());
+        var plan = resolver.Resolve(
+        [
+            new ExecutorCapabilityRequest
+            {
+                Id = "image.edit",
+                Purpose = "Create a resized image artifact.",
+                Required = true
+            }
+        ],
+        "unit test");
+
+        var binding = plan.Bindings.Single();
+        Assert.AreEqual("edit.image", binding.CapabilityId);
+        Assert.AreEqual("runtime.imagemagick", binding.ComponentId);
+        Assert.AreEqual("adapter.imagemagick.transform", binding.AdapterId);
+        CollectionAssert.Contains(binding.ToolNames, "session_image_transform");
+        CollectionAssert.Contains(
+            plan.Acquisition.Items.Select(item => item.ComponentId).ToList(),
+            "runtime.imagemagick");
+    }
+
+    [TestMethod]
+    public void CapabilityResolver_ProvidesPinnedSemanticVisionRecipe()
+    {
+        var resolver = new CapabilityResolverService(TestComponentManagerFactory.CreateEmpty());
+        var plan = resolver.Resolve(
+        [
+            new ExecutorCapabilityRequest
+            {
+                Id = "analyze.image.semantic",
+                Purpose = "Understand objects and scene meaning.",
+                Required = true
+            }
+        ],
+        "unit test");
+
+        var binding = plan.Bindings.Single();
+        Assert.AreEqual("model.vision.smolvlm2.q4km", binding.ComponentId);
+        Assert.AreEqual("adapter.image.semantic", binding.AdapterId);
+        CollectionAssert.Contains(binding.ToolNames, "session_image_describe");
+        CollectionAssert.Contains(
+            plan.Acquisition.Items.Select(item => item.ComponentId).ToList(),
+            "model.vision.smolvlm2.projector");
+        CollectionAssert.Contains(
+            plan.Acquisition.Items.Select(item => item.ComponentId).ToList(),
+            "model.vision.smolvlm2.q4km");
+        Assert.IsTrue(binding.AdapterAvailable);
+    }
+
+    [TestMethod]
+    public void CapabilityResolver_KeepsSeveralSimultaneousRequestsInOnePlan()
+    {
+        var resolver = new CapabilityResolverService(TestComponentManagerFactory.CreateEmpty());
+        var plan = resolver.Resolve(
+        [
+            new ExecutorCapabilityRequest
+            {
+                Id = "read.csv",
+                Purpose = "Read measurements.",
+                Required = true
+            },
+            new ExecutorCapabilityRequest
+            {
+                Id = "transcribe.audio",
+                Purpose = "Transcribe the attached explanation.",
+                Required = true
+            }
+        ],
+        "unit test");
+
+        Assert.AreEqual(2, plan.Requests.Count);
+        Assert.AreEqual(2, plan.Bindings.Count);
+        Assert.IsTrue(plan.Bindings.Any(binding =>
+            binding.CapabilityId == "read.csv" && binding.IsExecutable));
+        Assert.IsTrue(plan.Bindings.Any(binding =>
+            binding.ComponentId == "model.whisper.small"));
+        Assert.IsTrue(plan.Acquisition.Items.Any(item =>
+            item.ComponentId == "runtime.whisper.cpu"));
+        Assert.IsTrue(plan.Acquisition.Items.Any(item =>
+            item.ComponentId == "model.whisper.small"));
+    }
+
+    [TestMethod]
+    public void ComponentManager_ExplicitStateSeparatesMissingHealthyAndNeedsVerification()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "AIHubComponentStateTests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var stateStore = new ComponentStateStore(Path.Combine(root, "component-state.json"));
+            var manager = new ComponentManager(stateStore);
+            var missing = manager.GetStatus().Single(status =>
+                status.Entry.Id == "model.vision.smolvlm2.q4km");
+            Assert.IsFalse(missing.IsInstalled);
+            Assert.IsFalse(missing.IsAvailable);
+
+            var projectorPath = Path.Combine(
+                root,
+                "mmproj-SmolVLM2-2.2B-Instruct-Q8_0.gguf");
+            var modelPath = Path.Combine(
+                root,
+                "SmolVLM2-2.2B-Instruct-Q4_K_M.gguf");
+            File.WriteAllText(projectorPath, "test projector");
+            File.WriteAllText(modelPath, "test model");
+            stateStore.Save(new ComponentStateDocument
+            {
+                Components =
+                [
+                    new ComponentInstallationRecord
+                    {
+                        ComponentId = "model.vision.smolvlm2.projector",
+                        Status = ComponentInstallStatuses.Installed,
+                        InstallPath = projectorPath
+                    },
+                    new ComponentInstallationRecord
+                    {
+                        ComponentId = "model.vision.smolvlm2.q4km",
+                        Status = ComponentInstallStatuses.Installed,
+                        InstallPath = modelPath
+                    }
+                ]
+            });
+
+            var healthy = manager.GetStatus().Single(status =>
+                status.Entry.Id == "model.vision.smolvlm2.q4km");
+            Assert.IsTrue(healthy.IsInstalled);
+            Assert.IsTrue(healthy.IsHealthy);
+            Assert.IsTrue(healthy.DependenciesAvailable);
+            Assert.IsTrue(healthy.IsAvailable);
+            var runnablePlan = new CapabilityResolverService(manager).Resolve(
+                [
+                    new ExecutorCapabilityRequest
+                    {
+                        Id = "analyze.image.semantic",
+                        Purpose = "Analyze an image.",
+                        Required = true
+                    }
+                ],
+                "unit test");
+            Assert.AreEqual(
+                CapabilityBindingStatuses.Ready,
+                runnablePlan.Bindings.Single().Status);
+            Assert.IsTrue(runnablePlan.IsExecutable);
+
+            var wrongModelDirectory = Path.Combine(root, "wrong-model-directory");
+            Directory.CreateDirectory(wrongModelDirectory);
+            var state = stateStore.Load();
+            state.Components.Single(record =>
+                record.ComponentId == "model.vision.smolvlm2.q4km").InstallPath =
+                wrongModelDirectory;
+            stateStore.Save(state);
+
+            var needsVerification = manager.GetStatus().Single(status =>
+                status.Entry.Id == "model.vision.smolvlm2.q4km");
+            Assert.IsTrue(needsVerification.IsInstalled);
+            Assert.IsFalse(needsVerification.IsHealthy);
+            Assert.IsFalse(needsVerification.IsAvailable);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static string CapabilityResponse(

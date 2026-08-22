@@ -2,6 +2,14 @@ namespace AIHub.Models;
 
 public sealed class ChoiceExecutorCandidatePool
 {
+    public WorkPatternSelectionResult WorkPatterns { get; set; } = new();
+
+    public ArtifactContract ArtifactContract { get; set; } = new();
+
+    public ExecutionOutcomeContract OutcomeContract { get; set; } = new();
+
+    public ExecutionBundlePlan ExecutionBundle { get; set; } = new();
+
     public ExecutionRoutePlan ExecutionRoute { get; set; } = new();
 
     public List<string> RequiredProtocols { get; set; } = [];
@@ -14,6 +22,8 @@ public sealed class ChoiceExecutorCandidatePool
 
     public List<string> UnresolvedCapabilities { get; set; } = [];
 
+    public List<string> AvailableComponentIds { get; set; } = [];
+
     public List<ChoiceExecutorPoolCandidate> InstalledCandidates { get; set; } = [];
 
     public List<ChoiceExecutorPoolCandidate> AlternativeCandidates { get; set; } = [];
@@ -25,8 +35,11 @@ public sealed class ChoiceExecutorCandidatePool
     public bool HasCandidatePair => InstalledCandidates.Count > 0
         && AlternativeCandidates.Count > 0;
 
-    public bool IsExecutionReady => HasCandidatePair
-        && ExecutionRoute.IsExecutable;
+    public bool HasCoordinatorCandidate => InstalledCandidates.Count > 0
+        || AlternativeCandidates.Count > 0;
+
+    public bool IsExecutionReady => HasCoordinatorCandidate
+        && (ExecutionBundle.CanStart || ExecutionRoute.IsExecutable);
 
     public bool HasValidPair => IsExecutionReady;
 }
@@ -78,6 +91,14 @@ public sealed class ChoiceExecutorPoolCandidate
     public List<string> MissingCapabilities { get; set; } = [];
 
     public List<string> UnresolvedCapabilities { get; set; } = [];
+
+    public int ConditionalMatchPercent { get; set; }
+
+    public int CoordinatorMatchPercent { get; set; }
+
+    public int RouteCoveragePercent { get; set; }
+
+    public string MatchReason { get; set; } = string.Empty;
 
     public bool IsExecutionCompatible => RuntimeCompatible
         && UnresolvedCapabilities.Count == 0;

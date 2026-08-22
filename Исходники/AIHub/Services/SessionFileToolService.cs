@@ -668,14 +668,20 @@ public sealed class SessionFileToolService
 
 public sealed class SessionFileToolException : Exception
 {
-    public SessionFileToolException(string code, string safeMessage)
+    public SessionFileToolException(
+        string code,
+        string safeMessage,
+        string diagnosticMessage = "")
         : base(safeMessage)
     {
         Code = code;
         SafeMessage = safeMessage;
+        DiagnosticMessage = diagnosticMessage;
     }
 
     public string Code { get; }
 
     public string SafeMessage { get; }
+
+    public string DiagnosticMessage { get; }
 }

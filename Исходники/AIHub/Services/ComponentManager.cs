@@ -18,9 +18,14 @@ public sealed class ComponentManager
         Timeout = TimeSpan.FromHours(8)
     };
 
-    private readonly ComponentStateStore _stateStore = new();
+    private readonly ComponentStateStore _stateStore;
     private readonly ComponentEventLog _eventLog = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
+
+    public ComponentManager(ComponentStateStore? stateStore = null)
+    {
+        _stateStore = stateStore ?? new ComponentStateStore();
+    }
 
     public IReadOnlyList<ComponentStatusSnapshot> GetStatus(string? kind = null)
     {

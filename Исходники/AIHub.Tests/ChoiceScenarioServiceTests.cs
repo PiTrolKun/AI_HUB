@@ -118,15 +118,31 @@ public sealed class ChoiceScenarioServiceTests
     }
 
     [TestMethod]
-    public void TryParseStep_RejectsMissingInstalledCandidateId()
+    public void TryParseStep_AcceptsSingleAlternativeCandidate()
     {
         var json = ValidFinalJson().Replace(
             "\"installedCandidateId\":\"installed_1\"",
             "\"installedCandidateId\":\"\"",
             StringComparison.Ordinal);
 
+        Assert.IsTrue(_service.TryParseStep(json, out _, out var error), error);
+    }
+
+    [TestMethod]
+    public void TryParseStep_RejectsWhenBothCandidateIdsAreMissing()
+    {
+        var json = ValidFinalJson()
+            .Replace(
+                "\"installedCandidateId\":\"installed_1\"",
+                "\"installedCandidateId\":\"\"",
+                StringComparison.Ordinal)
+            .Replace(
+                "\"alternativeCandidateId\":\"alternative_1\"",
+                "\"alternativeCandidateId\":\"\"",
+                StringComparison.Ordinal);
+
         Assert.IsFalse(_service.TryParseStep(json, out _, out var error));
-        StringAssert.Contains(error, "trusted candidate IDs");
+        StringAssert.Contains(error, "at least one trusted candidate");
     }
 
     [TestMethod]

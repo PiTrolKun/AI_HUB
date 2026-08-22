@@ -17,12 +17,17 @@ public sealed class CapabilityResolverService
 
     public CapabilityResolutionPlan Resolve(
         IEnumerable<ExecutorCapabilityRequest> requests,
-        string reason)
+        string reason,
+        IReadOnlyCollection<string>? preferredComponentIds = null)
     {
         var normalized = Normalize(requests);
         var statuses = _componentManager.GetStatus(ComponentKinds.Processing);
+        var preferred = (preferredComponentIds ?? [])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var bindings = normalized
-            .Select(request => ResolveBinding(request, statuses))
+            .Select(request => ResolveBinding(request, statuses, preferred))
             .ToList();
         var providerIds = bindings
             .Where(binding =>
@@ -45,12 +50,11 @@ public sealed class CapabilityResolverService
 
     private CapabilityAdapterBinding ResolveBinding(
         ExecutorCapabilityRequest request,
-        IReadOnlyList<ComponentStatusSnapshot> statuses)
+        IReadOnlyList<ComponentStatusSnapshot> statuses,
+        IReadOnlySet<string> preferredComponentIds)
     {
-        var candidates = new[] { request.Id }
-            .Concat(request.Alternatives)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var candidates = ComponentCapabilityAliasCatalog.Expand(
+            new[] { request.Id }.Concat(request.Alternatives));
         var matches = candidates
             .SelectMany((capability, capabilityIndex) => statuses
                 .Where(status => status.Entry.Capabilities.Contains(
@@ -63,7 +67,8 @@ public sealed class CapabilityResolverService
                     Provider = status,
                     Adapter = ComponentAdapterRegistry.Find(capability)
                 }))
-            .OrderBy(match => GetReadinessRank(
+            .OrderBy(match => preferredComponentIds.Contains(match.Provider.Entry.Id) ? 0 : 1)
+            .ThenBy(match => GetReadinessRank(
                 match.Provider,
                 match.Adapter))
             .ThenBy(match => match.CapabilityIndex)
@@ -210,18 +215,18 @@ public sealed class CapabilityResolverService
             .Where(request => !string.IsNullOrWhiteSpace(request.Id))
             .Select(request => new ExecutorCapabilityRequest
             {
-                Id = request.Id.Trim().ToLowerInvariant(),
+                Id = ComponentCapabilityAliasCatalog.Canonicalize(request.Id),
                 Purpose = request.Purpose.Trim(),
                 Required = request.Required,
                 Alternatives = request.Alternatives
                     .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Select(value => value.Trim().ToLowerInvariant())
+                    .Select(ComponentCapabilityAliasCatalog.Canonicalize)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Take(6)
                     .ToList()
             })
             .GroupBy(request => request.Id, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
-            .Take(8)
+            .Take(24)
             .ToList();
 }

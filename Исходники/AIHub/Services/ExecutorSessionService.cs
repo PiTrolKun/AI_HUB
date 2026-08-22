@@ -10,10 +10,15 @@ public sealed class ExecutorSessionService : IDisposable
     private readonly LlamaServerRuntimeService _runtime;
     private readonly ExecutorToolGateway _toolGateway = new();
     private readonly SessionFileManifestService _fileManifestService = new();
+    private readonly ExecutionActionGraphService _actionGraphService = new();
+    private readonly ExecutionEvidenceService _evidenceService = new();
+    private readonly ExecutionEvidenceProgressGuard _evidenceProgressGuard = new();
     private readonly List<StructuredChatMessage> _messages = [];
     private readonly List<ExecutorResultSnapshot> _snapshots = [];
     private readonly SessionKnowledgeTree _knowledgeTree = new();
     private readonly HashSet<string> _successfulToolCalls = new(StringComparer.Ordinal);
+    private readonly List<ExecutionEvidenceReceipt> _evidenceReceipts = [];
+    private ExecutionActionGraph _actionGraph = new();
     private ExecutorModelArtifact? _artifact;
     private ExecutorHandoffPackage? _handoff;
     private DebugModelInfo? _model;
@@ -81,7 +86,9 @@ public sealed class ExecutorSessionService : IDisposable
                 .Select(tool => tool.Function.Name)
                 .Distinct(StringComparer.Ordinal)
                 .ToList(),
-            SuccessfulToolCalls = [.. _successfulToolCalls]
+            SuccessfulToolCalls = [.. _successfulToolCalls],
+            ActionGraph = Clone(_actionGraph),
+            EvidenceReceipts = Clone(_evidenceReceipts)
         };
     }
 
@@ -116,7 +123,15 @@ public sealed class ExecutorSessionService : IDisposable
             Format = "gguf",
             IsRunnable = true
         };
-        _systemPrompt = BuildSystemPrompt(_handoff);
+        _actionGraph = _actionGraphService.Build(_handoff);
+        _actionGraphService.BindInputFiles(_actionGraph, _sessionFileManifest);
+        _evidenceReceipts.Clear();
+        _evidenceProgressGuard.Reset(_actionGraph);
+        _systemPrompt = string.Join(
+            Environment.NewLine,
+            BuildSystemPrompt(_handoff),
+            string.Empty,
+            BuildActionGraphPrompt(_actionGraph));
         _restorationPrompt = string.Empty;
         _languageCode = _handoff.LanguageCode;
         _storageSettings = storageSettings;
@@ -145,12 +160,14 @@ public sealed class ExecutorSessionService : IDisposable
             artifact.FileName,
             artifact.Quantization,
             InitialStage = _currentStageId,
-            Handoff = _handoff
+            Handoff = _handoff,
+            ActionGraph = _actionGraph
         });
 
         _tools = ExecutorToolCatalog.CreateDefinitions(
             includeWeb: _handoff.NeedsWeb,
-            includeSessionFiles: HasAvailableSessionFiles());
+            includeSessionFiles: HasAvailableSessionFiles(),
+            adapterToolNames: GetReadyAdapterToolNames(_handoff));
         return await RunLoopAsync(streamProgress, cancellationToken);
     }
 
@@ -188,10 +205,20 @@ public sealed class ExecutorSessionService : IDisposable
             Format = "gguf",
             IsRunnable = true
         };
+        _actionGraph = checkpoint.ActionGraph?.Nodes?.Count > 0
+            ? Clone(checkpoint.ActionGraph)
+            : _actionGraphService.Build(_handoff);
+        _actionGraphService.BindInputFiles(_actionGraph, _sessionFileManifest);
+        _evidenceReceipts.Clear();
+        _evidenceReceipts.AddRange(Clone(checkpoint.EvidenceReceipts ?? []));
+        _actionGraphService.Reconcile(_actionGraph, _evidenceReceipts);
+        _evidenceProgressGuard.Reset(_actionGraph);
         _restorationPrompt = BuildRestorationPrompt(restoration);
         _systemPrompt = string.Join(
             Environment.NewLine,
             BuildSystemPrompt(_handoff),
+            string.Empty,
+            BuildActionGraphPrompt(_actionGraph),
             string.Empty,
             _restorationPrompt);
         _languageCode = _handoff.LanguageCode;
@@ -211,7 +238,9 @@ public sealed class ExecutorSessionService : IDisposable
         _snapshots.AddRange(Clone(checkpoint.Snapshots));
         _tools = ExecutorToolCatalog.CreateDefinitions(
                 includeWeb: true,
-                includeSessionFiles: HasAvailableSessionFiles())
+                includeSessionFiles: HasAvailableSessionFiles(),
+                adapterToolNames: checkpoint.EnabledTools.Concat(
+                    GetReadyAdapterToolNames(_handoff)))
             .Where(tool => ExecutorToolCatalog.IsSessionFileTool(tool.Function.Name)
                 || checkpoint.EnabledTools.Contains(
                     tool.Function.Name,
@@ -554,6 +583,23 @@ public sealed class ExecutorSessionService : IDisposable
         IProgress<ModelStreamChunk> streamProgress,
         CancellationToken cancellationToken)
     {
+        return await ContinueAfterCapabilityRequestAsync(
+            capabilities,
+            [],
+            resultCode,
+            details,
+            streamProgress,
+            cancellationToken);
+    }
+
+    public async Task<ExecutorTurnResult> ContinueAfterCapabilityRequestAsync(
+        IReadOnlyCollection<ExecutorCapabilityRequest> capabilities,
+        IReadOnlyCollection<CapabilityAdapterBinding> bindings,
+        string resultCode,
+        string details,
+        IProgress<ModelStreamChunk> streamProgress,
+        CancellationToken cancellationToken)
+    {
         EnsureActive();
         var normalizedCapabilities = capabilities
             .Where(capability => !string.IsNullOrWhiteSpace(capability.Id))
@@ -576,6 +622,35 @@ public sealed class ExecutorSessionService : IDisposable
             throw new InvalidOperationException("The capability result does not contain any capability IDs.");
         }
 
+        _actionGraphService.MergeCapabilities(
+            _actionGraph,
+            normalizedCapabilities,
+            bindings,
+            _evidenceReceipts);
+        _actionGraphService.BindInputFiles(_actionGraph, _sessionFileManifest);
+        _actionGraphService.Reconcile(_actionGraph, _evidenceReceipts);
+
+        var enabledAdapterTools = bindings
+            .Where(binding => binding.IsExecutable)
+            .SelectMany(binding => binding.ToolNames)
+            .Where(ExecutorToolCatalog.IsAdapterTool)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        foreach (var tool in ExecutorToolCatalog.CreateDefinitions(
+                     includeWeb: false,
+                     includeSessionFiles: false,
+                     adapterToolNames: enabledAdapterTools))
+        {
+            if (_tools.All(existing =>
+                    !string.Equals(
+                        existing.Function.Name,
+                        tool.Function.Name,
+                        StringComparison.Ordinal)))
+            {
+                _tools.Add(tool);
+            }
+        }
+
         var messageIndex = _messages.Count;
         _messages.Add(new StructuredChatMessage
         {
@@ -591,6 +666,8 @@ public sealed class ExecutorSessionService : IDisposable
                         $"- {capability.Id}; required={capability.Required}; purpose={capability.Purpose}")),
                 $"Result: {resultCode}",
                 $"Details: {details}",
+                $"Enabled specialist tools: {string.Join(", ", enabledAdapterTools)}.",
+                BuildActionGraphPrompt(_actionGraph),
                 "This is a trusted program result, not a user answer.",
                 "Continue the same task and context. A package is usable only when the result explicitly says that its trusted adapter and tool schema are ready.",
                 "If external discovery is authorized, research alternatives but do not claim that an unverified package is callable.",
@@ -602,7 +679,9 @@ public sealed class ExecutorSessionService : IDisposable
             Stage = _currentStageId,
             Capabilities = normalizedCapabilities,
             Result = resultCode,
-            Details = details
+            Details = details,
+            EnabledSpecialistTools = enabledAdapterTools,
+            ActionGraph = _actionGraph
         });
         try
         {
@@ -711,9 +790,23 @@ public sealed class ExecutorSessionService : IDisposable
                 "The executor has not read the required session file through an AI HUB tool.");
         }
 
+        _actionGraphService.Reconcile(_actionGraph, _evidenceReceipts);
+        var evidenceValidation = _evidenceService.Validate(
+            _actionGraph,
+            _evidenceReceipts);
+
         var model = _model!;
         var sessionLog = _sessionLog!;
-        await CompactIfNeededAsync(model, _systemPrompt, sessionLog, streamProgress, cancellationToken);
+        sessionLog.Write("executor_evidence_validated", evidenceValidation);
+        if (evidenceValidation.IsValid)
+        {
+            await CompactIfNeededAsync(
+                model,
+                _systemPrompt,
+                sessionLog,
+                streamProgress,
+                cancellationToken);
+        }
         var request = new StructuredChatMessage
         {
             Role = "user",
@@ -725,6 +818,11 @@ public sealed class ExecutorSessionService : IDisposable
                 $"Current stage: {_currentStageId}",
                 $"Latest compact available result: {_lastTurn?.CurrentResultSummary ?? string.Empty}",
                 BuildTreeContextMessage(),
+                _evidenceService.BuildEvidencePacket(
+                    _actionGraph,
+                    _evidenceReceipts,
+                    evidenceValidation),
+                "Technical tool payloads in earlier messages are internal evidence records. Never reproduce their JSON. Use only the normalized verified-result text in the evidence packet.",
                 isFinal
                     ? "Create the complete final artifact from the confirmed active branch and all useful current work."
                     : "Execute the confirmed user task now and create the requested artifact itself from all confirmed data and current work.",
@@ -757,23 +855,49 @@ public sealed class ExecutorSessionService : IDisposable
                 Stage = _currentStageId,
                 NextVersion = _snapshotVersion + 1
             });
+        var fallbackMarkdown = _evidenceService.BuildHonestLimitedMarkdown(
+            _handoff!,
+            _confirmedBriefCheckpoint,
+            _actionGraph,
+            _evidenceReceipts,
+            evidenceValidation,
+            GetWorkingResultFragments(),
+            _lastTurn?.CurrentResultSummary);
         var markdown = string.Empty;
         for (var attempt = 1; attempt <= 2; attempt++)
         {
-            var response = await _runtime.GenerateExternalWithToolsAsync(
-                model,
-                string.Join(
-                    Environment.NewLine,
-                    isFinal
-                        ? BuildFinalResultSystemPrompt(_languageCode)
-                        : BuildSnapshotSystemPrompt(_languageCode),
-                    _restorationPrompt),
-                snapshotMessages,
-                [],
-                message => sessionLog.Write("executor_runtime", new { Message = message }),
-                streamProgress,
-                cancellationToken);
-            markdown = response.Content.Trim();
+            try
+            {
+                var response = await _runtime.GenerateExternalWithToolsAsync(
+                    model,
+                    string.Join(
+                        Environment.NewLine,
+                        isFinal
+                            ? BuildFinalResultSystemPrompt(_languageCode)
+                            : BuildSnapshotSystemPrompt(_languageCode),
+                        _restorationPrompt),
+                    snapshotMessages,
+                    [],
+                    message => sessionLog.Write("executor_runtime", new { Message = message }),
+                    streamProgress,
+                    cancellationToken);
+                markdown = response.Content.Trim();
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                sessionLog.Write("executor_snapshot_generation_failed", new
+                {
+                    Attempt = attempt,
+                    ErrorType = ex.GetType().Name,
+                    EvidenceStatus = evidenceValidation.Status
+                });
+                break;
+            }
+
             var specificationWasRequested =
                 ExecutorWorkingResultPolicy.TaskSpecificationWasRequested(_confirmedBriefCheckpoint);
             if (!ExecutorWorkingResultPolicy.LooksLikeTaskSpecification(markdown)
@@ -803,15 +927,22 @@ public sealed class ExecutorSessionService : IDisposable
             });
         }
 
+        if (string.IsNullOrWhiteSpace(markdown)
+            || (ExecutorWorkingResultPolicy.LooksLikeTaskSpecification(markdown)
+                && !ExecutorWorkingResultPolicy.TaskSpecificationWasRequested(
+                    _confirmedBriefCheckpoint)))
+        {
+            markdown = fallbackMarkdown;
+            sessionLog.Write("executor_snapshot_program_fallback_used", new
+            {
+                EvidenceStatus = evidenceValidation.Status,
+                WorkingFragmentCount = GetWorkingResultFragments().Count
+            });
+        }
+
         if (string.IsNullOrWhiteSpace(markdown))
         {
             throw new InvalidOperationException("Executor returned an empty result snapshot.");
-        }
-
-        if (ExecutorWorkingResultPolicy.LooksLikeTaskSpecification(markdown)
-            && !ExecutorWorkingResultPolicy.TaskSpecificationWasRequested(_confirmedBriefCheckpoint))
-        {
-            throw new InvalidOperationException("Executor returned a task specification instead of the requested result.");
         }
 
         var version = ++_snapshotVersion;
@@ -825,6 +956,53 @@ public sealed class ExecutorSessionService : IDisposable
             Markdown = markdown,
             IsFinal = isFinal
         };
+        var materialized = new SandboxArtifactMaterializerService().Materialize(
+            snapshot,
+            _handoff!,
+            _sessionFileManifest,
+            _storageSettings!,
+            _evidenceReceipts);
+        materialized.EvidenceValidation = evidenceValidation;
+        materialized.TaskValidation = _evidenceService.ValidateTask(
+            materialized.Validation,
+            evidenceValidation,
+            FirstNonEmpty(
+                _confirmedBriefCheckpoint,
+                _handoff!.Goal,
+                _handoff.SuggestedDirection));
+        snapshot.ArtifactPath = materialized.FilePath;
+        snapshot.ArtifactKind = materialized.ArtifactKind;
+        snapshot.ArtifactMimeType = materialized.MimeType;
+        snapshot.ArtifactQualityLevel = materialized.QualityLevel;
+        snapshot.ArtifactValidationStatus = materialized.Validation.Status;
+        snapshot.EvidenceValidationStatus = evidenceValidation.Status;
+        snapshot.TaskFulfillmentStatus = materialized.TaskValidation.Status;
+        snapshot.ActionGraphId = _actionGraph.Id;
+        snapshot.EvidenceReceiptIds = [.. evidenceValidation.ReceiptIds];
+        snapshot.RecipeId = materialized.RecipeId;
+        snapshot.ArtifactWarnings = materialized.Warnings
+            .Concat(materialized.TaskValidation.Warnings)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        UpdateFinalActionStatuses(materialized);
+        sessionLog.Write("executor_artifact_materialized", new
+        {
+            snapshot.Id,
+            snapshot.Version,
+            snapshot.ArtifactPath,
+            snapshot.ArtifactKind,
+            snapshot.ArtifactQualityLevel,
+            snapshot.RecipeId
+        });
+        sessionLog.Write("executor_artifact_validated", materialized.Validation);
+        sessionLog.Write("executor_task_fulfillment_validated", materialized.TaskValidation);
+        if (!materialized.Validation.IsValid)
+        {
+            throw new InvalidDataException(
+                "The executor output artifact failed validation: "
+                + string.Join(" ", materialized.Validation.Errors));
+        }
+
         _snapshots.Add(snapshot);
         _messages.Add(request);
         _messages.Add(new StructuredChatMessage
@@ -844,6 +1022,27 @@ public sealed class ExecutorSessionService : IDisposable
             snapshot);
         _knowledgeTree.RecordSnapshot(snapshot);
         return snapshot;
+    }
+
+    private void UpdateFinalActionStatuses(SandboxArtifactMaterializationResult materialized)
+    {
+        var artifactNode = _actionGraph.Nodes.FirstOrDefault(node =>
+            string.Equals(node.Layer, "artifact", StringComparison.Ordinal));
+        if (artifactNode is not null)
+        {
+            artifactNode.Status = materialized.Validation.IsValid
+                ? ExecutionActionStatuses.Succeeded
+                : ExecutionActionStatuses.Failed;
+        }
+
+        var validationNode = _actionGraph.Nodes.FirstOrDefault(node =>
+            string.Equals(node.Layer, "validation", StringComparison.Ordinal));
+        if (validationNode is not null)
+        {
+            validationNode.Status = materialized.Validation.IsValid
+                ? ExecutionActionStatuses.Succeeded
+                : ExecutionActionStatuses.Failed;
+        }
     }
 
     private ExecutorTurnResult CreateSafetyPause(
@@ -886,6 +1085,25 @@ public sealed class ExecutorSessionService : IDisposable
 
     private bool HasAvailableSessionFiles() =>
         _sessionFileManifest.Files.Any(file => file.IsAvailable);
+
+    private static IReadOnlyList<string> GetReadyAdapterToolNames(
+        ExecutorHandoffPackage handoff)
+    {
+        var route = handoff.ExecutionBundle.SelectedRouteLevel switch
+        {
+            ExecutionRouteLevels.Degraded =>
+                handoff.ExecutionBundle.DegradedRoute.Route,
+            ExecutionRouteLevels.Emergency =>
+                handoff.ExecutionBundle.EmergencyRoute.Route,
+            _ => handoff.ExecutionBundle.PreferredRoute.Route
+        };
+        return route.Resolution.Bindings
+            .Where(binding => binding.IsExecutable)
+            .SelectMany(binding => binding.ToolNames)
+            .Where(ExecutorToolCatalog.IsAdapterTool)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 
     private void RefreshSessionFileTools()
     {
@@ -952,24 +1170,41 @@ public sealed class ExecutorSessionService : IDisposable
                 }
 
                 _messages.Add(new StructuredChatMessage { Role = "assistant", Content = response.Content });
+                var rejectionReason = "json_parse_or_schema_failure";
+                ExecutorTurnResult? rejectedTurn = null;
                 if (ExecutorResultParser.TryReadTurn(response.Content, out var turn))
                 {
                     if (IsTurnAllowedInCurrentStage(turn))
                     {
                         return AcceptTurn(turn, sessionLog, "executor_turn");
                     }
+
+                    rejectedTurn = turn;
+                    rejectionReason = WriteStagePolicyRejection(
+                        sessionLog,
+                        turn,
+                        "executor_turn");
                 }
 
-                sessionLog.Write("executor_contract_repair_requested", new { RawResponse = response.Content });
+                sessionLog.Write("executor_contract_repair_requested", new
+                {
+                    RawResponse = response.Content,
+                    RejectionReason = rejectionReason
+                });
                 var attempt = 0;
                 budget.Start();
+                budget.RegisterProgress(rejectedTurn is null
+                    ? BuildRawRepairFingerprint(response.Content)
+                    : BuildTurnRepairFingerprint(rejectedTurn));
                 while (budget.CanStartNext())
                 {
                     attempt++;
                     _messages.Add(new StructuredChatMessage
                     {
                         Role = "user",
-                        Content = BuildContractRepairMessage(_currentStageId)
+                        Content = BuildContractRepairMessage(
+                            _currentStageId,
+                            rejectionReason)
                     });
                     var repaired = await _runtime.GenerateExternalWithToolsAsync(
                         model,
@@ -993,10 +1228,23 @@ public sealed class ExecutorSessionService : IDisposable
                         {
                             return AcceptTurn(turn, sessionLog, "executor_contract_repaired");
                         }
+
+                        rejectedTurn = turn;
+                        rejectionReason = WriteStagePolicyRejection(
+                            sessionLog,
+                            turn,
+                            "executor_contract_repaired");
+                    }
+                    else
+                    {
+                        rejectedTurn = null;
+                        rejectionReason = "json_parse_or_schema_failure";
                     }
 
                     if (!budget.RegisterProgress(
-                            $"contract:{repaired.Content.Length}:{StringComparer.Ordinal.GetHashCode(repaired.Content)}"))
+                            rejectedTurn is null
+                                ? BuildRawRepairFingerprint(repaired.Content)
+                                : BuildTurnRepairFingerprint(rejectedTurn)))
                     {
                         sessionLog.Write("executor_contract_repair_stagnation", new
                         {
@@ -1011,13 +1259,14 @@ public sealed class ExecutorSessionService : IDisposable
                 {
                     Attempts = attempt,
                     Stage = _currentStageId,
+                    RejectionReason = rejectionReason,
                     ElapsedMilliseconds = budget.Elapsed.TotalMilliseconds,
                     LimitMilliseconds = budget.Limit.TotalMilliseconds
                 });
                 return CreateSafetyPause(
                     "contract_repair_time_or_stagnation",
-                    "Исполнитель не смог исправить формат ответа за отведённое время. Уточните задачу или повторите шаг.",
-                    "The executor could not repair its response within the available time. Clarify the task or retry the step.");
+                    BuildRepairSafetyMessage(rejectionReason, russian: true),
+                    BuildRepairSafetyMessage(rejectionReason, russian: false));
             }
 
             budget.Start();
@@ -1047,8 +1296,36 @@ public sealed class ExecutorSessionService : IDisposable
                     toolCall,
                     storageSettings,
                     _sessionFileManifest,
+                    _languageCode,
                     sessionLog,
                     cancellationToken);
+                var receipt = _evidenceService.CreateReceipt(
+                    toolCall,
+                    execution,
+                    _actionGraph,
+                    _sessionFileManifest,
+                    storageSettings);
+                _evidenceReceipts.Add(receipt);
+                _actionGraphService.Reconcile(_actionGraph, _evidenceReceipts);
+                sessionLog.Write("executor_tool_receipt", new
+                {
+                    receipt.Id,
+                    receipt.ActionId,
+                    receipt.ToolCallId,
+                    receipt.ToolName,
+                    receipt.ComponentIds,
+                    receipt.Success,
+                    receipt.EvidenceType,
+                    receipt.ConfirmedClaimScopes,
+                    receipt.Limitations,
+                    receipt.DiagnosticMessage,
+                    receipt.InputFileId,
+                    receipt.InputSha256,
+                    receipt.OutputArtifactPath,
+                    receipt.OutputSha256,
+                    receipt.ResultHash,
+                    receipt.Capabilities
+                });
                 if (execution.Success)
                 {
                     _successfulToolSequence++;
@@ -1077,6 +1354,26 @@ public sealed class ExecutorSessionService : IDisposable
                         execution.Command,
                         execution.Content)
                 });
+            }
+
+            if (!_evidenceProgressGuard.Observe(_actionGraph))
+            {
+                sessionLog.Write("executor_evidence_stagnation", new
+                {
+                    Round = round,
+                    RequiredActions = _actionGraph.Nodes
+                        .Where(ExecutionActionGraphService.IsOperational)
+                        .Where(node => node.Required)
+                        .Select(node => new
+                        {
+                            node.Id,
+                            node.OutcomeActionId,
+                            node.CapabilityId,
+                            node.Status
+                        })
+                        .ToList()
+                });
+                return CreateToolSafetyPause("repeated_evidence_without_progress");
             }
         }
 
@@ -1191,64 +1488,34 @@ public sealed class ExecutorSessionService : IDisposable
 
     private bool IsTurnAllowedInCurrentStage(ExecutorTurnResult turn)
     {
-        if (turn.Action == ExecutorTurnActions.ConfirmBrief)
-        {
-            return !_briefConfirmed
-                && _currentStageId == ExecutorStageIds.TaskDefinition
-                && turn.Status == ExecutorTurnStatuses.StageReady;
-        }
+        return ExecutorTurnStagePolicy.IsAllowed(turn, _currentStageId, _briefConfirmed);
+    }
 
-        if (!_briefConfirmed)
+    private string WriteStagePolicyRejection(
+        ISessionEventLog sessionLog,
+        ExecutorTurnResult turn,
+        string source)
+    {
+        var reason = ExecutorTurnStagePolicy.GetRejectionReason(
+            turn,
+            _currentStageId,
+            _briefConfirmed) ?? "unknown_stage_policy_rejection";
+        sessionLog.Write("executor_turn_rejected_by_stage_policy", new
         {
-            return _currentStageId == ExecutorStageIds.TaskDefinition
-                && turn.Status is ExecutorTurnStatuses.Working
-                    or ExecutorTurnStatuses.Blocked
-                && (turn.Action is ExecutorTurnActions.AskUser
-                    or ExecutorTurnActions.Blocked)
-                && !turn.CanFinalize;
-        }
-
-        if (_currentStageId != ExecutorStageIds.PracticalClarification
-            || turn.Status == ExecutorTurnStatuses.StageReady)
-        {
-            return false;
-        }
-
-        if (turn.Action == ExecutorTurnActions.RequestTool)
-        {
-            return turn.Status == ExecutorTurnStatuses.Working
-                && turn.RequestedTools.Count > 0;
-        }
-
-        if (turn.Action == ExecutorTurnActions.RequestCapability)
-        {
-            return _briefConfirmed
-                && turn.Status == ExecutorTurnStatuses.Working
-                && turn.RequestedCapabilities.Count > 0
-                && turn.RequestedCapabilities.All(request =>
-                    !string.IsNullOrWhiteSpace(request.Id)
-                    && !string.IsNullOrWhiteSpace(request.Purpose));
-        }
-
-        if (turn.Action == ExecutorTurnActions.SuggestFinalization)
-        {
-            return turn.Status == ExecutorTurnStatuses.Working
-                && turn.CanFinalize
-                && !string.IsNullOrWhiteSpace(turn.CompletionReason)
-                && !string.IsNullOrWhiteSpace(turn.CurrentResultSummary)
-                && ExecutorWorkingResultPolicy.IsSubstantive(turn.WorkingResultFragment)
-                && turn.MissingCriticalInputs.Count == 0;
-        }
-
-        if (turn.Action == ExecutorTurnActions.AskUser)
-        {
-            return turn.Status == ExecutorTurnStatuses.Working
-                && !string.IsNullOrWhiteSpace(turn.CurrentResultSummary)
-                && ExecutorWorkingResultPolicy.IsSubstantive(turn.WorkingResultFragment);
-        }
-
-        return turn.Status == ExecutorTurnStatuses.Blocked
-            && turn.Action == ExecutorTurnActions.Blocked;
+            Source = source,
+            CurrentStage = _currentStageId,
+            BriefConfirmed = _briefConfirmed,
+            Reason = reason,
+            turn.Status,
+            turn.Action,
+            HasCurrentResultSummary = !string.IsNullOrWhiteSpace(turn.CurrentResultSummary),
+            HasSubstantiveWorkingResultFragment =
+                ExecutorWorkingResultPolicy.IsSubstantive(turn.WorkingResultFragment),
+            turn.CanFinalize,
+            HasCompletionReason = !string.IsNullOrWhiteSpace(turn.CompletionReason),
+            RequestedCapabilities = turn.RequestedCapabilities.Select(request => request.Id)
+        });
+        return reason;
     }
 
     public void Dispose()
@@ -1319,6 +1586,13 @@ public sealed class ExecutorSessionService : IDisposable
             "You are the selected AI executor in the AI HUB Sandbox scenario, not the AI HUB core.",
             "The core selected your capability class. It did not discover the user's exact subject and did not prepare a final task.",
             "Treat programFacts as authoritative, userSignals as raw user input, and coreHypotheses only as provisional background that may be wrong.",
+            "workPatterns contains the Sandbox core's provisional pattern classification with conditional match percentages. Use it as routing context, not as proof.",
+            "artifactContract is authoritative for the required output kind, preferred format and minimum emergency result. Do not silently replace it with a text explanation.",
+            "outcomeContract is the program-owned statement of what must actually happen. A required outcome action is complete only when its expected evidence type is present in an AI HUB receipt.",
+            "Coordinator reasoning, a route percentage, an installed package, metadata, or a plausible narrative never substitutes for evidence of a required outcome action.",
+            $"[AI_HUB_EXECUTION_OUTCOME_CONTRACT]{JsonSerializer.Serialize(handoff.OutcomeContract)}",
+            "executionBundle describes preferred, degraded and emergency routes. Continue through the selected route and request missing capabilities only when they materially improve or enable the artifact.",
+            "Recipes are executable intentions owned by AI HUB. Choose the best ready recipe, but never claim that a deterministic step ran unless AI HUB exposed and completed the corresponding tool.",
             "fileManifest contains only trusted file names and metadata selected by the user. It never contains file contents or absolute paths.",
             "When fileManifest.contentAccessAvailable is true, supported content is available only through session_files_list, session_file_inspect and session_file_read. Never infer content from a name or metadata.",
             "When fileManifest.contentAccessAvailable is false, never claim that you read, opened, saw, transcribed or analyzed a file.",
@@ -1352,7 +1626,7 @@ public sealed class ExecutorSessionService : IDisposable
             $"currentResultSummary is a concise retelling derived from the actual answer fragments available right now. Keep it within {ExecutorResultSummaryPolicy.MaximumCharacters} characters.",
             "Prioritize present answer content, key recommendations, important caveats and gaps that materially affect it. Never write that an answer is being prepared or will be created later.",
             "Use request_tool only after the task is confirmed and list only web_search, web_research or web_read in requestedTools.",
-            $"Use request_capability only after the task is confirmed. Put every simultaneously required capability into requestedCapabilities (maximum 8), with a plain task-specific purpose, required flag and possible capability-ID alternatives. Known IDs include: {string.Join(", ", ComponentCatalog.Processing.SelectMany(entry => entry.Capabilities).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))}. You may request an unknown but precise capability when the trusted catalog has no match; AI HUB will decide whether external discovery is allowed. Keep requestedCapability, capabilityReason and capabilityRequired equal to the first array item for backward compatibility. Never name a package, executable, command or URL.",
+            $"Use request_capability at any stage when a capability is needed to inspect or understand an input, form an actionable task brief, or continue the confirmed task. Put every simultaneously required capability into requestedCapabilities (maximum 8), with a plain task-specific purpose, required flag and possible capability-ID alternatives. Known IDs include: {string.Join(", ", ComponentCatalog.Processing.SelectMany(entry => entry.Capabilities).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))}. You may request an unknown but precise capability when the trusted catalog has no match; AI HUB will decide whether external discovery is allowed. A capability request is an internal action, never an answer option. After AI HUB reports the capability outcome, resume the same stage with the preserved context. Never name a package, executable, command or URL.",
             "Fill missingCriticalInputs and assumptions honestly; do not invent a precise readiness percentage.",
             "Set canFinalize true as soon as the active branch contains a useful result that can be delivered now, missingCriticalInputs is empty, and the next question would only improve, expand or polish that result. You may still use ask_user with canFinalize true for one genuinely useful optional question.",
             "When canFinalize is true, explain why the current result is already usable in completionReason. Otherwise set canFinalize false and leave completionReason empty.",
@@ -1366,6 +1640,18 @@ public sealed class ExecutorSessionService : IDisposable
             "Keep thought to one short user-facing sentence. It is not hidden chain-of-thought.",
             $"Answer language: {handoff.LanguageCode}.");
 
+    private static string BuildActionGraphPrompt(ExecutionActionGraph graph) =>
+        string.Join(
+            Environment.NewLine,
+            "[AI_HUB_EXECUTION_ACTION_GRAPH]",
+            "This program-owned graph lists the operations and evidence required for the current task route.",
+            "Use the exposed tool names assigned to graph nodes whenever they are available and relevant.",
+            "A capability name, route card, model statement or planned action is not proof that an operation ran.",
+            "Only a successful AI HUB tool execution receipt may support a claim that a deterministic operation completed or that an input was inspected.",
+            "Never invent file content, objects, people, transcription, measurements, calculations, edits, exports or web findings that are absent from tool evidence or confirmed user input.",
+            "When required evidence cannot be obtained, continue with an explicitly limited result based only on available facts and name the missing capability. Do not fill evidence gaps with plausible details.",
+            JsonSerializer.Serialize(graph));
+
     private static string BuildUserPrompt(ExecutorHandoffPackage handoff, string stageId)
     {
         var builder = new StringBuilder();
@@ -1373,6 +1659,9 @@ public sealed class ExecutorSessionService : IDisposable
         builder.AppendLine(JsonSerializer.Serialize(handoff));
         builder.AppendLine();
         builder.AppendLine("Important: Goal and Executor prompt are provisional core hypotheses, not a confirmed user request.");
+        builder.AppendLine($"Required artifact: {handoff.ArtifactContract.ArtifactKind} {handoff.ArtifactContract.PreferredExtension} ({handoff.ArtifactContract.MimeType}).");
+        builder.AppendLine($"Selected route: {handoff.ExecutionBundle.SelectedRouteLevel}.");
+        builder.AppendLine("The session must ultimately produce and validate a physical artifact matching artifactContract. A route card or limitation message is not the artifact.");
         builder.AppendLine(BuildStageInstruction(stageId));
         builder.AppendLine("Begin with status working and action ask_user. Ask the first broad technical question. Keep currentResultSummary and workingResultFragment empty until the brief is confirmed.");
         return builder.ToString();
@@ -1387,22 +1676,75 @@ public sealed class ExecutorSessionService : IDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(stageId), stageId, "Unknown executor stage.")
     };
 
-    private string BuildContractRepairMessage(string stageId) =>
+    private string BuildContractRepairMessage(
+        string stageId,
+        string rejectionReason) =>
         string.Join(
             Environment.NewLine,
             "[AI_HUB_CONTRACT_REPAIR]",
-            "Your previous response was rejected because its structure or meaning was invalid.",
+            $"Rejection class: {rejectionReason}.",
+            rejectionReason == "json_parse_or_schema_failure"
+                ? "Your previous response could not be parsed against the JSON response contract. Return one complete schema-valid JSON object."
+                : "Your previous JSON was parsed, but it violated the semantic policy of the current stage. Preserve valid content and correct the named policy violation.",
+            rejectionReason == "working_result_fragment_missing"
+                ? "The rejected practical turn had no new substantive workingResultFragment. Add actual answer content now, or use suggest_finalization with a substantive fragment when the saved result is already self-contained."
+                : string.Empty,
             BuildStageInstruction(stageId),
             "Return JSON only using working, stage_ready or blocked.",
             "Return one action: ask_user, confirm_brief, request_tool, request_capability, suggest_finalization or blocked.",
             _briefConfirmed
                 ? $"The task brief is already confirmed. Return working + ask_user with one useful practical question, or working + suggest_finalization when no useful question remains. In both cases include a substantive workingResultFragment of at most {ExecutorWorkingResultPolicy.MaximumCharacters} characters and a useful currentResultSummary of at most {ExecutorResultSummaryPolicy.MaximumCharacters} characters. Set canFinalize true with a non-empty completionReason whenever that current result can already be delivered and missingCriticalInputs is empty, including ask_user turns with only optional improvements left. Otherwise set canFinalize false and leave completionReason empty. Write actual answer content, not a technical brief or future plan."
-                : "The task brief is not confirmed. Use confirm_brief only when task_definition is actionable.",
+                : "The task brief is not confirmed. Use working + request_capability when a capability is required to inspect an input or make task_definition actionable. Otherwise use confirm_brief only when task_definition is already actionable.",
+            "If the rejected response contained valid requestedCapabilities, preserve them and return working + request_capability. Capability requests are valid before and after task confirmation.",
+            "For request_capability leave question and options empty. A capability request is handled by AI HUB and must never be represented as an approve_action answer option.",
             "Never put stage transitions, saving, exporting, result display or session commands into options. Use suggest_finalization instead when appropriate.",
             "Options are structured objects. Use approve_action only for a concrete session file tool and include its action, trusted targetId and effect. Use answer or decline_action for everything else.",
             "Remove duplicate or equivalent options. A green action in AI HUB must represent a real tool call, never a decorative recommendation.",
             "Never return continue_work, present_result or result_ready.",
             "Keep the session open. Do not change stages and do not claim that the session ended.");
+
+    internal static string BuildTurnRepairFingerprint(ExecutorTurnResult turn) =>
+        string.Join(
+            "|",
+            "semantic_turn",
+            NormalizeRepairValue(turn.Status),
+            NormalizeRepairValue(turn.Action),
+            NormalizeRepairValue(turn.Question),
+            NormalizeRepairValue(turn.WorkingResultFragment),
+            turn.CanFinalize ? "ready" : "not_ready",
+            NormalizeRepairValue(turn.CompletionReason));
+
+    private static string BuildRawRepairFingerprint(string content) =>
+        $"raw:{content.Length}:{StringComparer.Ordinal.GetHashCode(content)}";
+
+    private static string NormalizeRepairValue(string? value) =>
+        string.Join(
+            ' ',
+            (value ?? string.Empty)
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .Trim()
+            .ToLowerInvariant();
+
+    private static string BuildRepairSafetyMessage(string reason, bool russian)
+    {
+        if (reason == "working_result_fragment_missing")
+        {
+            return russian
+                ? "Исполнитель повторил практический ответ без нового содержательного фрагмента результата. Последняя принятая работа сохранена; повторите шаг или завершите сессию текущим результатом."
+                : "The executor repeated a practical answer without a new substantive result fragment. The last accepted work is preserved; retry the step or finish with the current result.";
+        }
+
+        if (reason == "json_parse_or_schema_failure")
+        {
+            return russian
+                ? "Исполнитель не смог вернуть ответ по требуемой JSON-схеме за отведённое время. Последняя принятая работа сохранена; повторите шаг."
+                : "The executor could not return a response matching the required JSON schema within the available time. The last accepted work is preserved; retry the step.";
+        }
+
+        return russian
+            ? "Исполнитель повторил ответ, не соответствующий требованиям текущего этапа. Последняя принятая работа сохранена; повторите шаг."
+            : "The executor repeated a response that did not meet the current stage requirements. The last accepted work is preserved; retry the step.";
+    }
 
     private static string BuildStageCheckpoint(ExecutorTurnResult? turn)
     {
@@ -1429,6 +1771,10 @@ public sealed class ExecutorSessionService : IDisposable
         value.Length <= maximumCharacters
             ? value
             : value[..maximumCharacters] + "...";
+
+    private static string FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim()
+        ?? string.Empty;
 
     private static string BuildSnapshotSystemPrompt(string languageCode) =>
         string.Join(
@@ -1499,6 +1845,20 @@ public sealed class ExecutorSessionService : IDisposable
             "[AI_HUB_SESSION_TREE_ACTIVE_CONTEXT]",
             _knowledgeTree.BuildModelContext(),
             "This program-owned context is authoritative for confirmed decisions. Do not rewrite its structure or revive inactive alternatives.");
+
+    private IReadOnlyList<string> GetWorkingResultFragments() =>
+        _knowledgeTree.GetSnapshot().Nodes
+            .Where(node => !node.IsStructural
+                && string.Equals(
+                    node.Type,
+                    SessionKnowledgeNodeTypes.ResultFragment,
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(node.Content))
+            .OrderBy(node => node.Sequence)
+            .TakeLast(8)
+            .Select(node => node.Content.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     private void KnowledgeTree_Changed(
         object? sender,

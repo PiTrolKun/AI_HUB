@@ -81,9 +81,18 @@ public static class ChoiceScenarioJsonContract
             ["constraints"] = StringArray(),
             ["capabilityProfile"] = CreateCapabilityProfileSchema(),
             ["executorSelection"] = CreateExecutorSelectionSchema(),
+            ["executionPlan"] = CreateExecutionPlanSchema(),
             ["promptForExecutor"] = String()
         },
-        ["required"] = new JsonArray("goal", "area", "criteria", "constraints", "capabilityProfile", "executorSelection", "promptForExecutor")
+        ["required"] = new JsonArray(
+            "goal",
+            "area",
+            "criteria",
+            "constraints",
+            "capabilityProfile",
+            "executorSelection",
+            "executionPlan",
+            "promptForExecutor")
     };
 
     private static JsonObject CreateExecutorSelectionSchema() => new()
@@ -100,6 +109,26 @@ public static class ChoiceScenarioJsonContract
             "installedCandidateId",
             "alternativeCandidateId",
             "preferredCandidateId")
+    };
+
+    private static JsonObject CreateExecutionPlanSchema() => new()
+    {
+        ["type"] = "object",
+        ["additionalProperties"] = false,
+        ["properties"] = new JsonObject
+        {
+            ["requiredCapabilities"] = BoundedStringArray(24, 80),
+            ["optionalCapabilities"] = BoundedStringArray(24, 80),
+            ["preferredComponentIds"] = BoundedStringArray(16, 120),
+            ["executorRole"] = new JsonObject { ["type"] = "string", ["maxLength"] = 240 },
+            ["rationale"] = new JsonObject { ["type"] = "string", ["maxLength"] = 600 }
+        },
+        ["required"] = new JsonArray(
+            "requiredCapabilities",
+            "optionalCapabilities",
+            "preferredComponentIds",
+            "executorRole",
+            "rationale")
     };
 
     private static JsonObject CreateCapabilityProfileSchema() => new()
@@ -145,6 +174,17 @@ public static class ChoiceScenarioJsonContract
     {
         ["type"] = "array",
         ["items"] = String()
+    };
+
+    private static JsonObject BoundedStringArray(int maximumItems, int maximumLength) => new()
+    {
+        ["type"] = "array",
+        ["maxItems"] = maximumItems,
+        ["items"] = new JsonObject
+        {
+            ["type"] = "string",
+            ["maxLength"] = maximumLength
+        }
     };
 
     private static JsonObject StringEnumArray(IEnumerable<string> values) => new()
