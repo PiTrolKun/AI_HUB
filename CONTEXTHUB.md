@@ -1987,4 +1987,5 @@ AI_HUB — русскоязычный локальный AI-хаб для Window
   `H:\AI_HUB\_backups\20260824_image_model_library_close`; семь исходных
   копий проверены по SHA-256.
 - Установщик по правилу проекта не пересобирался. Актуальное состояние
-  подготавливается к обязательному commit/push в `origin/main`.
+  опубликовано в `origin/main`: commit `6d1796f`
+  (`feat: add managed model library and image bundle setup`).
