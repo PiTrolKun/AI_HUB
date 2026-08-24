@@ -115,7 +115,8 @@ public sealed class SemanticImageToolService
     internal static string BuildRequestBody(
         string imageDataUri,
         string prompt,
-        string languageCode)
+        string languageCode,
+        int maxTokens = 900)
     {
         var normalizedLanguage = languageCode.StartsWith("ru", StringComparison.OrdinalIgnoreCase)
             ? "Russian (ru)"
@@ -149,7 +150,7 @@ public sealed class SemanticImageToolService
                 }
             },
             temperature = 0.1,
-            max_tokens = 900,
+            max_tokens = Math.Clamp(maxTokens, 256, 4096),
             stream = false
         }, JsonOptions);
     }

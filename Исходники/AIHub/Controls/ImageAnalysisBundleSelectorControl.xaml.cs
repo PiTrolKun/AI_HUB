@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using AIHub.Models;
+using AIHub.Services;
 using Button = System.Windows.Controls.Button;
 using UserControl = System.Windows.Controls.UserControl;
 
@@ -14,10 +15,13 @@ public partial class ImageAnalysisBundleSelectorControl : UserControl
     private Func<string, string> _localize = key => key;
     private Func<string, object[], string> _format = (key, _) => key;
     private ImageAnalysisBundleDefinition? _noticeBundle;
+    private readonly InterfaceLayoutService _interfaceLayoutService = new();
+    private int _currentColumnCount = 3;
 
     public ImageAnalysisBundleSelectorControl()
     {
         InitializeComponent();
+        SizeChanged += (_, _) => UpdateResponsiveLayout(ActualWidth);
     }
 
     public event EventHandler? BackRequested;
@@ -25,6 +29,24 @@ public partial class ImageAnalysisBundleSelectorControl : UserControl
     public event EventHandler<ImageAnalysisBundleSelectedEventArgs>? BundleSelected;
 
     public event EventHandler<ImageAnalysisBundleSelectedEventArgs>? UnavailableBundleRequested;
+
+    public void UpdateResponsiveLayout(double availableWidth)
+    {
+        var width = ActualWidth > 0 ? ActualWidth : availableWidth;
+        var columns = _interfaceLayoutService.GetBundleColumnCount(width);
+        if (columns == _currentColumnCount)
+        {
+            return;
+        }
+
+        _currentColumnCount = columns;
+        BundleItemsControl.ItemsPanel = (ItemsPanelTemplate)FindResource(columns switch
+        {
+            1 => "BundleItemsPanelOneColumn",
+            2 => "BundleItemsPanelTwoColumns",
+            _ => "BundleItemsPanelThreeColumns"
+        });
+    }
 
     public void Configure(
         IReadOnlyList<ImageAnalysisBundleDefinition> bundles,

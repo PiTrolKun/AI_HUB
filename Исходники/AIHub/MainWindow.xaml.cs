@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<ChoiceExecutorCandidateDisplay> _executorCandidateOptions = [];
     private readonly ObservableCollection<ResumableSessionCardViewModel> _previousSessionCards = [];
     private readonly ObservableCollection<SessionFileCardViewModel> _sessionFileCards = [];
+    private readonly InterfaceLayoutService _interfaceLayoutService = new();
 
     private AppSettings _appSettings = new();
     private AppState _appState = new();
@@ -82,6 +83,7 @@ public partial class MainWindow : Window
     private bool _isApplyingCoreVoiceSettings = true;
     private bool _isApplyingCoreAutonomySettings = true;
     private bool _isApplyingModelDownloadSettings = true;
+    private bool _isApplyingInterfaceSettings = true;
     private bool _coreSpeechPresentationActive;
     private long _coreSpeechPresentationId;
     private long _executorSpeechPresentationId;
@@ -98,6 +100,8 @@ public partial class MainWindow : Window
     private bool _resumeExecutorAfterDownload;
     private bool _isCoreModelPromptPostponed;
     private bool _isDarkTheme;
+    private FrameworkElement? _settingsReturnPage;
+    private string? _settingsReturnStatusText;
 
     private enum PendingModelDownload
     {
@@ -119,11 +123,14 @@ public partial class MainWindow : Window
         _isDarkTheme = IsWindowsAppThemeDark();
         SourceInitialized += (_, _) =>
         {
+            ApplyWindowStartupPreference();
             ApplySystemTitleBarTheme();
             HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WndProc);
         };
+        SizeChanged += MainWindow_SizeChanged;
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         InitializeLocalization();
+        InitializeInterfaceSettings();
         _coreSpeechCoordinator = new CoreSpeechPresentationCoordinator(
             new CoreVoiceEngineRouter(new EspeakCoreVoiceEngine(), new RhVoiceCoreVoiceEngine()));
         _executorSpeechCoordinator = new CoreSpeechPresentationCoordinator(
@@ -143,6 +150,7 @@ public partial class MainWindow : Window
         LoadCoreVoiceSettingsIntoControls();
         LoadCoreAutonomySettingsIntoControls();
         LoadModelDownloadSettingsIntoControls();
+        LoadInterfaceSettingsIntoControls();
         UpdateCoreVoiceControls();
         _ = RefreshModelCatalogOnStartupAsync();
         UpdatePrimaryActionButton();
@@ -425,6 +433,9 @@ public partial class MainWindow : Window
         _appSettings.CoreVoice ??= new CoreVoiceSettings();
         _appSettings.CoreAutonomy ??= new CoreAutonomySettings();
         _appSettings.ModelDownloads ??= new ModelDownloadSettings();
+        _appSettings.FileViewer ??= new FileViewerSettings();
+        _appSettings.Interface ??= new InterfaceSettings();
+        _appSettings.Interface.LastWindowPlacement ??= new RememberedWindowPlacement();
         _executorWorkflowService.ConfigureAutonomy(
             _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds);
         if (!_appSettings.LanguageWasChosen)
@@ -527,6 +538,7 @@ public partial class MainWindow : Window
         SettingsLanguageHelpText.Text = L("Settings.LanguageHelp");
         SettingsLanguageLabelText.Text = L("Settings.LanguageLabel");
         SettingsLocalizationFolderText.Text = LF("Settings.LocalizationFolder", AppDataPaths.LocalizationDirectory);
+        ApplyInterfaceLocalization();
         SettingsCoreVoiceTitleText.Text = L("Settings.CoreVoiceTitle");
         SettingsCoreVoiceHelpText.Text = L("Settings.CoreVoiceHelp");
         SettingsCoreVoiceProviderText.Text = L("Settings.CoreVoiceProvider");
@@ -999,6 +1011,7 @@ public partial class MainWindow : Window
             _managedModelOperationCts?.Cancel();
             _catalogStartupCts.Cancel();
             _choiceScenarioRuntimeService?.Dispose();
+            DisposeImageAnalysisLiteraryRuntime();
             PauseActiveSession("app_closed");
             CancelExecutorSession("app_closed");
             _executorWorkflowService.Dispose();
@@ -1199,14 +1212,26 @@ public partial class MainWindow : Window
 
     private void BackFromSettingsButton_Click(object sender, RoutedEventArgs e)
     {
+        var returnPage = _settingsReturnPage;
+        var returnStatusText = _settingsReturnStatusText;
+        _settingsReturnPage = null;
+        _settingsReturnStatusText = null;
+
         HideImageAnalysisPages();
-        SettingsPage.Visibility = Visibility.Collapsed;
-        SetupPage.Visibility = Visibility.Collapsed;
-        ProfilePage.Visibility = Visibility.Collapsed;
-        ProfileReminderPage.Visibility = Visibility.Collapsed;
-        WorkStartPage.Visibility = Visibility.Collapsed;
-        WelcomePage.Visibility = Visibility.Visible;
-        UpdateWelcomeStatus();
+        HideStandardPages();
+
+        if (returnPage is null)
+        {
+            WelcomePage.Visibility = Visibility.Visible;
+            UpdateWelcomeStatus();
+            return;
+        }
+
+        returnPage.Visibility = Visibility.Visible;
+        if (returnStatusText is not null)
+        {
+            StatusText.Text = returnStatusText;
+        }
     }
 
     private void BackFromProfileButton_Click(object sender, RoutedEventArgs e)
@@ -2371,6 +2396,12 @@ public partial class MainWindow : Window
 
     private void ShowSettingsPage()
     {
+        if (SettingsPage.Visibility != Visibility.Visible)
+        {
+            _settingsReturnPage = FindVisiblePageBeforeSettings();
+            _settingsReturnStatusText = StatusText.Text;
+        }
+
         HideImageAnalysisPages();
         CancelCoreSpeech(revealFullText: false, "open_settings");
         WelcomePage.Visibility = Visibility.Collapsed;
@@ -2386,6 +2417,24 @@ public partial class MainWindow : Window
         {
             RefreshManagedModels();
         }
+    }
+
+    private FrameworkElement? FindVisiblePageBeforeSettings()
+    {
+        FrameworkElement[] pages =
+        [
+            ImageAnalysisWorkspacePage,
+            ImageAnalysisBundleConfirmationPage,
+            ImageAnalysisBundleSelectorPage,
+            ChoiceScenarioPage,
+            WorkStartPage,
+            ProfileReminderPage,
+            ProfilePage,
+            SetupPage,
+            WelcomePage
+        ];
+
+        return pages.FirstOrDefault(page => page.Visibility == Visibility.Visible);
     }
 
     private void ShowProfilePage()
@@ -2963,13 +3012,26 @@ public partial class MainWindow : Window
     }
 
     private void StartChoiceAiActivity()
+        => StartAiActivityOverlay();
+
+    private void StartAiActivityOverlay(Media.Color? accentColor = null)
     {
         GlobalFileViewerButton.IsEnabled = false;
         ChoiceAiActivityPanel.Visibility = Visibility.Visible;
-        ChoiceMatrixRain.Start();
+        if (accentColor is { } color)
+        {
+            ChoiceMatrixRain.Start(color);
+        }
+        else
+        {
+            ChoiceMatrixRain.Start();
+        }
     }
 
     private void StopChoiceAiActivity()
+        => StopAiActivityOverlay();
+
+    private void StopAiActivityOverlay()
     {
         ChoiceMatrixRain.Stop();
         ChoiceAiActivityPanel.Visibility = Visibility.Collapsed;

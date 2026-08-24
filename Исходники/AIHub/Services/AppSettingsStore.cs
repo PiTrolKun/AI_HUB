@@ -27,7 +27,12 @@ public sealed class AppSettingsStore
         {
             var json = File.ReadAllText(AppDataPaths.SettingsPath);
             var settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            settings.CoreVoice ??= new CoreVoiceSettings();
             settings.CoreAutonomy ??= new CoreAutonomySettings();
+            settings.ModelDownloads ??= new ModelDownloadSettings();
+            settings.FileViewer ??= new FileViewerSettings();
+            settings.Interface ??= new InterfaceSettings();
+            settings.Interface.LastWindowPlacement ??= new RememberedWindowPlacement();
             return settings;
         }
         catch

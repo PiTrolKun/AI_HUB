@@ -248,6 +248,52 @@ public sealed class LlamaServerRuntimeService : IDisposable
         return completion?.Choices.FirstOrDefault()?.Message.Content?.Trim() ?? string.Empty;
     }
 
+    public async Task<string> GenerateTextAsync(
+        DebugModelInfo model,
+        string systemPrompt,
+        string userPrompt,
+        int maxTokens,
+        double temperature,
+        Action<string> log,
+        CancellationToken cancellationToken,
+        IProgress<ModelStreamChunk>? streamProgress = null)
+    {
+        await EnsureStartedAsync(model, log, cancellationToken);
+        var request = new ChatCompletionRequest
+        {
+            Messages =
+            [
+                new ChatMessage { Role = "system", Content = systemPrompt },
+                new ChatMessage { Role = "user", Content = userPrompt }
+            ],
+            Temperature = Math.Clamp(temperature, 0, 2),
+            MaxTokens = Math.Clamp(maxTokens, 128, 4096),
+            Stream = streamProgress is not null
+        };
+        var json = JsonSerializer.Serialize(request, _jsonOptions);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync(
+            $"{Endpoint}/v1/chat/completions",
+            content,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        if (streamProgress is not null)
+        {
+            var streamed = await OpenAiSseStreamParser.ReadAsync(
+                stream,
+                streamProgress,
+                cancellationToken);
+            return streamed.Content.Trim();
+        }
+
+        var completion = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
+            stream,
+            _jsonOptions,
+            cancellationToken);
+        return completion?.Choices.FirstOrDefault()?.Message.Content?.Trim() ?? string.Empty;
+    }
+
     public async Task<StructuredChatResult> GenerateExternalWithToolsAsync(
         DebugModelInfo model,
         string systemPrompt,

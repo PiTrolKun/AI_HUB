@@ -4,7 +4,6 @@ using AIHub.Controls;
 using AIHub.Models;
 using AIHub.Services;
 using WpfMessageBox = System.Windows.MessageBox;
-using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 
 namespace AIHub;
 
@@ -17,6 +16,11 @@ public partial class MainWindow
     private ImageAnalysisRecommendationResult? _imageAnalysisRecommendation;
     private ImageAnalysisBundleDefinition? _selectedImageAnalysisBundle;
     private CancellationTokenSource? _imageAnalysisBundleOperationCts;
+    private readonly ImageAnalysisFileValidationService _imageAnalysisFileValidationService = new();
+    private readonly ImageAnalysisSessionStore _imageAnalysisSessionStore = new();
+    private ImageAnalysisLiteraryService? _imageAnalysisLiteraryService;
+    private ImageAnalysisLiterarySession? _imageAnalysisLiterarySession;
+    private CancellationTokenSource? _imageAnalysisLiteraryCts;
 
     private void SelectImageAnalysisButton_Click(object sender, RoutedEventArgs e)
     {
@@ -47,6 +51,7 @@ public partial class MainWindow
         HideStandardPages();
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Visible;
+        ImageAnalysisBundleSelectorPage.UpdateResponsiveLayout(ActualWidth);
     }
 
     private void ShowImageAnalysisBundleConfirmation(ImageAnalysisBundleDefinition bundle)
@@ -101,6 +106,12 @@ public partial class MainWindow
     {
         if (ImageAnalysisWorkspacePage.Visibility == Visibility.Visible)
         {
+            if (_imageAnalysisLiteraryCts is not null)
+            {
+                _imageAnalysisLiteraryCts.Cancel();
+                return true;
+            }
+            SaveCurrentImageAnalysisSession();
             if (_selectedImageAnalysisBundle is not null)
             {
                 ShowImageAnalysisBundleConfirmation(_selectedImageAnalysisBundle);
@@ -305,6 +316,7 @@ public partial class MainWindow
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
         ImageAnalysisWorkspacePage.Visibility = Visibility.Visible;
+        ShowImageAnalysisSubscenarioSelection();
         StatusText.Text = L("Status.ImageAnalysisWorkspaceOpened");
     }
 
@@ -316,20 +328,4 @@ public partial class MainWindow
         }
     }
 
-    private void ImageAnalysisWorkspacePage_SelectImageRequested(object? sender, EventArgs e)
-    {
-        var dialog = new WpfOpenFileDialog
-        {
-            Title = L("ImageAnalysis.Workspace.DialogTitle"),
-            Filter = L("ImageAnalysis.Workspace.DialogFilter"),
-            Multiselect = false,
-            CheckFileExists = true
-        };
-        if (dialog.ShowDialog(this) != true || !File.Exists(dialog.FileName))
-        {
-            return;
-        }
-        ImageAnalysisWorkspacePage.SetSelectedFile(dialog.FileName);
-        StatusText.Text = LF("Status.ImageAnalysisFileSelected", Path.GetFileName(dialog.FileName));
-    }
 }

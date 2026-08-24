@@ -14,23 +14,25 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
-            <Border Background="{DynamicResource PanelBrush}"
+            <Border x:Name="ConfirmationCard"
+                    Background="{DynamicResource PanelBrush}"
                     BorderBrush="{DynamicResource AccentBrush}"
                     BorderThickness="1"
                     CornerRadius="10"
                     Padding="28"
                     MaxWidth="900"
-                    HorizontalAlignment="Center">
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top">
                 <StackPanel>
                     <TextBlock x:Name="TitleText"
                                Foreground="{DynamicResource TextPrimaryBrush}"
-                               FontSize="30"
+                               FontSize="{DynamicResource UiFont30}"
                                FontWeight="SemiBold"
                                TextWrapping="Wrap" />
                     <TextBlock x:Name="DescriptionText"
                                Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="14"
-                               LineHeight="22"
+                               FontSize="{DynamicResource UiFont14}"
+                               LineHeight="{DynamicResource UiLineHeight22}"
                                TextWrapping="Wrap"
                                Margin="0,10,0,0" />
 
@@ -43,17 +45,17 @@
                         <StackPanel>
                             <TextBlock x:Name="StateTitleText"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="17"
+                                       FontSize="{DynamicResource UiFont17}"
                                        FontWeight="SemiBold"
                                        TextWrapping="Wrap" />
                             <TextBlock x:Name="StateDescriptionText"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
-                                       FontSize="13"
+                                       FontSize="{DynamicResource UiFont13}"
                                        TextWrapping="Wrap"
                                        Margin="0,5,0,0" />
                             <TextBlock x:Name="ErrorDetailsText"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
-                                       FontSize="12"
+                                       FontSize="{DynamicResource UiFont12}"
                                        TextWrapping="Wrap"
                                        Margin="0,8,0,0"
                                        Visibility="Collapsed" />
@@ -81,7 +83,7 @@
                                                        TextWrapping="Wrap" />
                                             <TextBlock Text="{Binding DetailText}"
                                                        Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       FontSize="12"
+                                                       FontSize="{DynamicResource UiFont12}"
                                                        TextWrapping="Wrap"
                                                        Margin="0,4,16,0" />
                                         </StackPanel>
@@ -102,7 +104,7 @@
                                 Margin="0,8,0,0">
                         <TextBlock x:Name="ProgressStageText"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
-                                   FontSize="12"
+                                   FontSize="{DynamicResource UiFont12}"
                                    TextWrapping="Wrap" />
                         <ProgressBar x:Name="OperationProgressBar"
                                      Height="8"
@@ -111,12 +113,12 @@
                                      Margin="0,7,0,0" />
                         <TextBlock x:Name="ProgressValueText"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
-                                   FontSize="12"
+                                   FontSize="{DynamicResource UiFont12}"
                                    HorizontalAlignment="Right"
                                    Margin="0,4,0,0" />
                         <TextBlock x:Name="ProgressHintText"
                                    Foreground="{DynamicResource AccentBrush}"
-                                   FontSize="12"
+                                   FontSize="{DynamicResource UiFont12}"
                                    FontWeight="SemiBold"
                                    TextWrapping="Wrap"
                                    Margin="0,7,0,0"
@@ -125,7 +127,7 @@
 
                     <TextBlock x:Name="ModelsPathText"
                                Foreground="{DynamicResource TextSecondaryBrush}"
-                               FontSize="12"
+                               FontSize="{DynamicResource UiFont12}"
                                TextWrapping="Wrap"
                                Margin="0,12,0,0" />
 
@@ -158,7 +160,8 @@
 
         <StackPanel Grid.Row="1"
                     Orientation="Horizontal"
-                    HorizontalAlignment="Left"
+                    Width="{Binding ActualWidth, ElementName=ConfirmationCard}"
+                    HorizontalAlignment="Center"
                     Margin="0,16,0,0">
             <Button x:Name="BackToBundlesButton"
                     Height="40"

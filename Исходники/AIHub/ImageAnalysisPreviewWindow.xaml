@@ -1,0 +1,45 @@
+<Window x:Class="AIHub.ImageAnalysisPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="900"
+        Height="760"
+        MinWidth="620"
+        MinHeight="440"
+        WindowStartupLocation="CenterOwner"
+        Background="#111827"
+        Icon="Assets/AppIcon.ico"
+        FontFamily="Segoe UI Variable Display, Segoe UI"
+        UseLayoutRounding="True">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="HeadingText"
+                   Foreground="#F8FAFC"
+                   FontSize="24"
+                   FontWeight="SemiBold"
+                   Margin="4,0,0,14" />
+        <Border Grid.Row="1"
+                Background="#172033"
+                BorderBrush="#2D374B"
+                BorderThickness="1"
+                CornerRadius="8">
+            <FlowDocumentScrollViewer x:Name="DocumentViewer"
+                                      Background="Transparent"
+                                      VerticalScrollBarVisibility="Auto"
+                                      IsToolBarVisible="False" />
+        </Border>
+        <Button Grid.Row="2"
+                x:Name="CloseButton"
+                Width="150"
+                Height="40"
+                HorizontalAlignment="Right"
+                Margin="0,14,0,0"
+                Background="#2563EB"
+                Foreground="White"
+                BorderThickness="0"
+                Click="CloseButton_Click" />
+    </Grid>
+</Window>

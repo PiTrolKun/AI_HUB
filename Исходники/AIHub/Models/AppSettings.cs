@@ -13,7 +13,67 @@ public sealed class AppSettings
     public ModelDownloadSettings ModelDownloads { get; set; } = new();
 
     public FileViewerSettings FileViewer { get; set; } = new();
+
+    public InterfaceSettings Interface { get; set; } = new();
 }
+
+public static class WindowStartupModes
+{
+    public const string RememberLast = "remember_last";
+    public const string Maximized = "maximized";
+    public const string HalfScreen = "half_screen";
+
+    public static bool IsSupported(string? value) =>
+        value is RememberLast or Maximized or HalfScreen;
+}
+
+public sealed class InterfaceSettings
+{
+    public const int MinimumTextScalePercent = 90;
+    public const int MaximumTextScalePercent = 150;
+    public const int DefaultTextScalePercent = 100;
+
+    private int _textScalePercent = DefaultTextScalePercent;
+    private string _windowStartupMode = WindowStartupModes.RememberLast;
+
+    public int TextScalePercent
+    {
+        get => _textScalePercent;
+        set => _textScalePercent = Math.Clamp(
+            value,
+            MinimumTextScalePercent,
+            MaximumTextScalePercent);
+    }
+
+    public string WindowStartupMode
+    {
+        get => _windowStartupMode;
+        set => _windowStartupMode = WindowStartupModes.IsSupported(value)
+            ? value
+            : WindowStartupModes.RememberLast;
+    }
+
+    public RememberedWindowPlacement LastWindowPlacement { get; set; } = new();
+}
+
+public sealed class RememberedWindowPlacement
+{
+    public bool HasValue { get; set; }
+
+    public string MonitorDeviceName { get; set; } = string.Empty;
+
+    public double LeftRatio { get; set; }
+
+    public double TopRatio { get; set; }
+
+    public double WidthRatio { get; set; } = 0.5;
+
+    public double HeightRatio { get; set; } = 0.5;
+
+    public bool WasMaximized { get; set; }
+}
+
+public sealed record WindowStartupModeOption(string Id, string DisplayName);
 
 public sealed class ModelDownloadSettings
 {

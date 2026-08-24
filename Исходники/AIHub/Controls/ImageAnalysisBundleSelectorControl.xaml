@@ -8,9 +8,18 @@
              d:DesignHeight="620">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <ItemsPanelTemplate x:Key="BundleItemsPanelThreeColumns">
+            <UniformGrid Columns="3" />
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="BundleItemsPanelTwoColumns">
+            <UniformGrid Columns="2" />
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="BundleItemsPanelOneColumn">
+            <UniformGrid Columns="1" />
+        </ItemsPanelTemplate>
 
         <Style x:Key="BundleCardButtonStyle" TargetType="Button">
-            <Setter Property="MinHeight" Value="408" />
+            <Setter Property="MinHeight" Value="{DynamicResource UiBundleCardMinHeight}" />
             <Setter Property="Margin" Value="6" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -94,12 +103,12 @@
         <StackPanel>
             <TextBlock x:Name="TitleText"
                        Foreground="{DynamicResource TextPrimaryBrush}"
-                       FontSize="30"
+                       FontSize="{DynamicResource UiFont30}"
                        FontWeight="SemiBold" />
             <TextBlock x:Name="DescriptionText"
                        Foreground="{DynamicResource TextSecondaryBrush}"
-                       FontSize="14"
-                       LineHeight="22"
+                       FontSize="{DynamicResource UiFont14}"
+                       LineHeight="{DynamicResource UiLineHeight22}"
                        TextWrapping="Wrap"
                        Margin="0,8,0,0" />
         </StackPanel>
@@ -114,7 +123,7 @@
                 Margin="0,14,0,8">
             <TextBlock x:Name="RecommendationSummaryText"
                        Foreground="{DynamicResource TextPrimaryBrush}"
-                       FontSize="13"
+                       FontSize="{DynamicResource UiFont13}"
                        TextWrapping="Wrap" />
         </Border>
 
@@ -123,12 +132,9 @@
                       HorizontalScrollBarVisibility="Disabled"
                       PanningMode="VerticalOnly">
             <ItemsControl x:Name="BundleItemsControl"
-                          HorizontalAlignment="Stretch">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <UniformGrid Rows="1" Columns="3" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Top"
+                          ItemsPanel="{StaticResource BundleItemsPanelThreeColumns}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Button Style="{StaticResource BundleCardButtonStyle}"
@@ -150,7 +156,7 @@
                                 <DockPanel>
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                               FontSize="21"
+                                               FontSize="{DynamicResource UiFont21}"
                                                FontWeight="SemiBold" />
                                     <Border DockPanel.Dock="Right"
                                             Background="{DynamicResource StepBadgeBrush}"
@@ -159,7 +165,7 @@
                                             Margin="8,0,0,0">
                                         <TextBlock Text="{Binding Status}"
                                                    Foreground="{DynamicResource AccentBrush}"
-                                                   FontSize="11"
+                                                   FontSize="{DynamicResource UiFont11}"
                                                    FontWeight="SemiBold"
                                                    TextWrapping="Wrap" />
                                     </Border>
@@ -168,7 +174,7 @@
                                 <TextBlock Grid.Row="1"
                                            Text="{Binding RecommendationLabel}"
                                            Foreground="{DynamicResource AccentBrush}"
-                                           FontSize="12"
+                                           FontSize="{DynamicResource UiFont12}"
                                            FontWeight="Bold"
                                            Margin="0,7,0,0"
                                            Visibility="{Binding IsRecommended, Converter={StaticResource BooleanToVisibilityConverter}}" />
@@ -176,15 +182,15 @@
                                 <TextBlock Grid.Row="2"
                                            Text="{Binding Purpose}"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                           FontSize="12"
-                                           LineHeight="18"
+                                           FontSize="{DynamicResource UiFont12}"
+                                           LineHeight="{DynamicResource UiLineHeight18}"
                                            TextWrapping="Wrap"
                                            Margin="0,8,0,0" />
 
                                 <TextBlock Grid.Row="3"
                                            Text="{Binding ModelsHeader}"
                                            Foreground="{DynamicResource TextPrimaryBrush}"
-                                           FontSize="12"
+                                           FontSize="{DynamicResource UiFont12}"
                                            FontWeight="SemiBold"
                                            Margin="0,12,0,3" />
 
@@ -193,7 +199,7 @@
                                         <DataTemplate>
                                             <StackPanel Margin="0,3,0,4">
                                                 <TextBlock Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           FontSize="11"
+                                                           FontSize="{DynamicResource UiFont11}"
                                                            FontWeight="SemiBold"
                                                            TextWrapping="Wrap">
                                                     <Run Text="{Binding Role}" />
@@ -202,7 +208,7 @@
                                                 </TextBlock>
                                                 <TextBlock Text="{Binding Placement}"
                                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                                           FontSize="10"
+                                                           FontSize="{DynamicResource UiFont10}"
                                                            TextWrapping="Wrap" />
                                             </StackPanel>
                                         </DataTemplate>
@@ -212,16 +218,16 @@
                                 <TextBlock Grid.Row="5"
                                            Text="{Binding RequirementsText}"
                                            Foreground="{DynamicResource TextPrimaryBrush}"
-                                           FontSize="11"
-                                           LineHeight="17"
+                                           FontSize="{DynamicResource UiFont11}"
+                                           LineHeight="{DynamicResource UiLineHeight17}"
                                            TextWrapping="Wrap"
                                            Margin="0,9,0,0" />
 
                                 <TextBlock Grid.Row="6"
                                            Text="{Binding HardwareText}"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                           FontSize="10.5"
-                                           LineHeight="16"
+                                           FontSize="{DynamicResource UiFont10_5}"
+                                           LineHeight="{DynamicResource UiLineHeight16}"
                                            TextWrapping="Wrap"
                                            Margin="0,8,0,6" />
 
@@ -233,7 +239,7 @@
                                         Padding="10,7">
                                     <TextBlock Text="{Binding ActionText}"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                               FontSize="12"
+                                               FontSize="{DynamicResource UiFont12}"
                                                FontWeight="SemiBold"
                                                HorizontalAlignment="Center"
                                                TextWrapping="Wrap" />
@@ -256,7 +262,7 @@
                 Visibility="Collapsed">
             <TextBlock x:Name="NoticeText"
                        Foreground="{DynamicResource TextPrimaryBrush}"
-                       FontSize="13"
+                       FontSize="{DynamicResource UiFont13}"
                        TextWrapping="Wrap" />
         </Border>
 

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using MediaColor = System.Windows.Media.Color;
 
 namespace AIHub.Controls;
 
@@ -13,6 +14,7 @@ public sealed class MatrixRainControl : FrameworkElement
     private readonly List<MatrixGlyph> _glyphs = [];
     private readonly DispatcherTimer _timer;
     private readonly Random _random = new();
+    private MediaColor _accentColor = MediaColor.FromRgb(42, 210, 108);
     private bool _active;
     private int _quietFrames;
 
@@ -26,8 +28,9 @@ public sealed class MatrixRainControl : FrameworkElement
         _timer.Tick += (_, _) => Advance();
     }
 
-    public void Start()
+    public void Start(MediaColor? accentColor = null)
     {
+        _accentColor = accentColor ?? MediaColor.FromRgb(42, 210, 108);
         _active = true;
         _quietFrames = 0;
         _glyphs.Clear();
@@ -65,10 +68,11 @@ public sealed class MatrixRainControl : FrameworkElement
         foreach (var glyph in _glyphs)
         {
             var life = Math.Clamp(glyph.Life, 0, 1);
-            var brush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(
-                glyph.Head ? (byte)210 : (byte)(24 + 30 * life),
-                glyph.Head ? (byte)255 : (byte)(128 + 127 * life),
-                glyph.Head ? (byte)220 : (byte)(48 + 72 * life)));
+            var intensity = glyph.Head ? 0.86 : 0.34 + 0.6 * life;
+            var brush = new SolidColorBrush(MediaColor.FromRgb(
+                BlendChannel(_accentColor.R, intensity, glyph.Head),
+                BlendChannel(_accentColor.G, intensity, glyph.Head),
+                BlendChannel(_accentColor.B, intensity, glyph.Head)));
             var text = new FormattedText(
                 glyph.Character.ToString(),
                 CultureInfo.InvariantCulture,
@@ -141,6 +145,12 @@ public sealed class MatrixRainControl : FrameworkElement
     {
         const string alphabet = "01{}[]<>/\\AIHUB#@*+-=アイウエオカキクケコ";
         return alphabet[_random.Next(alphabet.Length)];
+    }
+
+    private static byte BlendChannel(byte channel, double intensity, bool head)
+    {
+        var value = channel * intensity + (head ? 255 * 0.14 : 0);
+        return (byte)Math.Clamp(value, 0, 255);
     }
 
     private sealed class MatrixGlyph(
