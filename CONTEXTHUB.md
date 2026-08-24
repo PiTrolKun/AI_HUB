@@ -2002,3 +2002,5 @@ AI_HUB — русскоязычный локальный AI-хаб для Window
 - Перед записью истории создан backup
   `H:\AI_HUB\_backups\20260824_installed_086_user_smoke_record`; три файла
   истории сверены по SHA-256.
+- Запись опубликована в `origin/main`, commit `8353fed`
+  (`docs: record installed version smoke test`).
