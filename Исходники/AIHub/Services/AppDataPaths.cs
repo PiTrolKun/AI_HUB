@@ -22,6 +22,18 @@ public static class AppDataPaths
 
     public static string LocalizationDirectory { get; } = Path.Combine(BaseDirectory, "Localization");
 
+    public static string ManagedModelLibraryDirectory { get; } = Path.Combine(
+        BaseDirectory,
+        "ModelLibrary");
+
+    public static string ManagedModelLibraryEntriesDirectory { get; } = Path.Combine(
+        ManagedModelLibraryDirectory,
+        "Entries");
+
+    public static string ManagedModelLibraryEventsPath { get; } = Path.Combine(
+        ManagedModelLibraryDirectory,
+        "events.jsonl");
+
     public static string? ProjectRoot { get; } = FindProjectRoot();
 
     public static string RuntimeDirectory { get; } = ProjectRoot is null
@@ -67,6 +79,7 @@ public static class AppDataPaths
     {
         Directory.CreateDirectory(BaseDirectory);
         Directory.CreateDirectory(LocalizationDirectory);
+        Directory.CreateDirectory(ManagedModelLibraryEntriesDirectory);
         EnsureComponentDirectories();
     }
 

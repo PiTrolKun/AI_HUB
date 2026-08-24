@@ -1,7 +1,10 @@
 using System.Windows;
+using System.IO;
 using AIHub.Controls;
 using AIHub.Models;
 using AIHub.Services;
+using WpfMessageBox = System.Windows.MessageBox;
+using WpfOpenFileDialog = Microsoft.Win32.OpenFileDialog;
 
 namespace AIHub;
 
@@ -9,9 +12,11 @@ public partial class MainWindow
 {
     private readonly ImageAnalysisRecommendationService _imageAnalysisRecommendationService = new();
     private readonly ImageAnalysisHardwareSnapshotService _imageAnalysisHardwareSnapshotService = new();
+    private readonly ImageAnalysisBundleInstallationService _imageAnalysisBundleInstallationService = new();
     private IReadOnlyList<ImageAnalysisBundleDefinition> _imageAnalysisBundles = [];
     private ImageAnalysisRecommendationResult? _imageAnalysisRecommendation;
     private ImageAnalysisBundleDefinition? _selectedImageAnalysisBundle;
+    private CancellationTokenSource? _imageAnalysisBundleOperationCts;
 
     private void SelectImageAnalysisButton_Click(object sender, RoutedEventArgs e)
     {
@@ -47,9 +52,11 @@ public partial class MainWindow
     private void ShowImageAnalysisBundleConfirmation(ImageAnalysisBundleDefinition bundle)
     {
         _selectedImageAnalysisBundle = bundle;
-        ImageAnalysisBundleConfirmationPage.Configure(bundle, L, LF);
+        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings);
+        ImageAnalysisBundleConfirmationPage.Configure(bundle, snapshot, L, LF);
         HideStandardPages();
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
+        ImageAnalysisWorkspacePage.Visibility = Visibility.Collapsed;
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Visible;
     }
 
@@ -68,6 +75,7 @@ public partial class MainWindow
     {
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
+        ImageAnalysisWorkspacePage.Visibility = Visibility.Collapsed;
     }
 
     private void RefreshImageAnalysisLocalization()
@@ -85,10 +93,21 @@ public partial class MainWindow
         {
             ImageAnalysisBundleConfirmationPage.ApplyLocalization();
         }
+
+        ImageAnalysisWorkspacePage.ApplyLocalization();
     }
 
     private bool TryHandleImageAnalysisEscape()
     {
+        if (ImageAnalysisWorkspacePage.Visibility == Visibility.Visible)
+        {
+            if (_selectedImageAnalysisBundle is not null)
+            {
+                ShowImageAnalysisBundleConfirmation(_selectedImageAnalysisBundle);
+            }
+            return true;
+        }
+
         if (ImageAnalysisBundleConfirmationPage.Visibility == Visibility.Visible)
         {
             ShowImageAnalysisBundleSelector(refreshHardware: false);
@@ -141,5 +160,176 @@ public partial class MainWindow
     {
         ShowWorkStartPage();
         StatusText.Text = L("Status.WorkStartOpened");
+    }
+
+    private async void ImageAnalysisBundleConfirmationPage_ActionRequested(
+        object? sender,
+        ImageAnalysisBundleActionEventArgs e)
+    {
+        if (e.Action == ImageAnalysisBundleActions.Start)
+        {
+            ShowImageAnalysisWorkspace();
+            return;
+        }
+
+        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings);
+        if (e.Action == ImageAnalysisBundleActions.Download)
+        {
+            var names = string.Join(
+                Environment.NewLine,
+                snapshot.Components
+                    .Where(component => component.Status != ManagedModelStatuses.Installed
+                        && component.Status != ManagedModelStatuses.NeedsVerification)
+                    .Select(component => $"• {component.DisplayName}"));
+            var confirmation = WpfMessageBox.Show(
+                this,
+                LF(
+                    "ImageAnalysis.Install.DownloadConfirm",
+                    names,
+                    ComponentCardViewModel.FormatBytes(snapshot.MissingBytes),
+                    snapshot.ModelsRoot),
+                L("ImageAnalysis.Install.DownloadTitle"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                return;
+            }
+        }
+        else if (e.Action == ImageAnalysisBundleActions.Verify)
+        {
+            var confirmation = WpfMessageBox.Show(
+                this,
+                L("ImageAnalysis.Install.RuntimeConfirm"),
+                L("ImageAnalysis.Install.VerifyTitle"),
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+            if (confirmation != MessageBoxResult.Yes)
+            {
+                return;
+            }
+        }
+
+        _imageAnalysisBundleOperationCts?.Cancel();
+        _imageAnalysisBundleOperationCts?.Dispose();
+        _imageAnalysisBundleOperationCts = new CancellationTokenSource();
+        ImageAnalysisBundleConfirmationPage.SetBusy(true);
+        var progress = new Progress<ManagedModelDownloadProgress>(value =>
+        {
+            ImageAnalysisBundleConfirmationPage.UpdateProgress(value);
+            StatusText.Text = LF("Status.ImageAnalysisModelOperation", value.FileName);
+        });
+        try
+        {
+            var updated = e.Action == ImageAnalysisBundleActions.Download
+                ? await _imageAnalysisBundleInstallationService.DownloadMissingAsync(
+                    _storageSettings,
+                    progress,
+                    _imageAnalysisBundleOperationCts.Token)
+                : await _imageAnalysisBundleInstallationService.VerifyAsync(
+                    _storageSettings,
+                    progress,
+                    _imageAnalysisBundleOperationCts.Token);
+            ImageAnalysisBundleConfirmationPage.UpdateSnapshot(updated);
+            StatusText.Text = updated.CanStart
+                ? L("Status.ImageAnalysisBundleReady")
+                : L("Status.ImageAnalysisBundleUpdated");
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = L("Status.ImageAnalysisOperationCancelled");
+        }
+        catch (Exception)
+        {
+            var updated = _imageAnalysisBundleInstallationService.Check(_storageSettings);
+            ImageAnalysisBundleConfirmationPage.UpdateSnapshot(updated);
+            StatusText.Text = L("Status.ImageAnalysisOperationFailed");
+        }
+        finally
+        {
+            ImageAnalysisBundleConfirmationPage.SetBusy(false);
+        }
+    }
+
+    private void ImageAnalysisBundleConfirmationPage_RemoveVisionRequested(object? sender, EventArgs e)
+    {
+        var card = _imageAnalysisBundleInstallationService.LibraryStore.Load(
+            ManagedModelCatalog.KimiMediumArtifactId);
+        if (card is null)
+        {
+            return;
+        }
+        var files = string.Join(Environment.NewLine, card.Files.Select(file => $"• {file.RelativePath}"));
+        var confirmation = WpfMessageBox.Show(
+            this,
+            LF(
+                "ImageAnalysis.Install.RemoveVisionConfirm",
+                card.DisplayName,
+                files,
+                ComponentCardViewModel.FormatBytes(card.StoredBytes)),
+            L("ImageAnalysis.Install.RemoveVisionTitle"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+        try
+        {
+            var result = _imageAnalysisBundleInstallationService.RemoveVisionFiles();
+            ImageAnalysisBundleConfirmationPage.UpdateSnapshot(
+                _imageAnalysisBundleInstallationService.Check(_storageSettings));
+            StatusText.Text = LF(
+                "Status.ImageAnalysisVisionRemoved",
+                ComponentCardViewModel.FormatBytes(result.RemovedBytes));
+        }
+        catch (Exception)
+        {
+            StatusText.Text = L("Status.ImageAnalysisVisionRemoveFailed");
+        }
+    }
+
+    private void ImageAnalysisBundleConfirmationPage_CancelRequested(object? sender, EventArgs e) =>
+        _imageAnalysisBundleOperationCts?.Cancel();
+
+    private void ShowImageAnalysisWorkspace()
+    {
+        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings);
+        if (!snapshot.CanStart)
+        {
+            ImageAnalysisBundleConfirmationPage.UpdateSnapshot(snapshot);
+            return;
+        }
+        ImageAnalysisWorkspacePage.Configure(L, LF);
+        HideStandardPages();
+        ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
+        ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
+        ImageAnalysisWorkspacePage.Visibility = Visibility.Visible;
+        StatusText.Text = L("Status.ImageAnalysisWorkspaceOpened");
+    }
+
+    private void ImageAnalysisWorkspacePage_BackRequested(object? sender, EventArgs e)
+    {
+        if (_selectedImageAnalysisBundle is not null)
+        {
+            ShowImageAnalysisBundleConfirmation(_selectedImageAnalysisBundle);
+        }
+    }
+
+    private void ImageAnalysisWorkspacePage_SelectImageRequested(object? sender, EventArgs e)
+    {
+        var dialog = new WpfOpenFileDialog
+        {
+            Title = L("ImageAnalysis.Workspace.DialogTitle"),
+            Filter = L("ImageAnalysis.Workspace.DialogFilter"),
+            Multiselect = false,
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog(this) != true || !File.Exists(dialog.FileName))
+        {
+            return;
+        }
+        ImageAnalysisWorkspacePage.SetSelectedFile(dialog.FileName);
+        StatusText.Text = LF("Status.ImageAnalysisFileSelected", Path.GetFileName(dialog.FileName));
     }
 }

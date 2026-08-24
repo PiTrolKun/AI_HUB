@@ -10,8 +10,23 @@ public sealed class AppSettings
 
     public CoreAutonomySettings CoreAutonomy { get; set; } = new();
 
+    public ModelDownloadSettings ModelDownloads { get; set; } = new();
+
     public FileViewerSettings FileViewer { get; set; } = new();
 }
+
+public sealed class ModelDownloadSettings
+{
+    private int _maximumParallelConnections;
+
+    public int MaximumParallelConnections
+    {
+        get => _maximumParallelConnections;
+        set => _maximumParallelConnections = value is 1 or 2 or 4 or 8 ? value : 0;
+    }
+}
+
+public sealed record ModelDownloadConnectionOption(int Value, string DisplayName);
 
 public sealed class CoreAutonomySettings
 {

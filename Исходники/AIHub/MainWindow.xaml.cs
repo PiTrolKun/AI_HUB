@@ -81,6 +81,7 @@ public partial class MainWindow : Window
     private bool _isApplyingLanguageSelection;
     private bool _isApplyingCoreVoiceSettings = true;
     private bool _isApplyingCoreAutonomySettings = true;
+    private bool _isApplyingModelDownloadSettings = true;
     private bool _coreSpeechPresentationActive;
     private long _coreSpeechPresentationId;
     private long _executorSpeechPresentationId;
@@ -137,9 +138,11 @@ public partial class MainWindow : Window
         ExecutorSessionFilesItemsControl.ItemsSource = _sessionFileCards;
         InitializeAppData();
         InitializeComponentCatalogUi();
+        InitializeManagedModelsUi();
         RefreshPreviousSessions();
         LoadCoreVoiceSettingsIntoControls();
         LoadCoreAutonomySettingsIntoControls();
+        LoadModelDownloadSettingsIntoControls();
         UpdateCoreVoiceControls();
         _ = RefreshModelCatalogOnStartupAsync();
         UpdatePrimaryActionButton();
@@ -421,6 +424,7 @@ public partial class MainWindow : Window
         _appSettings = _appSettingsStore.LoadOrCreate();
         _appSettings.CoreVoice ??= new CoreVoiceSettings();
         _appSettings.CoreAutonomy ??= new CoreAutonomySettings();
+        _appSettings.ModelDownloads ??= new ModelDownloadSettings();
         _executorWorkflowService.ConfigureAutonomy(
             _appSettings.CoreAutonomy.MaximumIndependentSearchSeconds);
         if (!_appSettings.LanguageWasChosen)
@@ -534,6 +538,11 @@ public partial class MainWindow : Window
         SettingsCoreAutonomyHelpText.Text = L("Settings.CoreAutonomyHelp");
         SettingsCoreAutonomyTimeText.Text = L("Settings.CoreAutonomyTime");
         UpdateCoreAutonomyTimeText();
+        SettingsModelDownloadsTitleText.Text = L("Settings.ModelDownloadsTitle");
+        SettingsModelDownloadsHelpText.Text = L("Settings.ModelDownloadsHelp");
+        SettingsModelDownloadConnectionsText.Text = L("Settings.ModelDownloadConnections");
+        PopulateModelDownloadConnectionsComboBox();
+        RefreshManagedModelLocalization();
         ProcessingComponentsExpander.Header = L("Components.ProcessingTitle");
         ProcessingComponentsHelpText.Text = L("Components.ProcessingHelp");
         ViewerComponentsExpander.Header = L("Components.ViewersTitle");
@@ -827,6 +836,63 @@ public partial class MainWindow : Window
         CoreAutonomyTimeValueText.Text = FormatAutonomyDuration(seconds);
     }
 
+    private void LoadModelDownloadSettingsIntoControls()
+    {
+        _isApplyingModelDownloadSettings = true;
+        try
+        {
+            _appSettings.ModelDownloads ??= new ModelDownloadSettings();
+            PopulateModelDownloadConnectionsComboBox();
+            ApplyModelDownloadSettings();
+        }
+        finally
+        {
+            _isApplyingModelDownloadSettings = false;
+        }
+    }
+
+    private void PopulateModelDownloadConnectionsComboBox()
+    {
+        if (ModelDownloadConnectionsComboBox is null)
+        {
+            return;
+        }
+        var wasApplying = _isApplyingModelDownloadSettings;
+        _isApplyingModelDownloadSettings = true;
+        try
+        {
+            var options = new[]
+            {
+                new ModelDownloadConnectionOption(0, L("Settings.ModelDownloadConnectionsAuto")),
+                new ModelDownloadConnectionOption(1, L("Settings.ModelDownloadConnectionsSingle")),
+                new ModelDownloadConnectionOption(2, LF("Settings.ModelDownloadConnectionsFixed", 2)),
+                new ModelDownloadConnectionOption(4, LF("Settings.ModelDownloadConnectionsFixed", 4)),
+                new ModelDownloadConnectionOption(8, LF("Settings.ModelDownloadConnectionsFixed", 8))
+            };
+            ModelDownloadConnectionsComboBox.ItemsSource = options;
+            var selected = _appSettings.ModelDownloads?.MaximumParallelConnections ?? 0;
+            ModelDownloadConnectionsComboBox.SelectedItem = options.First(option => option.Value == selected);
+        }
+        finally
+        {
+            _isApplyingModelDownloadSettings = wasApplying;
+        }
+    }
+
+    private void ModelDownloadConnectionsComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingModelDownloadSettings
+            || ModelDownloadConnectionsComboBox.SelectedItem is not ModelDownloadConnectionOption option)
+        {
+            return;
+        }
+        _appSettings.ModelDownloads ??= new ModelDownloadSettings();
+        _appSettings.ModelDownloads.MaximumParallelConnections = option.Value;
+        _appSettingsStore.Save(_appSettings);
+        ApplyModelDownloadSettings();
+        StatusText.Text = LF("Status.ModelDownloadConnectionsSaved", option.DisplayName);
+    }
+
     private string FormatAutonomyDuration(int seconds)
     {
         if (seconds < 60)
@@ -929,6 +995,8 @@ public partial class MainWindow : Window
         {
             CancelCoreSpeech(revealFullText: false, "app_closed");
             _choiceScenarioCts?.Cancel();
+            _imageAnalysisBundleOperationCts?.Cancel();
+            _managedModelOperationCts?.Cancel();
             _catalogStartupCts.Cancel();
             _choiceScenarioRuntimeService?.Dispose();
             PauseActiveSession("app_closed");
@@ -2314,6 +2382,10 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Visible;
         PopulateLanguageComboBox();
         RefreshComponentCatalogUi();
+        if (ManagedModelsExpander.IsExpanded)
+        {
+            RefreshManagedModels();
+        }
     }
 
     private void ShowProfilePage()
@@ -3617,6 +3689,8 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        RegisterPendingSandboxExecutorArtifact(_pendingExecutorArtifact, card);
 
         _executorCts?.Dispose();
         _executorCts = new CancellationTokenSource();

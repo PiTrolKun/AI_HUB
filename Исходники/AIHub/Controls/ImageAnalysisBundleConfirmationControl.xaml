@@ -4,76 +4,157 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             d:DesignWidth="900"
-             d:DesignHeight="560">
+             d:DesignWidth="1000"
+             d:DesignHeight="700">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border Background="{DynamicResource PanelBrush}"
-                BorderBrush="{DynamicResource AccentBrush}"
-                BorderThickness="1"
-                CornerRadius="10"
-                Padding="30"
-                MaxWidth="760"
-                VerticalAlignment="Center"
-                HorizontalAlignment="Center">
-            <StackPanel>
-                <Border Width="54"
-                        Height="54"
-                        Background="{DynamicResource StepBadgeBrush}"
-                        CornerRadius="27"
-                        HorizontalAlignment="Left">
-                    <TextBlock Text="✓"
-                               Foreground="{DynamicResource AccentBrush}"
-                               FontSize="27"
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Border Background="{DynamicResource PanelBrush}"
+                    BorderBrush="{DynamicResource AccentBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="28"
+                    MaxWidth="900"
+                    HorizontalAlignment="Center">
+                <StackPanel>
+                    <TextBlock x:Name="TitleText"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               FontSize="30"
                                FontWeight="SemiBold"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
-                </Border>
-                <TextBlock x:Name="TitleText"
-                           Foreground="{DynamicResource TextPrimaryBrush}"
-                           FontSize="30"
-                           FontWeight="SemiBold"
-                           TextWrapping="Wrap"
-                           Margin="0,18,0,0" />
-                <TextBlock x:Name="DescriptionText"
-                           Foreground="{DynamicResource TextSecondaryBrush}"
-                           FontSize="15"
-                           LineHeight="24"
-                           TextWrapping="Wrap"
-                           Margin="0,12,0,0" />
+                               TextWrapping="Wrap" />
+                    <TextBlock x:Name="DescriptionText"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="14"
+                               LineHeight="22"
+                               TextWrapping="Wrap"
+                               Margin="0,10,0,0" />
 
-                <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}"
-                        BorderBrush="{DynamicResource LineBrush}"
-                        BorderThickness="1"
-                        CornerRadius="7"
-                        Padding="16,12"
-                        Margin="0,20,0,0">
-                    <StackPanel>
-                        <TextBlock x:Name="BundleTitleText"
-                                   Foreground="{DynamicResource TextPrimaryBrush}"
-                                   FontSize="18"
-                                   FontWeight="SemiBold" />
-                        <TextBlock x:Name="BundleSummaryText"
+                    <Border Background="{DynamicResource StepBadgeBrush}"
+                            BorderBrush="{DynamicResource AccentBrush}"
+                            BorderThickness="1"
+                            CornerRadius="7"
+                            Padding="14,11"
+                            Margin="0,18,0,0">
+                        <StackPanel>
+                            <TextBlock x:Name="StateTitleText"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       FontSize="17"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap" />
+                            <TextBlock x:Name="StateDescriptionText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="13"
+                                       TextWrapping="Wrap"
+                                       Margin="0,5,0,0" />
+                            <TextBlock x:Name="ErrorDetailsText"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0"
+                                       Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl x:Name="ComponentItemsControl"
+                                  Margin="0,16,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource LineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="7"
+                                        Padding="14,11"
+                                        Margin="0,0,0,9">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       FontWeight="SemiBold"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding DetailText}"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       FontSize="12"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,4,16,0" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding StatusText}"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   FontWeight="SemiBold"
+                                                   TextWrapping="Wrap"
+                                                   MaxWidth="190" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <StackPanel x:Name="ProgressPanel"
+                                Visibility="Collapsed"
+                                Margin="0,8,0,0">
+                        <TextBlock x:Name="ProgressStageText"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
-                                   FontSize="13"
-                                   LineHeight="20"
+                                   FontSize="12"
+                                   TextWrapping="Wrap" />
+                        <ProgressBar x:Name="OperationProgressBar"
+                                     Height="8"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Margin="0,7,0,0" />
+                        <TextBlock x:Name="ProgressValueText"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   HorizontalAlignment="Right"
+                                   Margin="0,4,0,0" />
+                        <TextBlock x:Name="ProgressHintText"
+                                   Foreground="{DynamicResource AccentBrush}"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
                                    TextWrapping="Wrap"
-                                   Margin="0,7,0,0" />
+                                   Margin="0,7,0,0"
+                                   Visibility="Collapsed" />
                     </StackPanel>
-                </Border>
 
-                <TextBlock x:Name="NextStepText"
-                           Foreground="{DynamicResource AccentBrush}"
-                           FontSize="13"
-                           FontWeight="SemiBold"
-                           TextWrapping="Wrap"
-                           Margin="0,16,0,0" />
-            </StackPanel>
-        </Border>
+                    <TextBlock x:Name="ModelsPathText"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Margin="0,12,0,0" />
+
+                    <WrapPanel Margin="0,18,0,0">
+                        <Button x:Name="PrimaryActionButton"
+                                MinWidth="190"
+                                Height="42"
+                                Padding="18,0"
+                                Style="{DynamicResource PrimaryButtonStyle}"
+                                Click="PrimaryActionButton_Click" />
+                        <Button x:Name="RemoveVisionButton"
+                                MinWidth="210"
+                                Height="42"
+                                Padding="18,0"
+                                Margin="10,0,0,0"
+                                Style="{DynamicResource SecondaryButtonStyle}"
+                                Click="RemoveVisionButton_Click" />
+                        <Button x:Name="CancelOperationButton"
+                                MinWidth="130"
+                                Height="42"
+                                Padding="18,0"
+                                Margin="10,0,0,0"
+                                Style="{DynamicResource SecondaryButtonStyle}"
+                                Visibility="Collapsed"
+                                Click="CancelOperationButton_Click" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="1"
                     Orientation="Horizontal"

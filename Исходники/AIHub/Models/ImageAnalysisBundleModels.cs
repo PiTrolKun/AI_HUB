@@ -90,3 +90,54 @@ public sealed class ImageAnalysisRecommendationResult
 
     public bool IsComfortableMatch => Recommendation?.IsFullyCompatible == true;
 }
+
+public static class ImageAnalysisBundleInstallStates
+{
+    public const string Checking = "checking";
+    public const string StorageNotConfigured = "storage_not_configured";
+    public const string DownloadRequired = "download_required";
+    public const string ResumeAvailable = "resume_available";
+    public const string NeedsVerification = "needs_verification";
+    public const string RuntimeIncompatible = "runtime_incompatible";
+    public const string Corrupted = "corrupted";
+    public const string Ready = "ready";
+    public const string Error = "error";
+}
+
+public sealed class ImageAnalysisBundleComponentState
+{
+    public string ModelArtifactId { get; init; } = string.Empty;
+
+    public string DisplayName { get; init; } = string.Empty;
+
+    public string Role { get; init; } = string.Empty;
+
+    public string Status { get; init; } = ManagedModelStatuses.NotInstalled;
+
+    public long TotalBytes { get; init; }
+
+    public long StoredBytes { get; init; }
+
+    public bool IsShared { get; init; }
+
+    public string LastError { get; init; } = string.Empty;
+}
+
+public sealed class ImageAnalysisBundleInstallationSnapshot
+{
+    public string State { get; init; } = ImageAnalysisBundleInstallStates.Checking;
+
+    public IReadOnlyList<ImageAnalysisBundleComponentState> Components { get; init; } = [];
+
+    public string ModelsRoot { get; init; } = string.Empty;
+
+    public long MissingBytes { get; init; }
+
+    public long StoredBytes => Components.Sum(component => component.StoredBytes);
+
+    public bool CanStart => State == ImageAnalysisBundleInstallStates.Ready;
+
+    public bool CanRemoveVision => Components.Any(component =>
+        component.Role == ManagedModelRoles.Vision
+        && component.StoredBytes > 0);
+}
