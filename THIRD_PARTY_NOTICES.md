@@ -175,6 +175,30 @@ PDF.js, EPUB.js, LibVLC, OpenSeadragon, Babylon.js, AvalonEdit). Они не в�
 - Проверка: после восстановления полного набора DLL `llama-server.exe` стартует, `/health` отвечает `ok`, `/v1/chat/completions` возвращает ответ Qwen3 8B.
 - Ограничение: для Qwen3 server-запуск требует `--reasoning off`, иначе OpenAI-compatible поле `message.content` может быть пустым из-за thinking-режима.
 
+### chatllm.cpp
+
+- Назначение: локальный visual-runtime Kimi-VL Среднего комплекта.
+- Версия: release `v24`, commit
+  `f5f1d25365fb59447eb58994030c5acd492fcd53`.
+- Источник: GitHub `foldl/chatllm.cpp`.
+- Лицензия: MIT; текст лицензии поставляется вместе с runtime-файлами.
+- Runtime-папка: `Runtime/Backends/chatllm.cpp/v24/win-x64`.
+- Архив Windows x64: SHA-256
+  `F92F48325E4B1351FBED6BD434E07F656B67CB535B36A14E608EF88C773DAF91`.
+- Ограничение: используется CPU-профиль; GPU-offload не считается проверенным
+  продуктовым режимом.
+
+### ImageMagick
+
+- Назначение: приватное декодирование и подготовка изображений внутри
+  `chatllm.cpp`; глобальная установка в Windows не выполняется.
+- Версия: `7.1.2-30`, portable Q16-HDRI x64.
+- Источник: официальный release ImageMagick.
+- Лицензия: ImageMagick License; лицензионные файлы находятся в приватной
+  runtime-папке.
+- Архив: SHA-256
+  `D98471F5EC9D87E222C69C8C28C98FE6665DAB76CD3EF752C5E4DE785BE553BE`.
+
 ### Python reranker runtime
 
 - Назначение: временный dev-runtime для запуска `BAAI/bge-reranker-v2-m3` в web-search rerank слое.

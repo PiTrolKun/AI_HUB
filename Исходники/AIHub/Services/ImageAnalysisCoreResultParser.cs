@@ -43,14 +43,12 @@ public static class ImageAnalysisCoreResultParser
         try
         {
             using var document = JsonDocument.Parse(value[firstBrace..(lastBrace + 1)]);
-            if (!document.RootElement.TryGetProperty("description", out var descriptionProperty)
-                || descriptionProperty.ValueKind != JsonValueKind.String
-                || string.IsNullOrWhiteSpace(descriptionProperty.GetString()))
+            description = ReadDescription(document.RootElement);
+            if (string.IsNullOrWhiteSpace(description))
             {
                 return false;
             }
 
-            description = descriptionProperty.GetString()!.Trim();
             summary.Items = ReadShortItems(document.RootElement, "review_items", MaximumReviewItems);
             summary.Uncertainties = ReadShortItems(document.RootElement, "uncertainties", MaximumUncertainties);
             return true;
@@ -59,6 +57,39 @@ public static class ImageAnalysisCoreResultParser
         {
             return false;
         }
+    }
+
+    private static string ReadDescription(JsonElement root)
+    {
+        if (root.TryGetProperty("paragraphs", out var paragraphsProperty)
+            && paragraphsProperty.ValueKind == JsonValueKind.Array)
+        {
+            var paragraphs = paragraphsProperty
+                .EnumerateArray()
+                .Where(element => element.ValueKind == JsonValueKind.String)
+                .Select(element => element.GetString()?.Trim() ?? string.Empty)
+                .Where(paragraph => paragraph.Length > 0)
+                .ToList();
+            if (paragraphs.Count > 0)
+            {
+                var title = root.TryGetProperty("title", out var titleProperty)
+                    && titleProperty.ValueKind == JsonValueKind.String
+                    ? titleProperty.GetString()?.Trim() ?? string.Empty
+                    : string.Empty;
+                if (string.Equals(title, "null", StringComparison.OrdinalIgnoreCase))
+                {
+                    title = string.Empty;
+                }
+                return string.Join(
+                    $"{Environment.NewLine}{Environment.NewLine}",
+                    title.Length > 0 ? new[] { title }.Concat(paragraphs) : paragraphs);
+            }
+        }
+
+        return root.TryGetProperty("description", out var descriptionProperty)
+            && descriptionProperty.ValueKind == JsonValueKind.String
+            ? descriptionProperty.GetString()?.Trim() ?? string.Empty
+            : string.Empty;
     }
 
     private static List<string> ReadShortItems(JsonElement root, string propertyName, int maximum)
@@ -127,5 +158,6 @@ public static class ImageAnalysisCoreResultParser
     private static bool LooksLikeStructuredEnvelope(string value) =>
         value.TrimStart().StartsWith('{')
         || value.Contains("\"description\"", StringComparison.OrdinalIgnoreCase)
+        || value.Contains("\"paragraphs\"", StringComparison.OrdinalIgnoreCase)
         || value.Contains("\"review_items\"", StringComparison.OrdinalIgnoreCase);
 }

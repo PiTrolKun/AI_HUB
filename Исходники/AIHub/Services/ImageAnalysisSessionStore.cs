@@ -189,13 +189,20 @@ public sealed class ImageAnalysisSessionStore
 
     private static string BuildBackupMarkdown(
         ImageAnalysisLiterarySession session,
-        ImageAnalysisLiteraryVersion version) =>
-        $"# Литературное описание изображения{Environment.NewLine}{Environment.NewLine}"
-        + version.Text.Trim()
-        + $"{Environment.NewLine}{Environment.NewLine}---{Environment.NewLine}"
-        + $"Исходный файл: {session.File?.DisplayName}{Environment.NewLine}"
-        + $"Сессия AI HUB: {session.SessionId}{Environment.NewLine}"
-        + $"Версия текста: {version.Number}{Environment.NewLine}";
+        ImageAnalysisLiteraryVersion version)
+    {
+        var isEnglish = session.Settings.LanguageCode.StartsWith("en", StringComparison.OrdinalIgnoreCase);
+        var title = isEnglish ? "Literary image description" : "Литературное описание изображения";
+        var sourceLabel = isEnglish ? "Source file" : "Исходный файл";
+        var sessionLabel = isEnglish ? "AI HUB session" : "Сессия AI HUB";
+        var versionLabel = isEnglish ? "Text version" : "Версия текста";
+        return $"# {title}{Environment.NewLine}{Environment.NewLine}"
+            + version.Text.Trim()
+            + $"{Environment.NewLine}{Environment.NewLine}---{Environment.NewLine}"
+            + $"{sourceLabel}: {session.File?.DisplayName}{Environment.NewLine}"
+            + $"{sessionLabel}: {session.SessionId}{Environment.NewLine}"
+            + $"{versionLabel}: {version.Number}{Environment.NewLine}";
+    }
 
     private static void ValidateSessionId(string sessionId)
     {

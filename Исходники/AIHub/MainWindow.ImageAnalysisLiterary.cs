@@ -27,7 +27,11 @@ public partial class MainWindow
         _imageAnalysisLiterarySession = new ImageAnalysisLiterarySession
         {
             CurrentStep = ImageAnalysisLiterarySteps.Image,
-            Status = ImageAnalysisLiteraryStatuses.Draft
+            Status = ImageAnalysisLiteraryStatuses.Draft,
+            Settings = new ImageAnalysisLiterarySettings
+            {
+                LanguageCode = _appSettings.LanguageCode
+            }
         };
         _imageAnalysisSessionStore.Save(_imageAnalysisLiterarySession, _storageSettings);
         ImageAnalysisWorkspacePage.ShowImageStep(_imageAnalysisLiterarySession);
@@ -157,6 +161,7 @@ public partial class MainWindow
         _imageAnalysisLiteraryCts = new CancellationTokenSource();
         var session = _imageAnalysisLiterarySession;
         session.Settings = e.Settings;
+        session.Settings.LanguageCode = _appSettings.LanguageCode;
         session.CurrentStep = ImageAnalysisLiterarySteps.Result;
         session.Status = ImageAnalysisLiteraryStatuses.AnalysingVision;
         session.LastError = string.Empty;
@@ -640,8 +645,8 @@ public partial class MainWindow
         StopAiActivityOverlay();
     }
 
-    private static string BuildImageAnalysisMarkdown(ImageAnalysisLiteraryVersion version) =>
-        $"# Литературное описание изображения{Environment.NewLine}{Environment.NewLine}{version.Text.Trim()}";
+    private string BuildImageAnalysisMarkdown(ImageAnalysisLiteraryVersion version) =>
+        $"# {L("ImageAnalysis.Document.Title")}{Environment.NewLine}{Environment.NewLine}{version.Text.Trim()}";
 
     private void SaveCurrentImageAnalysisSession()
     {

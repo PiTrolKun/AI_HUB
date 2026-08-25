@@ -6,11 +6,12 @@ namespace AIHub.Services;
 public static class ManagedModelCatalog
 {
     public const string CoreArtifactId = "model-qwen3-8b-core-q4km";
-    public const string KimiMediumArtifactId = "model-kimi-vl-a3b-thinking-2506-q4km";
+    public const string KimiLegacyArtifactId = "model-kimi-vl-a3b-thinking-2506-q4km";
+    public const string KimiMediumArtifactId = "model-kimi-vl-a3b-thinking-2506-chatllm-q4_1";
     public const string FlorenceLargeArtifactId = "model-florence-2-large-ft";
 
-    public const string KimiRepository = "ggml-org/Kimi-VL-A3B-Thinking-2506-GGUF";
-    public const string KimiRevision = "e7dcd093335f922a057772febc7ab27eda985b40";
+    public const string KimiRepository = "judd2024/chatllm_quantized_kimi-vl";
+    public const string KimiRevision = "master";
     public const string FlorenceRepository = "microsoft/Florence-2-large-ft";
     public const string FlorenceRevision = "4a12a2b54b7016a48a22037fbd62da90cd566f2a";
 
@@ -71,22 +72,22 @@ public static class ManagedModelCatalog
     {
         ModelArtifactId = KimiMediumArtifactId,
         Family = "Kimi-VL-A3B-Thinking-2506",
-        DisplayName = "Kimi-VL-A3B-Thinking-2506 Q4_K_M",
+        DisplayName = "Kimi-VL-A3B-Thinking-2506 GGMM Q4_1",
         Role = ManagedModelRoles.Vision,
-        Provider = "Hugging Face",
+        Provider = "ModelScope",
         RepositoryId = KimiRepository,
         Revision = KimiRevision,
-        Format = "GGUF",
+        Format = "GGMM",
         Architecture = "kimi-vl",
-        Quantization = "Q4_K_M + Q8_0 mmproj",
+        Quantization = "Q4_1",
         License = "MIT (upstream Moonshot AI model)",
-        SourcePage = $"https://huggingface.co/{KimiRepository}",
+        SourcePage = $"https://modelscope.cn/models/{KimiRepository}",
         IsManaged = true,
         CanRemoveFiles = true,
         ModelsRoot = modelsRoot,
-        InstallDirectory = CombineIfRoot(modelsRoot, "Vision", "Kimi-VL-A3B-Thinking-2506", KimiRevision[..12]),
+        InstallDirectory = CombineIfRoot(modelsRoot, "Vision", "Kimi-VL-A3B-Thinking-2506", "chatllm-v24-q4_1"),
         Origin = ManagedModelOrigins.PredefinedScenario,
-        RuntimeBackend = LlamaBackendPaths.DisplayName,
+        RuntimeBackend = ChatLlmBackendPaths.DisplayName,
         Consumers =
         [
             Consumer("image-analysis-medium", "Анализ изображений — Средний", "scenario_bundle")
@@ -94,17 +95,11 @@ public static class ManagedModelCatalog
         Files =
         [
             File(
-                "Kimi-VL-A3B-Thinking-2506-Q4_K_M.gguf",
-                Resolve(KimiRepository, KimiRevision, "Kimi-VL-A3B-Thinking-2506-Q4_K_M.gguf"),
-                10_540_747_680,
-                "72253d82d21c546587139dfd12597d491c25a13c6540d2ce18ca1581967338c5",
-                "main_model"),
-            File(
-                "mmproj-Kimi-VL-A3B-Thinking-2506-Q8_0.gguf",
-                Resolve(KimiRepository, KimiRevision, "mmproj-Kimi-VL-A3B-Thinking-2506-Q8_0.gguf"),
-                618_098_624,
-                "5af5e5fc0ad5e2348f5227ddfa97e9241d453020c149dbe0e920ed603189ca15",
-                "vision_projector")
+                "kimi-vl-thinking-2506-q4_1.bin",
+                ResolveModelScope(KimiRepository, "kimi-vl-thinking-2506-q4_1.bin"),
+                10_447_149_104,
+                "33700ea2f4c8467fbcc4efa060c763e035a8e73003424634125b5a3c64ce02c9",
+                "main_model")
         ]
     };
 
@@ -169,6 +164,9 @@ public static class ManagedModelCatalog
 
     private static string Resolve(string repository, string revision, string file) =>
         $"https://huggingface.co/{repository}/resolve/{revision}/{Uri.EscapeDataString(file)}";
+
+    private static string ResolveModelScope(string repository, string file) =>
+        $"https://modelscope.cn/api/v1/models/{repository}/repo?Revision=master&FilePath={Uri.EscapeDataString(file)}";
 
     private static string CombineIfRoot(string root, params string[] parts) => string.IsNullOrWhiteSpace(root)
         ? string.Empty

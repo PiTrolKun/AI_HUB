@@ -33,7 +33,7 @@ public static class ImageAnalysisBundleCatalog
             titleKey: "ImageAnalysis.Bundle.Medium",
             purposeKey: "ImageAnalysis.Bundle.MediumPurpose",
             statusKey: "ImageAnalysis.Bundle.Current",
-            visualModel: "Kimi-VL-A3B-Thinking-2506 Q4_K_M + mmproj",
+            visualModel: "Kimi-VL-A3B-Thinking-2506 GGMM Q4_1",
             localizerModel: "Florence-2-large-ft",
             requirements: new ImageAnalysisHardwareRequirements
             {
@@ -87,7 +87,9 @@ public static class ImageAnalysisBundleCatalog
                 {
                     RoleKey = "ImageAnalysis.Role.Vision",
                     ModelName = visualModel,
-                    PlacementKey = id == HeavyId
+                    PlacementKey = id == MediumId
+                        ? "ImageAnalysis.Placement.CpuRam"
+                        : id == HeavyId
                         ? "ImageAnalysis.Placement.GpuHybrid"
                         : "ImageAnalysis.Placement.Gpu"
                 },

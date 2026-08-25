@@ -47,6 +47,7 @@ $installerDir = Join-Path $repoRoot 'Тесты\Установщики'
 $innoScriptPath = Join-Path $repoRoot 'Инструменты\Installer\AI_HUB.iss'
 $iconPath = Join-Path $repoRoot 'Исходники\AIHub\Assets\AppIcon.ico'
 $backendDir = Join-Path $repoRoot 'Runtime\Backends\llama.cpp\b9442\win-cuda-12.4-x64'
+$chatLlmBackendDir = Join-Path $repoRoot 'Runtime\Backends\chatllm.cpp\v24\win-x64'
 
 if (-not (Test-Path -LiteralPath $projectPath)) {
     throw "Не найден проект: $projectPath"
@@ -66,6 +67,14 @@ if (-not (Test-Path -LiteralPath $iconPath)) {
 
 if (-not (Test-Path -LiteralPath (Join-Path $backendDir 'llama-server.exe'))) {
     throw "Не найден llama.cpp backend для установщика: $backendDir"
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $chatLlmBackendDir 'server.exe'))) {
+    throw "Не найден chatllm.cpp backend для установщика: $chatLlmBackendDir"
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $chatLlmBackendDir 'imagemagick\magick.exe'))) {
+    throw "Не найден приватный ImageMagick для chatllm.cpp: $chatLlmBackendDir"
 }
 
 $version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
@@ -120,6 +129,7 @@ $arguments = @(
     "/DAppVersion=$version",
     "/DPublishDir=$(Escape-InnoDefineValue $publishDir)",
     "/DBackendDir=$(Escape-InnoDefineValue $backendDir)",
+    "/DChatLlmBackendDir=$(Escape-InnoDefineValue $chatLlmBackendDir)",
     "/DOutputDir=$(Escape-InnoDefineValue $installerDir)",
     "/DSetupIconFile=$(Escape-InnoDefineValue $iconPath)",
     $innoScriptPath

@@ -7,6 +7,22 @@ namespace AIHub.Tests;
 public sealed class ImageAnalysisBundleInstallationTests
 {
     [TestMethod]
+    public void MediumKimiCard_UsesPinnedChatLlmArtifactWithoutASeparateProjector()
+    {
+        var card = ManagedModelCatalog.CreateKimiMedium(@"C:\models");
+
+        Assert.AreEqual("GGMM", card.Format);
+        Assert.AreEqual("Q4_1", card.Quantization);
+        Assert.AreEqual(ChatLlmBackendPaths.DisplayName, card.RuntimeBackend);
+        Assert.AreEqual(1, card.Files.Count);
+        Assert.AreEqual("main_model", card.Files[0].Purpose);
+        Assert.AreEqual(10_447_149_104, card.Files[0].SizeBytes);
+        Assert.AreEqual(
+            "33700ea2f4c8467fbcc4efa060c763e035a8e73003424634125b5a3c64ce02c9",
+            card.Files[0].Sha256);
+    }
+
+    [TestMethod]
     public void Check_WithEmptyConfiguredStorage_RequiresOnlyMissingArtifacts()
     {
         var root = ManagedModelLibraryTests.CreateRoot();

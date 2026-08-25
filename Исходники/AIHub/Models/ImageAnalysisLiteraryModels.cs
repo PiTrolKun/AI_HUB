@@ -73,6 +73,8 @@ public static class ImageAnalysisTextForms
 
 public sealed class ImageAnalysisLiterarySettings
 {
+    public string LanguageCode { get; set; } = "ru";
+
     public string Accuracy { get; set; } = ImageAnalysisAccuracyModes.Balanced;
 
     public string Style { get; set; } = ImageAnalysisLiteraryStyles.Atmospheric;

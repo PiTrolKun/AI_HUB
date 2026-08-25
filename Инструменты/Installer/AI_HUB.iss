@@ -14,6 +14,10 @@
 #error BackendDir is required. Pass /DBackendDir=...
 #endif
 
+#ifndef ChatLlmBackendDir
+#error ChatLlmBackendDir is required. Pass /DChatLlmBackendDir=...
+#endif
+
 #ifndef SetupIconFile
 #error SetupIconFile is required. Pass /DSetupIconFile=...
 #endif
@@ -53,6 +57,7 @@ Name: "desktopicon"; Description: "Создать ярлык на рабочем
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BackendDir}\*"; DestDir: "{localappdata}\AI_HUB\Runtime\Backends\llama.cpp\b9442\win-cuda-12.4-x64"; Excludes: "*.log"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#ChatLlmBackendDir}\*"; DestDir: "{localappdata}\AI_HUB\Runtime\Backends\chatllm.cpp\v24\win-x64"; Excludes: "*.log"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\AI HUB"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"

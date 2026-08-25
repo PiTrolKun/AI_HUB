@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Text;
-using System.Text.Json;
 using AIHub.Models;
 
 namespace AIHub.Services;
@@ -71,23 +70,33 @@ public sealed class ImageAnalysisRuntimeCompatibilityService
         ManagedModelArtifactCard card,
         CancellationToken cancellationToken)
     {
-        if (!File.Exists(LlamaBackendPaths.ServerExecutablePath))
+        if (!File.Exists(ChatLlmBackendPaths.ServerExecutablePath))
         {
-            throw new FileNotFoundException("The verified llama.cpp backend is not installed.");
+            throw new FileNotFoundException("The verified chatllm.cpp backend is not installed.");
+        }
+        if (!File.Exists(ChatLlmBackendPaths.ImageMagickExecutablePath))
+        {
+            throw new FileNotFoundException("The private ImageMagick runtime for chatllm.cpp is not installed.");
         }
         var modelPath = ResolveFile(card, "main_model");
-        var projectorPath = ResolveFile(card, "vision_projector");
         var port = ReserveLoopbackPort();
         var startInfo = new ProcessStartInfo
         {
-            FileName = LlamaBackendPaths.ServerExecutablePath,
-            WorkingDirectory = Path.GetDirectoryName(LlamaBackendPaths.ServerExecutablePath)!,
+            FileName = ChatLlmBackendPaths.ServerExecutablePath,
+            WorkingDirectory = ChatLlmBackendPaths.DirectoryPath,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        foreach (var argument in SemanticImageToolService.BuildArguments(modelPath, projectorPath, port, gpuLayers: 99))
+        var existingPath = startInfo.Environment.TryGetValue("PATH", out var inheritedPath)
+            ? inheritedPath
+            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        startInfo.Environment["PATH"] = ChatLlmBackendPaths.ImageMagickDirectoryPath
+            + Path.PathSeparator
+            + existingPath;
+        startInfo.Environment["MAGICK_HOME"] = ChatLlmBackendPaths.ImageMagickDirectoryPath;
+        foreach (var argument in ImageAnalysisKimiRequestBuilder.BuildArguments(modelPath, port))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -97,40 +106,18 @@ public sealed class ImageAnalysisRuntimeCompatibilityService
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
+            using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
             await WaitForServerAsync(client, process, port, cancellationToken);
-            var payload = JsonSerializer.Serialize(new
-            {
-                messages = new[]
-                {
-                    new
-                    {
-                        role = "user",
-                        content = new object[]
-                        {
-                            new { type = "text", text = "Describe the visible content in one short sentence." },
-                            new { type = "image_url", image_url = new { url = $"data:image/png;base64,{OnePixelPng}" } }
-                        }
-                    }
-                },
-                temperature = 0,
-                max_tokens = 24
-            });
+            var payload = ImageAnalysisKimiRequestBuilder.BuildRequestBody(
+                $"data:image/png;base64,{OnePixelPng}",
+                "Describe what you see in this image.");
             using var response = await client.PostAsync(
                 $"http://127.0.0.1:{port}/v1/chat/completions",
                 new StringContent(payload, Encoding.UTF8, "application/json"),
                 cancellationToken);
             response.EnsureSuccessStatusCode();
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            var content = json.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                throw new InvalidDataException("Kimi loaded, but the multimodal smoke-check returned an empty response.");
-            }
+            _ = ImageAnalysisKimiRequestBuilder.ParseResponseContent(
+                await response.Content.ReadAsStringAsync(cancellationToken));
         }
         finally
         {

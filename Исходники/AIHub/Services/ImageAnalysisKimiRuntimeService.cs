@@ -37,12 +37,17 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         }
 
         var modelPath = ResolveFile(card, "main_model");
-        var projectorPath = ResolveFile(card, "vision_projector");
-        if (!File.Exists(LlamaBackendPaths.ServerExecutablePath))
+        if (!File.Exists(ChatLlmBackendPaths.ServerExecutablePath))
         {
             throw new FileNotFoundException(
                 "The verified runtime required for the visual analyst was not found.",
-                LlamaBackendPaths.ServerExecutablePath);
+                ChatLlmBackendPaths.ServerExecutablePath);
+        }
+        if (!File.Exists(ChatLlmBackendPaths.ImageMagickExecutablePath))
+        {
+            throw new FileNotFoundException(
+                "The private image decoder required by the visual analyst was not found.",
+                ChatLlmBackendPaths.ImageMagickExecutablePath);
         }
 
         progress?.Report(new ImageAnalysisLiteraryProgress(
@@ -62,40 +67,18 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
             },
             cancellationToken);
         var dataUri = $"data:{payload.MimeType};base64,{Convert.ToBase64String(payload.Bytes)}";
-        var requestJson = SemanticImageToolService.BuildRequestBody(dataUri, prompt, "en", 1600);
+        var requestJson = ImageAnalysisKimiRequestBuilder.BuildRequestBody(dataUri, prompt);
 
-        var failures = new List<Exception>();
-        foreach (var gpuLayers in new[] { 99, 0 })
-        {
-            try
-            {
-                progress?.Report(new ImageAnalysisLiteraryProgress(
-                    ManagedModelRoles.Vision,
-                    gpuLayers == 99 ? "starting_gpu" : "starting_cpu",
-                    gpuLayers == 99 ? "Starting Kimi on the GPU." : "Retrying Kimi with CPU/RAM fallback."));
-                return await RunAttemptAsync(
-                    modelPath,
-                    projectorPath,
-                    requestJson,
-                    gpuLayers,
-                    log,
-                    progress,
-                    cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                failures.Add(ex);
-                log($"Kimi attempt with gpu-layers={gpuLayers} failed: {ex.Message}");
-            }
-        }
-
-        throw new InvalidOperationException(
-            "The visual analyst could not process the image with either GPU or CPU/RAM mode.",
-            failures.LastOrDefault());
+        progress?.Report(new ImageAnalysisLiteraryProgress(
+            ManagedModelRoles.Vision,
+            "starting_cpu",
+            "Starting Kimi with the verified CPU/RAM profile."));
+        return await RunAttemptAsync(
+            modelPath,
+            requestJson,
+            log,
+            progress,
+            cancellationToken);
     }
 
     public void Dispose()
@@ -110,15 +93,13 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
 
     private async Task<string> RunAttemptAsync(
         string modelPath,
-        string projectorPath,
         string requestJson,
-        int gpuLayers,
         Action<string> log,
         IProgress<ImageAnalysisLiteraryProgress>? progress,
         CancellationToken cancellationToken)
     {
         var port = ReserveLoopbackPort();
-        using var process = StartServer(modelPath, projectorPath, port, gpuLayers, log);
+        using var process = StartServer(modelPath, port, log);
         try
         {
             await WaitForServerAsync(process, port, cancellationToken);
@@ -133,18 +114,7 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
                 cancellationToken);
             var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             response.EnsureSuccessStatusCode();
-            using var document = JsonDocument.Parse(responseBody);
-            var result = document.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString()
-                ?.Trim();
-            if (string.IsNullOrWhiteSpace(result))
-            {
-                throw new InvalidDataException("The visual analyst returned an empty internal report.");
-            }
-            return result;
+            return ImageAnalysisKimiRequestBuilder.ParseResponseContent(responseBody);
         }
         finally
         {
@@ -154,15 +124,13 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
 
     private static Process StartServer(
         string modelPath,
-        string projectorPath,
         int port,
-        int gpuLayers,
         Action<string> log)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = LlamaBackendPaths.ServerExecutablePath,
-            WorkingDirectory = Path.GetDirectoryName(LlamaBackendPaths.ServerExecutablePath)!,
+            FileName = ChatLlmBackendPaths.ServerExecutablePath,
+            WorkingDirectory = ChatLlmBackendPaths.DirectoryPath,
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -170,11 +138,16 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
-        foreach (var argument in SemanticImageToolService.BuildArguments(
+        var existingPath = startInfo.Environment.TryGetValue("PATH", out var inheritedPath)
+            ? inheritedPath
+            : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        startInfo.Environment["PATH"] = ChatLlmBackendPaths.ImageMagickDirectoryPath
+            + Path.PathSeparator
+            + existingPath;
+        startInfo.Environment["MAGICK_HOME"] = ChatLlmBackendPaths.ImageMagickDirectoryPath;
+        foreach (var argument in ImageAnalysisKimiRequestBuilder.BuildArguments(
             modelPath,
-            projectorPath,
-            port,
-            gpuLayers))
+            port))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -274,9 +247,8 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         {
             return;
         }
-        if (line.Contains("server is listening", StringComparison.OrdinalIgnoreCase)
-            || line.Contains("model loaded", StringComparison.OrdinalIgnoreCase)
-            || line.Contains("eval time", StringComparison.OrdinalIgnoreCase)
+        if (line.Contains("serving at", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("POST /v1/chat/completions", StringComparison.OrdinalIgnoreCase)
             || line.Contains("error", StringComparison.OrdinalIgnoreCase)
             || line.Contains("failed", StringComparison.OrdinalIgnoreCase))
         {
