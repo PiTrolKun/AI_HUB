@@ -21,6 +21,8 @@ public partial class MainWindow
     private ImageAnalysisLiteraryService? _imageAnalysisLiteraryService;
     private ImageAnalysisLiterarySession? _imageAnalysisLiterarySession;
     private CancellationTokenSource? _imageAnalysisLiteraryCts;
+    private CancellationTokenSource? _imageAnalysisRuntimePreparationCts;
+    private Task? _imageAnalysisRuntimePreparationTask;
 
     private void SelectImageAnalysisButton_Click(object sender, RoutedEventArgs e)
     {
@@ -67,6 +69,7 @@ public partial class MainWindow
 
     private void HideStandardPages()
     {
+        CoreMemoryIndicatorPanel.Visibility = Visibility.Collapsed;
         WelcomePage.Visibility = Visibility.Collapsed;
         SetupPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
@@ -78,6 +81,7 @@ public partial class MainWindow
 
     private void HideImageAnalysisPages()
     {
+        CoreMemoryIndicatorPanel.Visibility = Visibility.Visible;
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
         ImageAnalysisWorkspacePage.Visibility = Visibility.Collapsed;
@@ -100,6 +104,7 @@ public partial class MainWindow
         }
 
         ImageAnalysisWorkspacePage.ApplyLocalization();
+        RefreshImageAnalysisSpeechUi();
     }
 
     private bool TryHandleImageAnalysisEscape()
@@ -112,6 +117,8 @@ public partial class MainWindow
                 return true;
             }
             SaveCurrentImageAnalysisSession();
+            CancelImageAnalysisRuntimePreparation(stopModels: true);
+            StopImageAnalysisSpeechSession();
             if (_selectedImageAnalysisBundle is not null)
             {
                 ShowImageAnalysisBundleConfirmation(_selectedImageAnalysisBundle);
@@ -180,6 +187,10 @@ public partial class MainWindow
         if (e.Action == ImageAnalysisBundleActions.Start)
         {
             ShowImageAnalysisWorkspace();
+            if (ImageAnalysisWorkspacePage.Visibility == Visibility.Visible)
+            {
+                BeginImageAnalysisRuntimePreparation();
+            }
             return;
         }
 
@@ -317,11 +328,16 @@ public partial class MainWindow
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
         ImageAnalysisWorkspacePage.Visibility = Visibility.Visible;
         ShowImageAnalysisSubscenarioSelection();
+        RefreshImageAnalysisSpeechUi();
         StatusText.Text = L("Status.ImageAnalysisWorkspaceOpened");
     }
 
     private void ImageAnalysisWorkspacePage_BackRequested(object? sender, EventArgs e)
     {
+        CancelImageAnalysisLiteraryOperation();
+        CancelImageAnalysisRuntimePreparation(stopModels: true);
+        StopImageAnalysisSpeechSession();
+        SaveCurrentImageAnalysisSession();
         if (_selectedImageAnalysisBundle is not null)
         {
             ShowImageAnalysisBundleConfirmation(_selectedImageAnalysisBundle);

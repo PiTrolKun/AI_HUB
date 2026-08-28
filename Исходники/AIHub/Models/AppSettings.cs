@@ -15,6 +15,8 @@ public sealed class AppSettings
     public FileViewerSettings FileViewer { get; set; } = new();
 
     public InterfaceSettings Interface { get; set; } = new();
+
+    public ImageAnalysisSpeechSettings ImageAnalysisSpeech { get; set; } = new();
 }
 
 public static class WindowStartupModes

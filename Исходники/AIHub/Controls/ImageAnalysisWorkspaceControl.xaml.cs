@@ -4,6 +4,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AIHub.Models;
@@ -25,6 +26,15 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     private string _currentStep = ImageAnalysisLiterarySteps.Subscenario;
     private bool _isBusy;
     private bool _suppressVersionSelection;
+    private string _speechMode = ImageAnalysisSpeechModes.Off;
+    private bool _speechModelInstalled;
+    private bool _speechCanReplay;
+    private bool _speechBusy;
+    private bool _suppressSpeechControls;
+    private bool _voiceSettingsExpanded;
+    private bool _historyExpanded;
+    private int _historyCount;
+    private ImageAnalysisSpeechSettings _speechSettings = new();
 
     public ImageAnalysisWorkspaceControl()
     {
@@ -44,6 +54,10 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     public event EventHandler<ImageAnalysisVersionRequestedEventArgs>? VersionRequested;
     public event EventHandler? HomeRequested;
     public event EventHandler? NewAnalysisRequested;
+    public event EventHandler<ImageAnalysisSpeechModeRequestedEventArgs>? SpeechModeRequested;
+    public event EventHandler<ImageAnalysisSpeechSettingsChangedEventArgs>? SpeechSettingsChanged;
+    public event EventHandler? KokoroDownloadRequested;
+    public event EventHandler? ReplaySpeechRequested;
 
     public void Configure(Func<string, string> localize, Func<string, object[], string> format)
     {
@@ -55,6 +69,8 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     public void ShowSubscenarioSelection(IReadOnlyList<ImageAnalysisLiterarySession> sessions)
     {
         _session = null;
+        SetHistoryExpanded(false, animate: false);
+        SetVoiceSettingsExpanded(false, animate: false);
         RenderHistory(sessions);
         SetStep(ImageAnalysisLiterarySteps.Subscenario);
         ApplyFile(null);
@@ -132,7 +148,9 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         FooterStatusText.Text = _localize("ImageAnalysis.Workspace.Status.Configure");
     }
 
-    public void ShowSession(ImageAnalysisLiterarySession session)
+    public void ShowSession(
+        ImageAnalysisLiterarySession session,
+        bool showReviewSummary = true)
     {
         _session = session;
         if (session.GetSelectedVersion() is null)
@@ -145,7 +163,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
                 SetStep(ImageAnalysisLiterarySteps.Result);
                 ApplyFile(session.File);
                 RenderEvents(session);
-                RenderFindings(session);
+                RenderFindings(showReviewSummary ? session : null);
                 PopulateVersions(session);
                 RevisionPanel.Visibility = Visibility.Collapsed;
                 PreviewButton.IsEnabled = false;
@@ -169,7 +187,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
             : session.CurrentStep);
         ApplyFile(session.File);
         RenderEvents(session);
-        RenderFindings(session);
+        RenderFindings(showReviewSummary ? session : null);
         PopulateVersions(session);
         var selected = session.GetSelectedVersion();
         var hasResult = selected is not null;
@@ -200,6 +218,16 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         FooterStatusText.Text = session.Status == ImageAnalysisLiteraryStatuses.Completed
             ? _localize("ImageAnalysis.Workspace.Status.Completed")
             : _localize("ImageAnalysis.Workspace.Status.ResultReady");
+    }
+
+    public void RevealReviewSummary(ImageAnalysisLiterarySession session)
+    {
+        if (!ReferenceEquals(_session, session))
+        {
+            return;
+        }
+
+        RenderFindings(session);
     }
 
     public void SetBusy(string role, string message)
@@ -236,6 +264,89 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         CancelOperationButton.Visibility = Visibility.Collapsed;
     }
 
+    public void SetSpeechState(
+        ImageAnalysisSpeechSettings settings,
+        bool modelInstalled,
+        bool canReplay,
+        string status,
+        bool isBusy = false)
+    {
+        var previousMode = _speechMode;
+        _speechSettings = new ImageAnalysisSpeechSettings
+        {
+            Mode = settings.Mode,
+            KokoroVolume = settings.KokoroVolume,
+            KokoroRatePercent = settings.KokoroRatePercent,
+            ProgrammaticVolume = settings.ProgrammaticVolume,
+            ProgrammaticRatePercent = settings.ProgrammaticRatePercent
+        };
+        _speechMode = _speechSettings.Mode;
+        _speechModelInstalled = modelInstalled;
+        _speechCanReplay = canReplay;
+        _speechBusy = isBusy;
+
+        if (!string.Equals(previousMode, _speechMode, StringComparison.Ordinal))
+        {
+            SetVoiceSettingsExpanded(false, animate: false);
+        }
+
+        SpeechIdentityBadge.Background = _speechMode switch
+        {
+            ImageAnalysisSpeechModes.Kokoro => new SolidColorBrush(MediaColor.FromRgb(22, 163, 74)),
+            ImageAnalysisSpeechModes.Programmatic => new SolidColorBrush(MediaColor.FromRgb(248, 250, 252)),
+            _ => new SolidColorBrush(MediaColor.FromRgb(107, 114, 128))
+        };
+        var identityBrush = _speechMode == ImageAnalysisSpeechModes.Programmatic
+            ? new SolidColorBrush(MediaColor.FromRgb(17, 24, 39))
+            : MediaBrushes.White;
+        SpeechIdentityBodyPath.Fill = identityBrush;
+        SpeechIdentityWavesPath.Stroke = identityBrush;
+
+        var modeName = _localize("ImageAnalysis.Workspace.Voice.Mode." + _speechMode);
+        SpeechIdentityBadge.ToolTip = modeName;
+        AutomationProperties.SetName(SpeechIdentityBadge, modeName);
+
+        _suppressSpeechControls = true;
+        SpeechOffRadioButton.IsChecked = _speechMode == ImageAnalysisSpeechModes.Off;
+        SpeechKokoroRadioButton.IsChecked = _speechMode == ImageAnalysisSpeechModes.Kokoro;
+        SpeechProgrammaticRadioButton.IsChecked = _speechMode == ImageAnalysisSpeechModes.Programmatic;
+        VoiceVolumeSlider.Value = _speechSettings.GetActiveVolume();
+        VoiceRateSlider.Value = _speechSettings.GetActiveRatePercent();
+        _suppressSpeechControls = false;
+        UpdateVoiceSettingsValues();
+
+        KokoroDownloadButton.ToolTip = _localize("ImageAnalysis.Workspace.Voice.Download");
+        AutomationProperties.SetName(KokoroDownloadButton, _localize("ImageAnalysis.Workspace.Voice.Download"));
+        ReplaySpeechButton.ToolTip = _localize("ImageAnalysis.Workspace.Voice.Replay");
+        AutomationProperties.SetName(ReplaySpeechButton, _localize("ImageAnalysis.Workspace.Voice.Replay"));
+        KokoroDownloadButton.Visibility = _speechMode == ImageAnalysisSpeechModes.Kokoro && !modelInstalled
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ReplaySpeechButton.Visibility = _speechMode != ImageAnalysisSpeechModes.Off && canReplay
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        VoiceSettingsToggleButton.Visibility = _speechMode == ImageAnalysisSpeechModes.Off
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        if (_speechMode == ImageAnalysisSpeechModes.Off)
+        {
+            SetVoiceSettingsExpanded(false, animate: false);
+        }
+
+        SpeechOffRadioButton.IsEnabled = !isBusy;
+        SpeechKokoroRadioButton.IsEnabled = !isBusy;
+        SpeechProgrammaticRadioButton.IsEnabled = !isBusy;
+        VoiceSettingsToggleButton.IsEnabled = !isBusy;
+        VoiceVolumeSlider.IsEnabled = !isBusy;
+        VoiceRateSlider.IsEnabled = !isBusy;
+        KokoroDownloadButton.IsEnabled = !isBusy;
+        ReplaySpeechButton.IsEnabled = !isBusy;
+        VoiceStatusText.Text = status;
+        VoiceStatusText.Visibility = string.IsNullOrWhiteSpace(status)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
     public void ApplyLocalization()
     {
         TitleText.Text = _localize("ImageAnalysis.Workspace.Title");
@@ -261,7 +372,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         MultipleScenarioTitleText.Text = _localize("ImageAnalysis.Workspace.Subscenario.Multiple.Title");
         MultipleScenarioDescriptionText.Text = _localize("ImageAnalysis.Workspace.Subscenario.Multiple.Description");
         MultipleScenarioButton.Content = _localize("ImageAnalysis.Bundle.InDevelopment");
-        HistoryTitleText.Text = _localize("ImageAnalysis.Workspace.History.Title");
+        UpdateHistoryTitle();
         HistoryEmptyText.Text = _localize("ImageAnalysis.Workspace.History.Empty");
         ImagePanelTitleText.Text = _localize("ImageAnalysis.Workspace.Image.Title");
         ImagePanelDescriptionText.Text = _localize("ImageAnalysis.Workspace.Image.Description");
@@ -292,6 +403,16 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         CancelOperationButton.Content = _localize("Common.Cancel");
         ResultPanelTitleText.Text = _localize("ImageAnalysis.Workspace.Result.Title");
         ResultPanelHintText.Text = _localize("ImageAnalysis.Workspace.Result.Hint");
+        VoiceModeTitleText.Text = _localize("ImageAnalysis.Workspace.Voice.Title");
+        SpeechOffRadioButton.Content = _localize("ImageAnalysis.Workspace.Voice.Choice.off");
+        SpeechKokoroRadioButton.Content = _localize("ImageAnalysis.Workspace.Voice.Choice.kokoro");
+        SpeechProgrammaticRadioButton.Content = _localize("ImageAnalysis.Workspace.Voice.Choice.programmatic");
+        VoiceVolumeLabelText.Text = _localize("ImageAnalysis.Workspace.Voice.Volume");
+        VoiceRateLabelText.Text = _localize("ImageAnalysis.Workspace.Voice.Rate");
+        KokoroDownloadButton.Content = _localize("ImageAnalysis.Workspace.Voice.DownloadShort");
+        ReplaySpeechButton.Content = _localize("ImageAnalysis.Workspace.Voice.ReplayShort");
+        VoiceSettingsToggleButton.ToolTip = _localize("ImageAnalysis.Workspace.Voice.SettingsToggle");
+        AutomationProperties.SetName(VoiceSettingsToggleButton, _localize("ImageAnalysis.Workspace.Voice.SettingsToggle"));
         VersionLabelText.Text = _localize("ImageAnalysis.Workspace.Result.Version");
         PreviewButton.Content = _localize("ImageAnalysis.Workspace.Result.Preview");
         ExportButton.Content = _localize("ImageAnalysis.Workspace.Result.Export");
@@ -299,6 +420,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         NewAnalysisButton.Content = _localize("ImageAnalysis.Workspace.Completed.NewAnalysis");
         HomeButton.Content = _localize("ImageAnalysis.Workspace.Completed.Home");
         BackButton.Content = _localize("ImageAnalysis.Workspace.Back");
+        SetSpeechState(_speechSettings, _speechModelInstalled, _speechCanReplay, VoiceStatusText.Text, _speechBusy);
         UpdateStepAppearance();
     }
 
@@ -491,9 +613,10 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     private void RenderHistory(IReadOnlyList<ImageAnalysisLiterarySession> sessions)
     {
         HistoryItemsPanel.Children.Clear();
-        var visible = sessions.Take(5).ToList();
-        HistoryEmptyText.Visibility = visible.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var session in visible)
+        _historyCount = sessions.Count;
+        UpdateHistoryTitle();
+        HistoryEmptyText.Visibility = sessions.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var session in sessions)
         {
             var button = new WpfButton
             {
@@ -509,6 +632,81 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
             button.Click += HistoryButton_Click;
             HistoryItemsPanel.Children.Add(button);
         }
+    }
+
+    private void UpdateHistoryTitle()
+    {
+        HistoryTitleText.Text = _format(
+            "ImageAnalysis.Workspace.History.TitleWithCount",
+            [_localize("ImageAnalysis.Workspace.History.Title"), _historyCount]);
+        var actionKey = _historyExpanded
+            ? "ImageAnalysis.Workspace.History.Collapse"
+            : "ImageAnalysis.Workspace.History.Expand";
+        HistoryToggleButton.ToolTip = _localize(actionKey);
+        AutomationProperties.SetName(HistoryToggleButton, _localize(actionKey));
+    }
+
+    private void SetHistoryExpanded(bool expanded, bool animate = true)
+    {
+        _historyExpanded = expanded;
+        SetExpandablePanelState(HistoryContentBorder, HistoryChevronPath, expanded, animate);
+        UpdateHistoryTitle();
+        if (expanded)
+        {
+            HistoryScrollViewer.ScrollToTop();
+        }
+    }
+
+    private void SetVoiceSettingsExpanded(bool expanded, bool animate = true)
+    {
+        _voiceSettingsExpanded = expanded && _speechMode != ImageAnalysisSpeechModes.Off;
+        SetExpandablePanelState(
+            VoiceSettingsPanel,
+            VoiceSettingsChevronPath,
+            _voiceSettingsExpanded,
+            animate);
+    }
+
+    private static void SetExpandablePanelState(
+        FrameworkElement panel,
+        System.Windows.Shapes.Path chevron,
+        bool expanded,
+        bool animate)
+    {
+        if (expanded)
+        {
+            panel.Visibility = Visibility.Visible;
+        }
+
+        var opacityAnimation = new DoubleAnimation
+        {
+            To = expanded ? 1 : 0,
+            Duration = TimeSpan.FromMilliseconds(animate ? 150 : 0),
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+        if (!expanded)
+        {
+            opacityAnimation.Completed += (_, _) => panel.Visibility = Visibility.Collapsed;
+        }
+        panel.BeginAnimation(OpacityProperty, opacityAnimation);
+
+        if (chevron.RenderTransform is RotateTransform rotate)
+        {
+            rotate.BeginAnimation(
+                RotateTransform.AngleProperty,
+                new DoubleAnimation
+                {
+                    To = expanded ? 180 : 0,
+                    Duration = TimeSpan.FromMilliseconds(animate ? 180 : 0),
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                });
+        }
+    }
+
+    private void UpdateVoiceSettingsValues()
+    {
+        VoiceVolumeValueText.Text = $"{Math.Round(VoiceVolumeSlider.Value):0}%";
+        VoiceRateValueText.Text = $"{VoiceRateSlider.Value / 100d:0.00}×";
     }
 
     private void SetStep(string step)
@@ -636,6 +834,47 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     private void CompleteButton_Click(object sender, RoutedEventArgs e) => CompleteRequested?.Invoke(this, EventArgs.Empty);
     private void NewAnalysisButton_Click(object sender, RoutedEventArgs e) => NewAnalysisRequested?.Invoke(this, EventArgs.Empty);
     private void HomeButton_Click(object sender, RoutedEventArgs e) => HomeRequested?.Invoke(this, EventArgs.Empty);
+    private void HistoryToggleButton_Click(object sender, RoutedEventArgs e) =>
+        SetHistoryExpanded(!_historyExpanded);
+
+    private void SpeechModeRadioButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_suppressSpeechControls)
+        {
+            return;
+        }
+
+        var requestedMode = sender == SpeechKokoroRadioButton
+            ? ImageAnalysisSpeechModes.Kokoro
+            : sender == SpeechProgrammaticRadioButton
+                ? ImageAnalysisSpeechModes.Programmatic
+                : ImageAnalysisSpeechModes.Off;
+        SetVoiceSettingsExpanded(false);
+        SpeechModeRequested?.Invoke(
+            this,
+            new ImageAnalysisSpeechModeRequestedEventArgs(requestedMode));
+    }
+
+    private void VoiceSettingsToggleButton_Click(object sender, RoutedEventArgs e) =>
+        SetVoiceSettingsExpanded(!_voiceSettingsExpanded);
+
+    private void VoiceSettingsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!IsInitialized || _suppressSpeechControls)
+        {
+            return;
+        }
+
+        UpdateVoiceSettingsValues();
+        SpeechSettingsChanged?.Invoke(
+            this,
+            new ImageAnalysisSpeechSettingsChangedEventArgs(
+                _speechMode,
+                (int)Math.Round(VoiceVolumeSlider.Value),
+                (int)Math.Round(VoiceRateSlider.Value)));
+    }
+    private void KokoroDownloadButton_Click(object sender, RoutedEventArgs e) => KokoroDownloadRequested?.Invoke(this, EventArgs.Empty);
+    private void ReplaySpeechButton_Click(object sender, RoutedEventArgs e) => ReplaySpeechRequested?.Invoke(this, EventArgs.Empty);
     private void CancelOperationButton_Click(object sender, RoutedEventArgs e) { CancelOperationButton.IsEnabled = false; CancelRequested?.Invoke(this, EventArgs.Empty); }
 
     private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -712,4 +951,19 @@ public sealed class ImageAnalysisSessionRequestedEventArgs(string sessionId) : E
 public sealed class ImageAnalysisVersionRequestedEventArgs(string versionId) : EventArgs
 {
     public string VersionId { get; } = versionId;
+}
+
+public sealed class ImageAnalysisSpeechModeRequestedEventArgs(string mode) : EventArgs
+{
+    public string Mode { get; } = ImageAnalysisSpeechModes.Normalize(mode);
+}
+
+public sealed class ImageAnalysisSpeechSettingsChangedEventArgs(
+    string mode,
+    int volume,
+    int ratePercent) : EventArgs
+{
+    public string Mode { get; } = ImageAnalysisSpeechModes.Normalize(mode);
+    public int Volume { get; } = Math.Clamp(volume, 0, 100);
+    public int RatePercent { get; } = Math.Clamp(ratePercent, 70, 160);
 }

@@ -706,6 +706,12 @@ public partial class MainWindow : Window
         ApplyLocalization();
         RefreshComponentCatalogUi();
         RefreshPreviousSessions();
+        if (ImageAnalysisWorkspacePage.Visibility == Visibility.Visible)
+        {
+            StopImageAnalysisSpeechSession();
+            RefreshImageAnalysisSpeechUi();
+            BeginImageAnalysisRuntimePreparation();
+        }
         StatusText.Text = L("Status.LanguageSaved");
     }
 

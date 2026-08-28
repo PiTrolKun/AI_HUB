@@ -16,6 +16,7 @@ public partial class MainWindow
 
     private void ShowImageAnalysisSubscenarioSelection()
     {
+        CancelImageAnalysisSpeech();
         SaveCurrentImageAnalysisSession();
         _imageAnalysisLiterarySession = null;
         ImageAnalysisWorkspacePage.ShowSubscenarioSelection(
@@ -249,8 +250,18 @@ public partial class MainWindow
                 ImageAnalysisEventStatuses.Completed,
                 LF("ImageAnalysis.Workspace.Result.VersionName", session.Versions.Count, DateTime.Now.ToString("g")));
             _imageAnalysisSessionStore.Save(session, _storageSettings);
-            ImageAnalysisWorkspacePage.ShowSession(session);
+            var delaySummaryReveal = ImageAnalysisSpeechTextService.ShouldDelaySummaryReveal(
+                _appSettings.ImageAnalysisSpeech?.Mode,
+                session.ReviewSummary);
+            ImageAnalysisWorkspacePage.ShowSession(
+                session,
+                showReviewSummary: !delaySummaryReveal);
             StatusText.Text = L("Status.ImageAnalysisResultReady");
+            _ = SpeakCurrentImageAnalysisSummaryAsync(
+                automatic: true,
+                playbackStarted: delaySummaryReveal
+                    ? () => ImageAnalysisWorkspacePage.RevealReviewSummary(session)
+                    : null);
         }
         catch (OperationCanceledException)
         {
@@ -491,6 +502,7 @@ public partial class MainWindow
                     : L("Status.ImageAnalysisCompleted"));
             _imageAnalysisSessionStore.Save(session, _storageSettings);
             ImageAnalysisWorkspacePage.ShowSession(session);
+            CancelImageAnalysisRuntimePreparation(stopModels: true);
             StatusText.Text = choice == MessageBoxResult.Yes
                 ? L("Status.ImageAnalysisCompletedWithBackup")
                 : L("Status.ImageAnalysisCompleted");
@@ -506,14 +518,19 @@ public partial class MainWindow
 
     private void ImageAnalysisWorkspacePage_NewAnalysisRequested(object? sender, EventArgs e)
     {
+        CancelImageAnalysisLiteraryOperation();
         StopImageAnalysisMatrix();
+        CancelImageAnalysisSpeech();
         ShowImageAnalysisSubscenarioSelection();
-        StatusText.Text = L("Status.ImageAnalysisNewAnalysis");
+        BeginImageAnalysisRuntimePreparation();
     }
 
     private void ImageAnalysisWorkspacePage_HomeRequested(object? sender, EventArgs e)
     {
+        CancelImageAnalysisLiteraryOperation();
         StopImageAnalysisMatrix();
+        CancelImageAnalysisRuntimePreparation(stopModels: true);
+        StopImageAnalysisSpeechSession();
         SaveCurrentImageAnalysisSession();
         ShowWorkStartPage();
         StatusText.Text = L("Status.WorkStartOpened");
@@ -541,6 +558,7 @@ public partial class MainWindow
             session.CurrentStep = ImageAnalysisLiterarySteps.Image;
         }
         ImageAnalysisWorkspacePage.ShowSession(session);
+        RefreshImageAnalysisSpeechUi();
         StatusText.Text = L("Status.ImageAnalysisSessionResumed");
     }
 
@@ -645,6 +663,95 @@ public partial class MainWindow
         StopAiActivityOverlay();
     }
 
+    private void BeginImageAnalysisRuntimePreparation()
+    {
+        CancelImageAnalysisRuntimePreparation(stopModels: false);
+        var speechWarmupTask = BeginImageAnalysisSpeechWarmup();
+        var owner = new CancellationTokenSource();
+        _imageAnalysisRuntimePreparationCts = owner;
+        _imageAnalysisRuntimePreparationTask = PrepareImageAnalysisRuntimeAsync(owner, speechWarmupTask);
+    }
+
+    private async Task PrepareImageAnalysisRuntimeAsync(
+        CancellationTokenSource owner,
+        Task speechWarmupTask)
+    {
+        var cancellationToken = owner.Token;
+        var prepareCoreConcurrently = ImageAnalysisRuntimePreparationPolicy
+            .ShouldPrepareCoreConcurrently(_lastPassport);
+        try
+        {
+            LogImageAnalysisRuntime(
+                "Waiting for the Kokoro warmup stage before preparing image-analysis runtimes.");
+            await speechWarmupTask;
+            cancellationToken.ThrowIfCancellationRequested();
+            LogImageAnalysisRuntime(
+                $"Kokoro warmup stage finished; delaying image-analysis runtimes by " +
+                $"{ImageAnalysisRuntimePreparationPolicy.ModelStartDelay.TotalMilliseconds:F0} ms.");
+            await Task.Delay(ImageAnalysisRuntimePreparationPolicy.ModelStartDelay, cancellationToken);
+            LogImageAnalysisRuntime(prepareCoreConcurrently
+                ? "Preparing Kimi and core concurrently."
+                : "Preparing Kimi first; the core remains on-demand for the safe-memory profile.");
+            LogImageAnalysisRuntime(RuntimeResourceDiagnostics.DescribeSystemMemory(
+                "before_image_analysis_runtime_preparation"));
+            StatusText.Text = L("Status.ImageAnalysisModelsPreparing");
+            await GetImageAnalysisLiteraryService().PrepareAsync(
+                _storageSettings,
+                prepareCoreConcurrently,
+                LogImageAnalysisRuntime,
+                progress: null,
+                cancellationToken);
+            LogImageAnalysisRuntime(RuntimeResourceDiagnostics.DescribeSystemMemory(
+                "after_image_analysis_runtime_preparation"));
+            if (ReferenceEquals(_imageAnalysisRuntimePreparationCts, owner)
+                && ImageAnalysisWorkspacePage.Visibility == Visibility.Visible
+                && _imageAnalysisLiteraryCts is null)
+            {
+                StatusText.Text = L("Status.ImageAnalysisModelsReady");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            LogImageAnalysisRuntime("Image-analysis model preparation was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            LogImageAnalysisRuntime($"Image-analysis model preparation failed: {ex.Message}");
+            if (ReferenceEquals(_imageAnalysisRuntimePreparationCts, owner)
+                && ImageAnalysisWorkspacePage.Visibility == Visibility.Visible
+                && _imageAnalysisLiteraryCts is null)
+            {
+                StatusText.Text = L("Status.ImageAnalysisModelsDeferred");
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_imageAnalysisRuntimePreparationCts, owner))
+            {
+                _imageAnalysisRuntimePreparationCts = null;
+                _imageAnalysisRuntimePreparationTask = null;
+                owner.Dispose();
+            }
+        }
+    }
+
+    private void CancelImageAnalysisRuntimePreparation(bool stopModels)
+    {
+        var preparationCts = _imageAnalysisRuntimePreparationCts;
+        _imageAnalysisRuntimePreparationCts = null;
+        _imageAnalysisRuntimePreparationTask = null;
+        if (preparationCts is not null)
+        {
+            preparationCts.Cancel();
+            preparationCts.Dispose();
+        }
+
+        if (stopModels)
+        {
+            _imageAnalysisLiteraryService?.Stop();
+        }
+    }
+
     private string BuildImageAnalysisMarkdown(ImageAnalysisLiteraryVersion version) =>
         $"# {L("ImageAnalysis.Document.Title")}{Environment.NewLine}{Environment.NewLine}{version.Text.Trim()}";
 
@@ -672,8 +779,10 @@ public partial class MainWindow
 
     private void DisposeImageAnalysisLiteraryRuntime()
     {
+        CancelImageAnalysisRuntimePreparation(stopModels: true);
         CancelImageAnalysisLiteraryOperation();
         SaveCurrentImageAnalysisSession();
+        DisposeImageAnalysisSpeech();
         _imageAnalysisLiteraryService?.Dispose();
         _imageAnalysisLiteraryService = null;
     }

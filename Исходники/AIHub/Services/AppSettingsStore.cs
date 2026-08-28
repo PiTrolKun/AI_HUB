@@ -33,6 +33,7 @@ public sealed class AppSettingsStore
             settings.FileViewer ??= new FileViewerSettings();
             settings.Interface ??= new InterfaceSettings();
             settings.Interface.LastWindowPlacement ??= new RememberedWindowPlacement();
+            settings.ImageAnalysisSpeech ??= new ImageAnalysisSpeechSettings();
             return settings;
         }
         catch

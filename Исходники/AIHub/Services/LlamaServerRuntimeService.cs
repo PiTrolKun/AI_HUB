@@ -22,6 +22,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
     private readonly CoreIdentityService _coreIdentityService;
+    private readonly SemaphoreSlim _startupGate = new(1, 1);
 
     private Process? _process;
     private string? _currentModelPath;
@@ -38,6 +39,12 @@ public sealed class LlamaServerRuntimeService : IDisposable
     {
         _coreIdentityService = new CoreIdentityService(userContextService);
     }
+
+    public Task PrepareAsync(
+        DebugModelInfo model,
+        Action<string> log,
+        CancellationToken cancellationToken) =>
+        EnsureStartedAsync(model, log, cancellationToken);
 
     public async Task<string> GenerateAsync(
         DebugModelInfo model,
@@ -390,31 +397,44 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
     private async Task EnsureStartedAsync(DebugModelInfo model, Action<string> log, CancellationToken cancellationToken)
     {
-        if (!IsAvailable)
-        {
-            throw new FileNotFoundException("llama-server.exe was not found.", ExpectedExecutablePath);
-        }
-
-        if (_process is not null
-            && !_process.HasExited
-            && string.Equals(_currentModelPath, model.Path, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        Stop();
-        StartProcess(model, gpuLayers: 99, log);
+        await _startupGate.WaitAsync(cancellationToken);
         try
         {
-            await WaitForHealthAsync(log, cancellationToken);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException
-                                   && !cancellationToken.IsCancellationRequested)
-        {
-            log($"Full GPU model startup failed ({ex.Message}). Retrying with CPU/RAM fallback.");
+            if (!IsAvailable)
+            {
+                throw new FileNotFoundException("llama-server.exe was not found.", ExpectedExecutablePath);
+            }
+
+            if (_process is not null
+                && !_process.HasExited
+                && string.Equals(_currentModelPath, model.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             Stop();
-            StartProcess(model, gpuLayers: 0, log);
-            await WaitForHealthAsync(log, cancellationToken);
+            StartProcess(model, gpuLayers: 99, log);
+            try
+            {
+                await WaitForHealthAsync(log, cancellationToken);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or TimeoutException
+                                       && !cancellationToken.IsCancellationRequested)
+            {
+                log($"Full GPU model startup failed ({ex.Message}). Retrying with CPU/RAM fallback.");
+                Stop();
+                StartProcess(model, gpuLayers: 0, log);
+                await WaitForHealthAsync(log, cancellationToken);
+            }
+        }
+        catch
+        {
+            Stop();
+            throw;
+        }
+        finally
+        {
+            _startupGate.Release();
         }
     }
 
@@ -453,6 +473,13 @@ public sealed class LlamaServerRuntimeService : IDisposable
         _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         log($"Starting llama-server: {Path.GetFileName(model.Path)} on {Endpoint}; gpu-layers={gpuLayers}");
         _process.Start();
+        log(RuntimeResourceDiagnostics.DescribeLaunch(
+            "AI HUB core / llama-server",
+            _process,
+            gpuLayers > 0
+                ? $"GPU preferred; gpuLayers={gpuLayers}; llama.cpp/driver may use shared system memory"
+                : "CPU/RAM",
+            model.Path));
         _ = PumpOutputAsync(_process.StandardOutput, log);
         _ = PumpOutputAsync(_process.StandardError, log);
     }
@@ -479,6 +506,10 @@ public sealed class LlamaServerRuntimeService : IDisposable
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
                     log($"llama-server health OK: {Endpoint}");
+                    log(RuntimeResourceDiagnostics.DescribeSnapshot(
+                        "AI HUB core / llama-server",
+                        _process,
+                        "ready"));
                     return;
                 }
             }
@@ -519,6 +550,11 @@ public sealed class LlamaServerRuntimeService : IDisposable
     {
         return line.Contains("server is listening", StringComparison.OrdinalIgnoreCase)
             || line.Contains("model loaded", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("cuda", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("gpu", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("vram", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("offload", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("memory", StringComparison.OrdinalIgnoreCase)
             || line.Contains("prompt eval time", StringComparison.OrdinalIgnoreCase)
             || line.Contains("eval time", StringComparison.OrdinalIgnoreCase)
             || line.Contains("error", StringComparison.OrdinalIgnoreCase)

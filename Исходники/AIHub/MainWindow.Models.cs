@@ -187,6 +187,7 @@ public partial class MainWindow
             new("role:core", L("Models.Role.core")),
             new("role:vision", L("Models.Role.vision")),
             new("role:localizer", L("Models.Role.localizer")),
+            new("role:speech", L("Models.Role.speech")),
             new("role:executor", L("Models.Role.executor")),
             new("role:reranker", L("Models.Role.reranker")),
             new("role:external", L("Models.Role.external"))
@@ -451,10 +452,11 @@ public partial class MainWindow
         ManagedModelRoles.Core => 0,
         ManagedModelRoles.Vision => 1,
         ManagedModelRoles.Localizer => 2,
-        ManagedModelRoles.Executor => 3,
-        ManagedModelRoles.Reranker => 4,
-        ManagedModelRoles.Tool => 5,
-        _ => 6
+        ManagedModelRoles.Speech => 3,
+        ManagedModelRoles.Executor => 4,
+        ManagedModelRoles.Reranker => 5,
+        ManagedModelRoles.Tool => 6,
+        _ => 7
     };
 
     private static string ShortRevision(string revision) => string.IsNullOrWhiteSpace(revision)

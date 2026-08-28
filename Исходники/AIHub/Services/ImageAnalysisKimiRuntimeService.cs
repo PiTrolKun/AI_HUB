@@ -14,11 +14,31 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
     private readonly ManagedModelLibraryStore _libraryStore;
     private readonly VisionImagePayloadService _imagePayloadService = new();
     private readonly HttpClient _httpClient = new() { Timeout = Timeout.InfiniteTimeSpan };
+    private readonly SemaphoreSlim _runtimeGate = new(1, 1);
+    private readonly object _processLock = new();
+
+    private Process? _process;
+    private string? _currentModelPath;
+    private int _port;
     private bool _disposed;
 
     public ImageAnalysisKimiRuntimeService(ManagedModelLibraryStore libraryStore)
     {
         _libraryStore = libraryStore;
+    }
+
+    public async Task PrepareAsync(
+        Action<string> log,
+        IProgress<ImageAnalysisLiteraryProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        var modelPath = ResolveReadyModelPath();
+        progress?.Report(new ImageAnalysisLiteraryProgress(
+            ManagedModelRoles.Vision,
+            "starting_cpu",
+            "Starting Kimi with the verified CPU/RAM profile."));
+        await EnsureStartedAsync(modelPath, log, cancellationToken);
     }
 
     public async Task<string> DescribeAsync(
@@ -29,26 +49,8 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(passport);
-        var card = _libraryStore.Load(ManagedModelCatalog.KimiMediumArtifactId)
-            ?? throw new InvalidOperationException("The visual analyst is not registered in the AI HUB model library.");
-        if (card.Status != ManagedModelStatuses.Installed)
-        {
-            throw new InvalidOperationException("The visual analyst is not verified and ready for image analysis.");
-        }
-
-        var modelPath = ResolveFile(card, "main_model");
-        if (!File.Exists(ChatLlmBackendPaths.ServerExecutablePath))
-        {
-            throw new FileNotFoundException(
-                "The verified runtime required for the visual analyst was not found.",
-                ChatLlmBackendPaths.ServerExecutablePath);
-        }
-        if (!File.Exists(ChatLlmBackendPaths.ImageMagickExecutablePath))
-        {
-            throw new FileNotFoundException(
-                "The private image decoder required by the visual analyst was not found.",
-                ChatLlmBackendPaths.ImageMagickExecutablePath);
-        }
+        ThrowIfDisposed();
+        var modelPath = ResolveReadyModelPath();
 
         progress?.Report(new ImageAnalysisLiteraryProgress(
             ManagedModelRoles.Vision,
@@ -73,12 +75,49 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
             ManagedModelRoles.Vision,
             "starting_cpu",
             "Starting Kimi with the verified CPU/RAM profile."));
-        return await RunAttemptAsync(
-            modelPath,
-            requestJson,
-            log,
-            progress,
-            cancellationToken);
+        var port = await EnsureStartedAsync(modelPath, log, cancellationToken);
+        progress?.Report(new ImageAnalysisLiteraryProgress(
+            ManagedModelRoles.Vision,
+            "analysing",
+            "Kimi is reading the image and preparing a grounded report."));
+        string responseBody;
+        try
+        {
+            responseBody = await SendRequestAsync(port, requestJson, cancellationToken);
+        }
+        catch (HttpRequestException ex) when (!cancellationToken.IsCancellationRequested
+            && (ex.StatusCode is null || (int)ex.StatusCode >= 500))
+        {
+            log($"The visual analyst connection was interrupted ({ex.Message}). Restarting and retrying once.");
+            progress?.Report(new ImageAnalysisLiteraryProgress(
+                ManagedModelRoles.Vision,
+                "restarting",
+                "The Kimi connection was interrupted. Restarting it and retrying once."));
+            Stop();
+            port = await EnsureStartedAsync(modelPath, log, cancellationToken);
+            responseBody = await SendRequestAsync(port, requestJson, cancellationToken);
+        }
+        return ImageAnalysisKimiRequestBuilder.ParseResponseContent(responseBody);
+    }
+
+    public void Stop()
+    {
+        Process? process;
+        lock (_processLock)
+        {
+            process = _process;
+            _process = null;
+            _currentModelPath = null;
+            _port = 0;
+        }
+
+        if (process is null)
+        {
+            return;
+        }
+
+        StopServer(process);
+        process.Dispose();
     }
 
     public void Dispose()
@@ -87,39 +126,73 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         {
             return;
         }
+        Stop();
         _httpClient.Dispose();
         _disposed = true;
     }
 
-    private async Task<string> RunAttemptAsync(
+    private async Task<int> EnsureStartedAsync(
         string modelPath,
-        string requestJson,
         Action<string> log,
-        IProgress<ImageAnalysisLiteraryProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var port = ReserveLoopbackPort();
-        using var process = StartServer(modelPath, port, log);
+        await _runtimeGate.WaitAsync(cancellationToken);
         try
         {
-            await WaitForServerAsync(process, port, cancellationToken);
-            progress?.Report(new ImageAnalysisLiteraryProgress(
-                ManagedModelRoles.Vision,
-                "analysing",
-                "Kimi is reading the image and preparing a grounded report."));
-            using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
-            using var response = await _httpClient.PostAsync(
-                $"http://127.0.0.1:{port}/v1/chat/completions",
-                content,
-                cancellationToken);
-            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            response.EnsureSuccessStatusCode();
-            return ImageAnalysisKimiRequestBuilder.ParseResponseContent(responseBody);
+            lock (_processLock)
+            {
+                if (_process is not null
+                    && !_process.HasExited
+                    && string.Equals(_currentModelPath, modelPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return _port;
+                }
+            }
+
+            Stop();
+            var port = ReserveLoopbackPort();
+            var process = StartServer(modelPath, port, log);
+            lock (_processLock)
+            {
+                _process = process;
+                _currentModelPath = modelPath;
+                _port = port;
+            }
+
+            try
+            {
+                await WaitForServerAsync(process, port, cancellationToken);
+                log(RuntimeResourceDiagnostics.DescribeSnapshot(
+                    "Kimi visual analyst / chatllm.cpp",
+                    process,
+                    "ready"));
+                return port;
+            }
+            catch
+            {
+                ClearAndStop(process);
+                throw;
+            }
         }
         finally
         {
-            StopServer(process);
+            _runtimeGate.Release();
         }
+    }
+
+    private async Task<string> SendRequestAsync(
+        int port,
+        string requestJson,
+        CancellationToken cancellationToken)
+    {
+        using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+        using var response = await _httpClient.PostAsync(
+            $"http://127.0.0.1:{port}/v1/chat/completions",
+            content,
+            cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return responseBody;
     }
 
     private static Process StartServer(
@@ -156,6 +229,11 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         process.OutputDataReceived += (_, args) => LogBackendLine(args.Data, log);
         process.ErrorDataReceived += (_, args) => LogBackendLine(args.Data, log);
         process.Start();
+        log(RuntimeResourceDiagnostics.DescribeLaunch(
+            "Kimi visual analyst / chatllm.cpp",
+            process,
+            "chatllm.cpp automatic placement; CPU/RAM and CUDA VRAM/shared GPU memory may be used",
+            modelPath));
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         return process;
@@ -191,6 +269,52 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
             await Task.Delay(750, cancellationToken);
         }
         throw new TimeoutException("The visual analyst did not become ready in time.");
+    }
+
+    private string ResolveReadyModelPath()
+    {
+        var card = _libraryStore.Load(ManagedModelCatalog.KimiMediumArtifactId)
+            ?? throw new InvalidOperationException("The visual analyst is not registered in the AI HUB model library.");
+        if (card.Status != ManagedModelStatuses.Installed)
+        {
+            throw new InvalidOperationException("The visual analyst is not verified and ready for image analysis.");
+        }
+
+        if (!File.Exists(ChatLlmBackendPaths.ServerExecutablePath))
+        {
+            throw new FileNotFoundException(
+                "The verified runtime required for the visual analyst was not found.",
+                ChatLlmBackendPaths.ServerExecutablePath);
+        }
+        if (!File.Exists(ChatLlmBackendPaths.ImageMagickExecutablePath))
+        {
+            throw new FileNotFoundException(
+                "The private image decoder required by the visual analyst was not found.",
+                ChatLlmBackendPaths.ImageMagickExecutablePath);
+        }
+
+        return ResolveFile(card, "main_model");
+    }
+
+    private void ClearAndStop(Process process)
+    {
+        lock (_processLock)
+        {
+            if (ReferenceEquals(_process, process))
+            {
+                _process = null;
+                _currentModelPath = null;
+                _port = 0;
+            }
+        }
+
+        StopServer(process);
+        process.Dispose();
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 
     private static string ResolveFile(ManagedModelArtifactCard card, string purpose)
@@ -249,6 +373,11 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         }
         if (line.Contains("serving at", StringComparison.OrdinalIgnoreCase)
             || line.Contains("POST /v1/chat/completions", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("cuda", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("gpu", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("vram", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("offload", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("memory", StringComparison.OrdinalIgnoreCase)
             || line.Contains("error", StringComparison.OrdinalIgnoreCase)
             || line.Contains("failed", StringComparison.OrdinalIgnoreCase))
         {

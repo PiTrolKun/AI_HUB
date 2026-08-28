@@ -2239,7 +2239,11 @@
             ResumeRequested="ImageAnalysisWorkspacePage_ResumeRequested"
             VersionRequested="ImageAnalysisWorkspacePage_VersionRequested"
             HomeRequested="ImageAnalysisWorkspacePage_HomeRequested"
-            NewAnalysisRequested="ImageAnalysisWorkspacePage_NewAnalysisRequested" />
+            NewAnalysisRequested="ImageAnalysisWorkspacePage_NewAnalysisRequested"
+            SpeechModeRequested="ImageAnalysisWorkspacePage_SpeechModeRequested"
+            SpeechSettingsChanged="ImageAnalysisWorkspacePage_SpeechSettingsChanged"
+            KokoroDownloadRequested="ImageAnalysisWorkspacePage_KokoroDownloadRequested"
+            ReplaySpeechRequested="ImageAnalysisWorkspacePage_ReplaySpeechRequested" />
 
         <Grid x:Name="ChoiceScenarioPage"
               Grid.Row="1"

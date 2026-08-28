@@ -3,6 +3,80 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Foreground="{DynamicResource TextPrimaryBrush}"
              SizeChanged="UserControl_SizeChanged">
+    <UserControl.Resources>
+        <Style x:Key="VoiceModeRadioStyle" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="ChoiceSurface" Background="Transparent" Padding="3,2">
+                            <StackPanel HorizontalAlignment="Center">
+                                <ContentPresenter HorizontalAlignment="Center">
+                                    <ContentPresenter.ContentTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"
+                                                       FontSize="{DynamicResource UiFont10}"
+                                                       TextAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       LineHeight="15" />
+                                        </DataTemplate>
+                                    </ContentPresenter.ContentTemplate>
+                                </ContentPresenter>
+                                <Grid Width="18" Height="18" Margin="0,4,0,0" HorizontalAlignment="Center">
+                                    <Ellipse Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="2" />
+                                    <Ellipse x:Name="ChoiceDot" Width="9" Height="9" Fill="{DynamicResource AccentBrush}" Visibility="Collapsed" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ChoiceDot" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ChoiceSurface" Property="Background" Value="#16253B" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VoiceSettingsChevronButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ChevronSurface" Background="Transparent" CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ChevronSurface" Property="Background" Value="#16253B" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="ChevronSurface" Property="Background" Value="#16253B" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ChevronSurface" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Grid x:Name="RootLayout" MaxWidth="1760" Margin="24,14,24,16" HorizontalAlignment="Stretch">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -61,7 +135,47 @@
                         <TextBlock x:Name="SubscenarioTitleText" FontSize="{DynamicResource UiFont24}" FontWeight="SemiBold" /><TextBlock x:Name="SubscenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                         <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,14,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="SingleScenarioTitleText" FontSize="{DynamicResource UiFont18}" FontWeight="SemiBold" /><TextBlock x:Name="SingleScenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,16,0" /></StackPanel><Button Grid.Column="1" x:Name="SingleScenarioButton" MinWidth="160" Height="40" Style="{DynamicResource PrimaryButtonStyle}" Click="SingleScenarioButton_Click" /></Grid></Border>
                         <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,10,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="MultipleScenarioTitleText" FontSize="{DynamicResource UiFont18}" FontWeight="SemiBold" /><TextBlock x:Name="MultipleScenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,16,0" /></StackPanel><Button Grid.Column="1" x:Name="MultipleScenarioButton" MinWidth="160" Height="40" Style="{DynamicResource SecondaryButtonStyle}" IsEnabled="False" /></Grid></Border>
-                        <TextBlock x:Name="HistoryTitleText" FontWeight="SemiBold" Margin="0,15,0,0" /><StackPanel x:Name="HistoryItemsPanel" Margin="0,7,0,0" /><TextBlock x:Name="HistoryEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,7,0,0" />
+                        <Button x:Name="HistoryToggleButton"
+                                Style="{DynamicResource SecondaryButtonStyle}"
+                                HorizontalContentAlignment="Stretch"
+                                Margin="0,15,0,0"
+                                Padding="11,8"
+                                Click="HistoryToggleButton_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="HistoryTitleText" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <Viewbox Grid.Column="1" Width="18" Height="10" Margin="12,0,2,0" VerticalAlignment="Center">
+                                    <Path x:Name="HistoryChevronPath"
+                                          Data="M1,1 Q9,9 17,1"
+                                          Stroke="{DynamicResource TextSecondaryBrush}"
+                                          StrokeThickness="2"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <Path.RenderTransform><RotateTransform Angle="0" /></Path.RenderTransform>
+                                    </Path>
+                                </Viewbox>
+                            </Grid>
+                        </Button>
+                        <Border x:Name="HistoryContentBorder"
+                                Visibility="Collapsed"
+                                Opacity="0"
+                                MaxHeight="205"
+                                Margin="0,7,0,0"
+                                ClipToBounds="True">
+                            <ScrollViewer x:Name="HistoryScrollViewer"
+                                          VerticalScrollBarVisibility="Hidden"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          PanningMode="VerticalOnly">
+                                <StackPanel>
+                                    <StackPanel x:Name="HistoryItemsPanel" />
+                                    <TextBlock x:Name="HistoryEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" Margin="3,7,3,0" />
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
                     </StackPanel>
 
                     <StackPanel x:Name="ImagePanel" Visibility="Collapsed">
@@ -95,12 +209,92 @@
                 </Grid>
             </Border>
 
-            <Border x:Name="ResultPanel" Grid.Column="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9" Padding="14" MinHeight="0">
+            <Border x:Name="ResultPanel" Grid.Column="2" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9" Padding="0" MinHeight="0">
                 <Grid>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <TextBlock x:Name="ResultPanelTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont16}" /><TextBlock Grid.Row="1" x:Name="ResultPanelHintText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                    <StackPanel Grid.Row="2" Margin="0,12,0,0"><TextBlock x:Name="FindingsEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" /><StackPanel x:Name="FindingsItemsPanel" /><StackPanel x:Name="UncertaintiesPanel" Margin="0,10,0,0" Visibility="Collapsed"><TextBlock x:Name="UncertaintiesTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont12}" /><StackPanel x:Name="UncertaintyItemsPanel" Margin="0,5,0,0" /></StackPanel></StackPanel>
-                    <TextBlock Grid.Row="3" x:Name="ReviewSummaryFooterText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont11}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+
+                    <Border BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,0,1" Padding="12,12,12,10">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="46" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Border x:Name="SpeechIdentityBadge"
+                                        Width="40"
+                                        Height="40"
+                                        Background="#6B7280"
+                                        BorderBrush="{DynamicResource LineBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="3"
+                                        VerticalAlignment="Top">
+                                    <Viewbox Width="21" Height="21">
+                                        <Canvas Width="24" Height="24">
+                                            <Path x:Name="SpeechIdentityBodyPath" Data="M3,9 L7,9 L12,4 L12,20 L7,15 L3,15 Z" Fill="White" />
+                                            <Path x:Name="SpeechIdentityWavesPath" Data="M15,8 C17,10 17,14 15,16 M18,5 C22,9 22,15 18,19" Stroke="White" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Fill="Transparent" />
+                                        </Canvas>
+                                    </Viewbox>
+                                </Border>
+                                <TextBlock Grid.Column="1" x:Name="VoiceModeTitleText" FontSize="{DynamicResource UiFont11}" Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <UniformGrid Grid.Row="1" Grid.ColumnSpan="2" Columns="3" Margin="0,7,0,0">
+                                    <RadioButton x:Name="SpeechOffRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
+                                    <RadioButton x:Name="SpeechKokoroRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
+                                    <RadioButton x:Name="SpeechProgrammaticRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
+                                </UniformGrid>
+                            </Grid>
+
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,0">
+                                <Button x:Name="KokoroDownloadButton" MinWidth="92" Height="30" Style="{DynamicResource SecondaryButtonStyle}" Visibility="Collapsed" Click="KokoroDownloadButton_Click" />
+                                <Button x:Name="ReplaySpeechButton" MinWidth="92" Height="30" Margin="6,0,0,0" Style="{DynamicResource SecondaryButtonStyle}" Visibility="Collapsed" Click="ReplaySpeechButton_Click" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="2" x:Name="VoiceStatusText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont11}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,6,0,0" Visibility="Collapsed" />
+                            <StackPanel Grid.Row="3">
+                                <Button x:Name="VoiceSettingsToggleButton"
+                                        Height="30"
+                                        Margin="0,5,0,0"
+                                        Style="{StaticResource VoiceSettingsChevronButtonStyle}"
+                                        Visibility="Collapsed"
+                                        Click="VoiceSettingsToggleButton_Click">
+                                    <Path x:Name="VoiceSettingsChevronPath"
+                                          Width="88"
+                                          Height="15"
+                                          Data="M2,2 C24,20 64,20 86,2"
+                                          Stretch="Fill"
+                                          Stroke="#38BDF8"
+                                          StrokeThickness="3"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <Path.RenderTransform><RotateTransform Angle="0" /></Path.RenderTransform>
+                                    </Path>
+                                </Button>
+                                <Border x:Name="VoiceSettingsPanel" Visibility="Collapsed" Opacity="0" Margin="2,6,2,0" Padding="8,8,8,2">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="42" /></Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="VoiceVolumeLabelText" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="VoiceVolumeValueText" Grid.Column="1" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Slider x:Name="VoiceVolumeSlider" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,25,0,0" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="VoiceSettingsSlider_ValueChanged" />
+                                        <TextBlock x:Name="VoiceRateLabelText" Grid.Row="1" Margin="0,18,0,0" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="VoiceRateValueText" Grid.Row="1" Grid.Column="1" Margin="0,18,0,0" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Slider x:Name="VoiceRateSlider" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,43,0,0" Minimum="70" Maximum="160" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="VoiceSettingsSlider_ValueChanged" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="1" Margin="14,12,14,12" MinHeight="0">
+                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                        <TextBlock x:Name="ResultPanelTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont16}" />
+                        <TextBlock Grid.Row="1" x:Name="ResultPanelHintText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <StackPanel Grid.Row="2" Margin="0,12,0,0"><TextBlock x:Name="FindingsEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" /><StackPanel x:Name="FindingsItemsPanel" /><StackPanel x:Name="UncertaintiesPanel" Margin="0,10,0,0" Visibility="Collapsed"><TextBlock x:Name="UncertaintiesTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont12}" /><StackPanel x:Name="UncertaintyItemsPanel" Margin="0,5,0,0" /></StackPanel></StackPanel>
+                        <TextBlock Grid.Row="3" x:Name="ReviewSummaryFooterText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont11}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using AIHub.Models;
 using AIHub.Services;
 
@@ -88,6 +90,51 @@ public sealed class SemanticImageToolServiceTests
             Assert.IsFalse(payload.WasNormalized);
             Assert.AreEqual("image/png", payload.MimeType);
             CollectionAssert.AreEqual(expected, payload.Bytes);
+        }
+        finally
+        {
+            DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
+    public async Task VisionImagePayload_LargePngIsDownscaledForLocalRuntimeTransport()
+    {
+        var root = CreateRoot();
+        try
+        {
+            Directory.CreateDirectory(root);
+            var path = Path.Combine(root, "wide.png");
+            var pixels = new byte[4096 * 32 * 4];
+            var bitmap = BitmapSource.Create(
+                4096,
+                32,
+                96,
+                96,
+                PixelFormats.Bgr32,
+                null,
+                pixels,
+                4096 * 4);
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using (var stream = File.Create(path))
+            {
+                encoder.Save(stream);
+            }
+
+            var payload = await new VisionImagePayloadService().PrepareAsync(
+                CreateImageReference(path, ".png"),
+                CancellationToken.None);
+
+            Assert.IsTrue(payload.WasNormalized);
+            using var normalized = new MemoryStream(payload.Bytes);
+            var decoded = BitmapDecoder.Create(
+                normalized,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad).Frames[0];
+            Assert.IsTrue(decoded.PixelWidth <= VisionImagePayloadService.MaximumTransportDimension);
+            Assert.IsTrue(decoded.PixelHeight <= VisionImagePayloadService.MaximumTransportDimension);
+            Assert.AreEqual(2048, decoded.PixelWidth);
         }
         finally
         {

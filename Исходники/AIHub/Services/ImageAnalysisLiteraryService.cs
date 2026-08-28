@@ -19,6 +19,26 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
         _coreRuntime = coreRuntime;
     }
 
+    public async Task PrepareAsync(
+        StorageSettings storageSettings,
+        bool prepareCoreConcurrently,
+        Action<string> log,
+        IProgress<ImageAnalysisLiteraryProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var coreModel = ResolveCoreModel(storageSettings);
+        var kimiPreparation = _kimiRuntime.PrepareAsync(log, progress, cancellationToken);
+        if (!prepareCoreConcurrently)
+        {
+            await kimiPreparation;
+            return;
+        }
+
+        await Task.WhenAll(
+            kimiPreparation,
+            _coreRuntime.PrepareAsync(coreModel, log, cancellationToken));
+    }
+
     public async Task<ImageAnalysisLiteraryResult> CreateAsync(
         ImageAnalysisFilePassport passport,
         ImageAnalysisLiterarySettings settings,
@@ -32,20 +52,26 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
     {
         ArgumentNullException.ThrowIfNull(passport);
         ArgumentNullException.ThrowIfNull(settings);
-        _coreRuntime.Stop();
         var visualReport = existingVisualReport?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(visualReport))
+        try
         {
-            progress?.Report(new ImageAnalysisLiteraryProgress(
-                ManagedModelRoles.Vision,
-                "vision",
-                "The visual analyst is studying the image."));
-            visualReport = await _kimiRuntime.DescribeAsync(
-                passport,
-                ImageAnalysisLiteraryPromptBuilder.BuildVisionPrompt(settings),
-                log,
-                progress,
-                cancellationToken);
+            if (string.IsNullOrWhiteSpace(visualReport))
+            {
+                progress?.Report(new ImageAnalysisLiteraryProgress(
+                    ManagedModelRoles.Vision,
+                    "vision",
+                    "The visual analyst is studying the image."));
+                visualReport = await _kimiRuntime.DescribeAsync(
+                    passport,
+                    ImageAnalysisLiteraryPromptBuilder.BuildVisionPrompt(settings),
+                    log,
+                    progress,
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            _kimiRuntime.Stop();
         }
         visualReportReady?.Invoke(visualReport);
 
@@ -116,7 +142,11 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
         return revised;
     }
 
-    public void Stop() => _coreRuntime.Stop();
+    public void Stop()
+    {
+        _kimiRuntime.Stop();
+        _coreRuntime.Stop();
+    }
 
     public void Dispose()
     {

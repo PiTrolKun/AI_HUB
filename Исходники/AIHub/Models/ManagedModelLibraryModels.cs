@@ -28,6 +28,7 @@ public static class ManagedModelRoles
     public const string Embedding = "embedding";
     public const string Reranker = "reranker";
     public const string Tool = "tool";
+    public const string Speech = "speech";
     public const string External = "external";
 }
 
