@@ -199,4 +199,5 @@ public sealed record KokoroSpeechMetric(
     string ErrorType = "",
     string Error = "",
     double AverageCpuPercent = 0,
-    double PeakCpuPercent = 0);
+    double PeakCpuPercent = 0,
+    string Diagnostics = "");

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import faulthandler
 import importlib.util
 import json
 import os
@@ -12,6 +13,8 @@ import time
 import traceback
 import wave
 from pathlib import Path
+
+from kokoro_ru_tokenizer_compat import compatible_ru_tokenizer
 
 
 PROTOCOL_STDOUT = sys.stdout
@@ -56,6 +59,7 @@ class KokoroWorker:
             return True, 0
 
         started = time.perf_counter()
+        tokenizer_compat = {"status": "not_applicable"}
         try:
             import numpy as np
             import torch
@@ -119,7 +123,8 @@ class KokoroWorker:
                 module._TokenTypeIdsShim = _CompatibleTokenTypeIdsShim
                 pipeline = None
                 try:
-                    g2p = module.RuG2P()
+                    with compatible_ru_tokenizer(accent_root) as tokenizer_compat:
+                        g2p = module.RuG2P()
                 finally:
                     RUAccent.load = original_load
 
@@ -136,7 +141,8 @@ class KokoroWorker:
         self.last_diagnostics = (
             f"stage=loaded; language={language}; device=cpu; "
             f"torch={torch.__version__}; frontend={frontend}; "
-            f"voice={self.voice_name}; voiceShape={voice_shape}"
+            f"voice={self.voice_name}; voiceShape={voice_shape}; "
+            f"ruTokenizerCompat={tokenizer_compat['status']}"
         )
         return False, round((time.perf_counter() - started) * 1000)
 
@@ -303,6 +309,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    faulthandler.enable(file=sys.stderr, all_threads=True)
+    print(f"kokoro_worker_started; pythonPid={os.getpid()}", file=sys.stderr, flush=True)
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     main()

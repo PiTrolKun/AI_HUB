@@ -8,7 +8,7 @@ namespace AIHub.Services;
 
 public sealed class KokoroSpeechRuntimeService : IDisposable
 {
-    private const int MaximumStandardErrorLines = 24;
+    private const int MaximumStandardErrorLines = 128;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -22,6 +22,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
     private readonly object _playbackSync = new();
     private readonly object _standardErrorSync = new();
     private readonly Queue<string> _standardErrorTail = new();
+    private string _workerIdentity = string.Empty;
     private Process? _process;
     private Task? _errorDrainTask;
     private SoundPlayer? _activePlayer;
@@ -176,7 +177,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
             ProcessCpuSample cpuSample;
             try
             {
-                response = await SendLockedAsync(new
+                response = await SendLockedAsync("synthesize", new
                 {
                     command = "synthesize",
                     languageCode = normalizedLanguage,
@@ -220,7 +221,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
                     response.ErrorCode,
                     ErrorStage: failureResult.ErrorStage,
                     ErrorType: failureResult.ErrorType,
-                    Error: failureResult.Error));
+                    Error: failureResult.Error,
+                    Diagnostics: failureResult.StandardErrorTail));
                 return failureResult;
             }
 
@@ -297,7 +299,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
                 "host_exception",
                 ErrorStage: "host_speak",
                 ErrorType: ex.GetType().Name,
-                Error: ex.Message));
+                Error: ex.Message,
+                Diagnostics: GetStandardErrorTail()));
             return new KokoroSpeechResult(
                 false,
                 KokoroWarmupCodes.Failed,
@@ -404,7 +407,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
             ProcessCpuSample cpuSample;
             try
             {
-                response = await SendLockedAsync(new
+                response = await SendLockedAsync("load", new
                 {
                     command = "load",
                     languageCode,
@@ -441,7 +444,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
                     ErrorType: response.ErrorType,
                     Error: response.Error,
                     AverageCpuPercent: cpuSample.AveragePercent,
-                    PeakCpuPercent: cpuSample.PeakPercent));
+                    PeakCpuPercent: cpuSample.PeakPercent,
+                    Diagnostics: diagnostics));
                 return new KokoroWarmupResult(
                     code,
                     memory,
@@ -468,7 +472,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
                 true,
                 string.Empty,
                 AverageCpuPercent: cpuSample.AveragePercent,
-                PeakCpuPercent: cpuSample.PeakPercent));
+                PeakCpuPercent: cpuSample.PeakPercent,
+                Diagnostics: response.Diagnostics));
             return new KokoroWarmupResult(
                 response.AlreadyLoaded ? KokoroWarmupCodes.AlreadyReady : KokoroWarmupCodes.Ready,
                 memory,
@@ -502,6 +507,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
             RedirectStandardError = true
         };
         startInfo.ArgumentList.Add("-u");
+        startInfo.ArgumentList.Add("-X");
+        startInfo.ArgumentList.Add("faulthandler");
         startInfo.ArgumentList.Add(scriptPath);
         startInfo.Environment["HF_HUB_OFFLINE"] = "1";
         startInfo.Environment["TRANSFORMERS_OFFLINE"] = "1";
@@ -516,7 +523,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
             {
                 while (await process.StandardError.ReadLineAsync().ConfigureAwait(false) is { } line)
                 {
-                    AddStandardErrorLine(line);
+                    AddStandardErrorLine(process, line);
                 }
             }
             catch
@@ -526,28 +533,40 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
     }
 
     private async Task<KokoroWorkerResponse> SendLockedAsync(
+        string command,
         object payload,
         CancellationToken cancellationToken)
     {
         var process = _process;
-        if (process is null || process.HasExited)
+        if (process is null)
         {
             throw new InvalidOperationException("The local Kokoro worker is not running.");
         }
 
         var requestId = Interlocked.Increment(ref _nextRequestId);
-        ClearStandardErrorTail();
+        if (process.HasExited)
+        {
+            return await CaptureWorkerFailureAsync(process, requestId, command, cancellationToken).ConfigureAwait(false);
+        }
         var request = JsonSerializer.Serialize(new
         {
             id = requestId,
             payload
         }, JsonOptions);
-        await process.StandardInput.WriteLineAsync(request.AsMemory(), cancellationToken).ConfigureAwait(false);
-        await process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
-        var line = await process.StandardOutput.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        string? line;
+        try
+        {
+            await process.StandardInput.WriteLineAsync(request.AsMemory(), cancellationToken).ConfigureAwait(false);
+            await process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
+            line = await process.StandardOutput.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            return await CaptureWorkerFailureAsync(process, requestId, command, cancellationToken).ConfigureAwait(false);
+        }
         if (string.IsNullOrWhiteSpace(line))
         {
-            throw new InvalidOperationException("The local Kokoro worker returned no response.");
+            return await CaptureWorkerFailureAsync(process, requestId, command, cancellationToken).ConfigureAwait(false);
         }
 
         var response = JsonSerializer.Deserialize<KokoroWorkerResponse>(line, JsonOptions)
@@ -556,6 +575,24 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
         {
             throw new InvalidOperationException("The local Kokoro worker returned an out-of-order response.");
         }
+        return response;
+    }
+
+    private async Task<KokoroWorkerResponse> CaptureWorkerFailureAsync(
+        Process process, int requestId, string command, CancellationToken cancellationToken)
+    {
+        var failure = await KokoroWorkerFailureDiagnostics.CaptureAsync(
+            process, _errorDrainTask, GetStandardErrorTail, cancellationToken).ConfigureAwait(false);
+        var response = new KokoroWorkerResponse
+        {
+            Id = requestId,
+            ErrorCode = "worker_no_response",
+            ErrorStage = command,
+            ErrorType = "WorkerProcessFailure",
+            Error = failure.Error,
+            Diagnostics = failure.StandardError
+        };
+        StopWorker();
         return response;
     }
 
@@ -623,7 +660,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
         }
     }
 
-    private void AddStandardErrorLine(string line)
+    private void AddStandardErrorLine(Process process, string line)
     {
         var normalized = line.Trim();
         if (normalized.Length == 0)
@@ -638,6 +675,15 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
 
         lock (_standardErrorSync)
         {
+            if (!ReferenceEquals(process, _process))
+            {
+                return;
+            }
+            if (normalized.StartsWith("kokoro_worker_started; pythonPid=", StringComparison.Ordinal))
+            {
+                _workerIdentity = normalized;
+                return;
+            }
             _standardErrorTail.Enqueue(normalized);
             while (_standardErrorTail.Count > MaximumStandardErrorLines)
             {
@@ -651,6 +697,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
         lock (_standardErrorSync)
         {
             _standardErrorTail.Clear();
+            _workerIdentity = string.Empty;
         }
     }
 
@@ -658,7 +705,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
     {
         lock (_standardErrorSync)
         {
-            return string.Join(" | ", _standardErrorTail);
+            return CombineDiagnostics(_workerIdentity, string.Join(" | ", _standardErrorTail));
         }
     }
 
