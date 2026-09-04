@@ -292,7 +292,8 @@ public sealed class ManagedModelAcquisitionService : IDisposable
     }
 
     private static bool RequiresRuntimeSmokeCheck(ManagedModelArtifactCard card) =>
-        card.Role is ManagedModelRoles.Vision or ManagedModelRoles.Localizer;
+        card.ModelArtifactId != ManagedModelCatalog.Qwen25OmniHeavyArtifactId
+        && card.Role is (ManagedModelRoles.Vision or ManagedModelRoles.Localizer);
 
     private static void EnsureDownloadable(ManagedModelArtifactCard card)
     {

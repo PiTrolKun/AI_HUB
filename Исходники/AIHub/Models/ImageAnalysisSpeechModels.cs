@@ -3,6 +3,7 @@ namespace AIHub.Models;
 public static class ImageAnalysisSpeechModes
 {
     public const string Off = "off";
+    public const string Omni = "omni";
     public const string Kokoro = "kokoro";
     public const string Programmatic = "programmatic";
 
@@ -18,6 +19,63 @@ public static class ImageAnalysisSpeechModes
         Off => Kokoro,
         Kokoro => Programmatic,
         _ => Off
+    };
+
+    public static string NormalizeHeavy(string? mode) => mode switch
+    {
+        // Omni => Omni, // Retired from image analysis: Russian Talker is unusable.
+        // Migrate saved Omni selections to Kokoro without losing the dormant speaker settings.
+        Kokoro => Kokoro,
+        Programmatic => Programmatic,
+        Off => Off,
+        _ => Kokoro
+    };
+}
+
+public static class ImageAnalysisOmniSpeakers
+{
+    public const string Ethan = "Ethan";
+    public const string Chelsie = "Chelsie";
+
+    public static string Normalize(string? speaker) => speaker switch
+    {
+        Chelsie => Chelsie,
+        _ => Ethan
+    };
+}
+
+public sealed class ImageAnalysisHeavySpeechSettings
+{
+    private string _mode = ImageAnalysisSpeechModes.Kokoro;
+    private string _omniSpeaker = ImageAnalysisOmniSpeakers.Ethan;
+    private int _omniVolume = 100;
+    private int _omniRatePercent = 100;
+    private int _kokoroVolume = 100;
+    private int _kokoroRatePercent = 100;
+    private int _programmaticVolume = 100;
+    private int _programmaticRatePercent = 100;
+
+    public string Mode { get => _mode; set => _mode = ImageAnalysisSpeechModes.NormalizeHeavy(value); }
+    public string OmniSpeaker { get => _omniSpeaker; set => _omniSpeaker = ImageAnalysisOmniSpeakers.Normalize(value); }
+    public int OmniVolume { get => _omniVolume; set => _omniVolume = Math.Clamp(value, 0, 100); }
+    public int OmniRatePercent { get => _omniRatePercent; set => _omniRatePercent = Math.Clamp(value, 70, 160); }
+    public int KokoroVolume { get => _kokoroVolume; set => _kokoroVolume = Math.Clamp(value, 0, 100); }
+    public int KokoroRatePercent { get => _kokoroRatePercent; set => _kokoroRatePercent = Math.Clamp(value, 70, 160); }
+    public int ProgrammaticVolume { get => _programmaticVolume; set => _programmaticVolume = Math.Clamp(value, 0, 100); }
+    public int ProgrammaticRatePercent { get => _programmaticRatePercent; set => _programmaticRatePercent = Math.Clamp(value, 70, 160); }
+
+    public int GetActiveVolume() => Mode switch
+    {
+        ImageAnalysisSpeechModes.Omni => OmniVolume,
+        ImageAnalysisSpeechModes.Kokoro => KokoroVolume,
+        _ => ProgrammaticVolume
+    };
+
+    public int GetActiveRatePercent() => Mode switch
+    {
+        ImageAnalysisSpeechModes.Omni => OmniRatePercent,
+        ImageAnalysisSpeechModes.Kokoro => KokoroRatePercent,
+        _ => ProgrammaticRatePercent
     };
 }
 

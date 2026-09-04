@@ -121,11 +121,32 @@
                         <ScrollViewer x:Name="EventScrollViewer" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel x:Name="EventItemsPanel" /></ScrollViewer>
                         <TextBlock x:Name="EventsEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center" Margin="10" />
                     </Grid>
-                    <StackPanel Grid.Row="2" Margin="0,9,0,0">
+                    <StackPanel x:Name="ActivityLegendPanel" Grid.Row="2" Margin="0,9,0,0">
                         <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="#2AD26C" Margin="0,0,7,0" /><TextBlock x:Name="CoreLegendText" FontSize="{DynamicResource UiFont11}" /></StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,0"><Ellipse Width="8" Height="8" Fill="#3B82F6" Margin="0,0,7,0" /><TextBlock x:Name="VisionLegendText" FontSize="{DynamicResource UiFont11}" /></StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,0"><Ellipse Width="8" Height="8" Fill="#EF4444" Margin="0,0,7,0" /><TextBlock x:Name="LocalizerLegendText" FontSize="{DynamicResource UiFont11}" /></StackPanel>
                     </StackPanel>
+                    <Expander x:Name="HeavyDiagnosticsExpander"
+                              Grid.Row="2"
+                              Margin="0,9,0,0"
+                              Visibility="Collapsed">
+                        <Border BorderBrush="{DynamicResource LineBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="7"
+                                Margin="0,5,0,0">
+                            <TextBox x:Name="HeavyDiagnosticsTextBox"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Disabled"
+                                     MaxHeight="300"
+                                     Padding="5"
+                                     FontFamily="Consolas"
+                                     FontSize="10" />
+                        </Border>
+                    </Expander>
                 </Grid>
             </Border>
 
@@ -240,8 +261,9 @@
                                     </Viewbox>
                                 </Border>
                                 <TextBlock Grid.Column="1" x:Name="VoiceModeTitleText" FontSize="{DynamicResource UiFont11}" Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                <UniformGrid Grid.Row="1" Grid.ColumnSpan="2" Columns="3" Margin="0,7,0,0">
+                                <UniformGrid x:Name="SpeechModeGrid" Grid.Row="1" Grid.ColumnSpan="2" Columns="3" Margin="0,7,0,0">
                                     <RadioButton x:Name="SpeechOffRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
+                                    <RadioButton x:Name="SpeechOmniRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" Visibility="Collapsed" />
                                     <RadioButton x:Name="SpeechKokoroRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
                                     <RadioButton x:Name="SpeechProgrammaticRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
                                 </UniformGrid>
@@ -273,16 +295,25 @@
                                     </Path>
                                 </Button>
                                 <Border x:Name="VoiceSettingsPanel" Visibility="Collapsed" Opacity="0" Margin="2,6,2,0" Padding="8,8,8,2">
-                                    <Grid>
-                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="42" /></Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="VoiceVolumeLabelText" VerticalAlignment="Center" />
-                                        <TextBlock x:Name="VoiceVolumeValueText" Grid.Column="1" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                        <Slider x:Name="VoiceVolumeSlider" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,25,0,0" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="VoiceSettingsSlider_ValueChanged" />
-                                        <TextBlock x:Name="VoiceRateLabelText" Grid.Row="1" Margin="0,18,0,0" VerticalAlignment="Center" />
-                                        <TextBlock x:Name="VoiceRateValueText" Grid.Row="1" Grid.Column="1" Margin="0,18,0,0" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                        <Slider x:Name="VoiceRateSlider" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,43,0,0" Minimum="70" Maximum="160" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="VoiceSettingsSlider_ValueChanged" />
-                                    </Grid>
+                                    <StackPanel>
+                                        <StackPanel x:Name="OmniSpeakerPanel" Visibility="Collapsed" Margin="0,0,0,9">
+                                            <TextBlock x:Name="OmniSpeakerLabelText" />
+                                            <ComboBox x:Name="OmniSpeakerComboBox" Height="32" Margin="0,5,0,0" SelectionChanged="OmniSpeakerComboBox_SelectionChanged">
+                                                <ComboBoxItem Tag="Ethan" />
+                                                <ComboBoxItem Tag="Chelsie" />
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <Grid>
+                                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="42" /></Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="VoiceVolumeLabelText" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="VoiceVolumeValueText" Grid.Column="1" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                            <Slider x:Name="VoiceVolumeSlider" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,25,0,0" Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="VoiceSettingsSlider_ValueChanged" />
+                                            <TextBlock x:Name="VoiceRateLabelText" Grid.Row="1" Margin="0,18,0,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="VoiceRateValueText" Grid.Row="1" Grid.Column="1" Margin="0,18,0,0" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                            <Slider x:Name="VoiceRateSlider" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,43,0,0" Minimum="70" Maximum="160" TickFrequency="5" IsSnapToTickEnabled="True" ValueChanged="VoiceSettingsSlider_ValueChanged" />
+                                        </Grid>
+                                    </StackPanel>
                                 </Border>
                             </StackPanel>
                         </Grid>
@@ -302,5 +333,6 @@
         <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,11,0,0"><Button x:Name="BackButton" Height="38" MinWidth="175" Style="{DynamicResource SecondaryButtonStyle}" Click="BackButton_Click" /><TextBlock x:Name="FooterStatusText" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="14,0,0,0" /></StackPanel>
 
         <Popup x:Name="EventDetailPopup" Placement="Right" AllowsTransparency="True" StaysOpen="False" PopupAnimation="Fade"><Border Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="12" MaxWidth="340"><StackPanel><TextBlock x:Name="EventDetailTitleText" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock x:Name="EventDetailText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,0,0" /><TextBlock x:Name="EventDetailTimeText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont11}" Margin="0,6,0,0" /></StackPanel></Border></Popup>
+        <Popup x:Name="SpeechErrorPopup" PlacementTarget="{Binding ElementName=ResultPanel}" Placement="Center" AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade"><Border Background="#3B1117" BorderBrush="#EF4444" BorderThickness="1" CornerRadius="8" Padding="13" MaxWidth="310"><StackPanel><TextBlock x:Name="SpeechErrorTitleText" Foreground="#FCA5A5" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock x:Name="SpeechErrorText" Foreground="White" TextWrapping="Wrap" Margin="0,5,0,0" /></StackPanel></Border></Popup>
     </Grid>
 </UserControl>

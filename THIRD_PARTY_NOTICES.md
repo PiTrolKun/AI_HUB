@@ -162,6 +162,40 @@ PDF.js, EPUB.js, LibVLC, OpenSeadragon, Babylon.js, AvalonEdit). Они не в�
 
 ## Backends
 
+### Qwen2.5-Omni-3B
+
+- Назначение: единая модель зрения, редактуры и озвучивания Тяжёлого
+  режима `Анализа изображений`.
+- Источник: Hugging Face `Qwen/Qwen2.5-Omni-3B`.
+- Ревизия: `f75b40e3da2003cdd6e1829b1f420ca70797c34e`.
+- Лицензия: Qwen Research License Agreement; разрешено только
+  некоммерческое исследовательское и оценочное использование. Файл `LICENSE`
+  входит в управляемый manifest модели.
+- Поставка: веса не входят в Git, publish или установщик; загружаются
+  отдельно только после подтверждения пользователя. Heavy принимает checkpoint
+  только при полном размещении на CUDA GPU; CPU/disk offload запрещён.
+- Проверка: в каталоге AI HUB закреплены 16 файлов, включая 3 shards весов;
+  их общий размер `11989065629` байт, размеры и SHA-256 закреплены отдельно.
+  Новая модель ещё не скачана; проверка vision и Talker остаётся на
+  пользовательской приёмке.
+
+### Python Qwen2.5-Omni Heavy runtime
+
+- Назначение: изолированный native Windows worker через CUDA PyTorch, Transformers,
+  Accelerate и `qwen-omni-utils`.
+- Проверенные прямые версии: Python `3.12.10`; PyTorch/Torchvision/Torchaudio
+  `2.11.0+cu130 / 0.26.0+cu130 / 2.11.0+cu130`; Transformers `5.16.1`;
+  Accelerate `1.14.0`; `qwen-omni-utils 0.0.9`; NumPy `2.5.2`;
+  SoundFile `0.14.0`; audioread `3.1.0`.
+- Лицензии: Python PSF; PyTorch/Torchvision/Torchaudio BSD-style;
+  Transformers/Accelerate/qwen-omni-utils Apache-2.0; NumPy BSD-3-Clause;
+  SoundFile BSD-3-Clause; audioread MIT.
+- Поставка: среда `Runtime/Python/qwen3-omni/.venv` не входит в Git и установщик.
+- Подготовка: `Инструменты/setup-qwen-omni-runtime.ps1`; скрипт и CUDA-probe
+  были успешно выполнены 2026-08-29 для прежнего Qwen3-контура; импорт классов
+  Qwen2.5-Omni проверен 2026-08-30 без переустановки среды. Перед будущим распространением готового архива
+  среды отдельно проверить и приложить notices всех транзитивных пакетов.
+
 ### llama.cpp
 
 - Назначение: первый локальный backend для debug-проверки GGUF-моделей через `llama-cli.exe`.

@@ -352,6 +352,10 @@ public sealed class ImageAnalysisLiteraryScenarioTests
             var loaded = store.Load(sessionId, storage);
 
             Assert.IsNotNull(loaded);
+            Assert.AreEqual(3, loaded.SchemaVersion);
+            Assert.AreEqual(ImageAnalysisBundleCatalog.MediumId, loaded.BundleId);
+            Assert.AreEqual(ImageAnalysisPipelineIds.Legacy, loaded.PipelineId);
+            Assert.AreEqual(0, loaded.HiddenConversation.Count);
             Assert.AreEqual(1, loaded.Observations.Count);
             Assert.AreEqual(0, loaded.ReviewSummary.Items.Count);
             Assert.AreEqual(0, loaded.ReviewSummary.Uncertainties.Count);

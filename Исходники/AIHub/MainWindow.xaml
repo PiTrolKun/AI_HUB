@@ -2220,7 +2220,8 @@
             BackToWorkStartRequested="ImageAnalysisBundleConfirmationPage_BackToWorkStartRequested"
             ActionRequested="ImageAnalysisBundleConfirmationPage_ActionRequested"
             RemoveVisionRequested="ImageAnalysisBundleConfirmationPage_RemoveVisionRequested"
-            CancelRequested="ImageAnalysisBundleConfirmationPage_CancelRequested" />
+            CancelRequested="ImageAnalysisBundleConfirmationPage_CancelRequested"
+            ViewHistoryRequested="ImageAnalysisBundleConfirmationPage_ViewHistoryRequested" />
 
         <controls:ImageAnalysisWorkspaceControl
             x:Name="ImageAnalysisWorkspacePage"
@@ -2242,6 +2243,7 @@
             NewAnalysisRequested="ImageAnalysisWorkspacePage_NewAnalysisRequested"
             SpeechModeRequested="ImageAnalysisWorkspacePage_SpeechModeRequested"
             SpeechSettingsChanged="ImageAnalysisWorkspacePage_SpeechSettingsChanged"
+            OmniSpeakerChanged="ImageAnalysisWorkspacePage_OmniSpeakerChanged"
             KokoroDownloadRequested="ImageAnalysisWorkspacePage_KokoroDownloadRequested"
             ReplaySpeechRequested="ImageAnalysisWorkspacePage_ReplaySpeechRequested" />
 

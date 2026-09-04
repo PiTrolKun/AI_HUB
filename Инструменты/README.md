@@ -72,3 +72,29 @@ powershell -ExecutionPolicy Bypass -File .\Инструменты\setup-rhvoice.
 ```
 
 RHVoice является необязательной альтернативой. По умолчанию ядро AI HUB продолжает использовать eSpeak NG. Четыре профиля зарезервированы для указанных ролей; инструменты других сценариев не используют их без прямой просьбы пользователя.
+
+### `setup-qwen-omni-runtime.ps1`
+
+Создаёт отдельную Python 3.12-среду для полного Qwen2.5-Omni Heavy runtime в
+`Runtime/Python/qwen3-omni/.venv`, устанавливает согласованные CUDA PyTorch
+`2.11.0+cu130`, Torchvision `0.26.0+cu130`, Torchaudio `2.11.0+cu130` и
+закреплённые версии библиотек Omni, затем проверяет CUDA и официальные
+Omni-классы. Скрипт рассчитан на совместимые Windows/NVIDIA-компьютеры, а не
+на конкретную RTX 4090.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Инструменты\setup-qwen-omni-runtime.ps1
+```
+
+При необходимости другой согласованной сборки PyTorch передать официальный
+index и три версии через `-TorchIndexUrl`, `-TorchVersion`,
+`-TorchVisionVersion` и `-TorchAudioVersion`. Скрипт скачивает крупные
+runtime-пакеты и поэтому запускается только отдельно перед реальным Heavy-тестом;
+веса модели он не скачивает.
+
+Нормальный текстовый путь Heavy использует официальный Thinker-only. Worker
+автоматически выбирает `flash_attention_2`, если совместимый внешний пакет
+`flash-attn` уже установлен; в штатной native Windows-среде без него применяется
+PyTorch SDPA с доступным CUDA flash backend. Setup-скрипт намеренно не пытается
+собирать `flash-attn` без отдельного совместимого Windows toolchain. Для речи
+worker временно переключается на полный Omni после явной команды пользователя.

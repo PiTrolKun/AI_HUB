@@ -44,24 +44,36 @@ public static class ImageAnalysisBundleCatalog
             },
             isAvailable: true,
             isCurrentProjectBundle: true),
-        CreateBundle(
-            HeavyId,
-            level: 3,
-            titleKey: "ImageAnalysis.Bundle.Heavy",
-            purposeKey: "ImageAnalysis.Bundle.HeavyPurpose",
-            statusKey: "ImageAnalysis.Bundle.InDevelopment",
-            visualModel: "Qwen3-VL-30B-A3B-Thinking Q4_K_M + mmproj",
-            localizerModel: "Florence-2-large-ft",
-            requirements: new ImageAnalysisHardwareRequirements
-            {
-                RamGb = 64,
-                VramGb = 24,
-                LogicalProcessorCount = 16,
-                FreeDiskGb = 50
-            },
-            isAvailable: false,
-            isCurrentProjectBundle: false)
+        CreateHeavyBundle()
     ];
+
+    private static ImageAnalysisBundleDefinition CreateHeavyBundle() => new()
+    {
+        Id = HeavyId,
+        Level = 3,
+        TitleKey = "ImageAnalysis.Bundle.Heavy",
+        PurposeKey = "ImageAnalysis.Bundle.HeavyPurpose",
+        StatusKey = "ImageAnalysis.Bundle.Experimental",
+        Components =
+        [
+            new ImageAnalysisBundleComponent
+            {
+                RoleKey = "ImageAnalysis.Role.Omni",
+                ModelName = "Qwen2.5-Omni-3B BF16 · Thinker",
+                PlacementKey = "ImageAnalysis.Placement.Gpu"
+            }
+        ],
+        Requirements = new ImageAnalysisHardwareRequirements
+        {
+            RamGb = 32,
+            VramGb = 24,
+            LogicalProcessorCount = 12,
+            FreeDiskGb = 16
+        },
+        IsAvailable = true,
+        IsCurrentProjectBundle = false,
+        IsPreliminary = true
+    };
 
     private static ImageAnalysisBundleDefinition CreateBundle(
         string id,

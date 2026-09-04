@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using AIHub.Models;
+using AIHub.Services;
 using UserControl = System.Windows.Controls.UserControl;
 
 namespace AIHub.Controls;
@@ -14,6 +15,7 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
     private string _primaryAction = ImageAnalysisBundleActions.None;
     private ManagedModelDownloadProgress? _activeProgress;
     private bool _isBusy;
+    private bool _hasHistory;
 
     public ImageAnalysisBundleConfirmationControl()
     {
@@ -30,16 +32,20 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
 
     public event EventHandler? CancelRequested;
 
+    public event EventHandler? ViewHistoryRequested;
+
     public void Configure(
         ImageAnalysisBundleDefinition bundle,
         ImageAnalysisBundleInstallationSnapshot snapshot,
         Func<string, string> localize,
-        Func<string, object[], string> format)
+        Func<string, object[], string> format,
+        bool hasHistory = false)
     {
         _bundle = bundle;
         _snapshot = snapshot;
         _localize = localize;
         _format = format;
+        _hasHistory = hasHistory;
         ApplyLocalization();
     }
 
@@ -57,6 +63,7 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
         RemoveVisionButton.IsEnabled = !isBusy && _snapshot?.CanRemoveVision == true;
         BackToBundlesButton.IsEnabled = !isBusy;
         BackToWorkStartButton.IsEnabled = !isBusy;
+        ViewHistoryButton.IsEnabled = !isBusy;
         ProgressPanel.Visibility = isBusy ? Visibility.Visible : Visibility.Collapsed;
         CancelOperationButton.Visibility = isBusy ? Visibility.Visible : Visibility.Collapsed;
         if (!isBusy)
@@ -103,16 +110,33 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
             return;
         }
         var bundleTitle = _localize(_bundle.TitleKey);
+        var isHeavy = _bundle.Id == ImageAnalysisBundleCatalog.HeavyId;
         TitleText.Text = _format("ImageAnalysis.Confirmation.Title", [bundleTitle]);
-        DescriptionText.Text = _localize("ImageAnalysis.Install.Description");
-        StateTitleText.Text = _localize($"ImageAnalysis.Install.State.{_snapshot.State}.Title");
-        StateDescriptionText.Text = BuildStateDescription(_snapshot);
+        DescriptionText.Text = _localize(isHeavy
+            ? "ImageAnalysis.Heavy.StartNotice"
+            : "ImageAnalysis.Install.Description");
+        HeavyStartHintText.Text = _localize("ImageAnalysis.Heavy.StartHint");
+        HeavyStartHintBorder.Visibility = isHeavy ? Visibility.Visible : Visibility.Collapsed;
+        StateTitleText.Text = isHeavy && _snapshot.State == ImageAnalysisBundleInstallStates.Ready
+            ? _localize("ImageAnalysis.Install.State.heavy_ready.Title")
+            : _localize($"ImageAnalysis.Install.State.{_snapshot.State}.Title");
+        StateDescriptionText.Text = isHeavy && _snapshot.State == ImageAnalysisBundleInstallStates.Ready
+            ? _localize("ImageAnalysis.Install.State.heavy_ready.Description")
+            : BuildStateDescription(_snapshot);
         UpdateErrorDetails();
         RefreshComponentItems();
         ModelsPathText.Text = string.IsNullOrWhiteSpace(_snapshot.ModelsRoot)
             ? _localize("ImageAnalysis.Install.StorageMissing")
-            : _format("ImageAnalysis.Install.StoragePath", [_snapshot.ModelsRoot]);
+            : isHeavy
+                ? _format(
+                    "ImageAnalysis.Install.StoragePathWithFree",
+                    [_snapshot.ModelsRoot, FormatBytes(_snapshot.AvailableFreeBytes)])
+                : _format("ImageAnalysis.Install.StoragePath", [_snapshot.ModelsRoot]);
         ConfigurePrimaryAction(_snapshot.State);
+        ViewHistoryButton.Content = _localize("ImageAnalysis.Install.ViewHistoryReadOnly");
+        ViewHistoryButton.Visibility = isHeavy && !_snapshot.CanStart && _hasHistory
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         RemoveVisionButton.Content = _localize("ImageAnalysis.Install.RemoveVision");
         RemoveVisionButton.IsEnabled = _snapshot.CanRemoveVision;
         RemoveVisionButton.Visibility = _snapshot.CanRemoveVision ? Visibility.Visible : Visibility.Collapsed;
@@ -129,6 +153,7 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
             RemoveVisionButton.IsEnabled = false;
             BackToBundlesButton.IsEnabled = false;
             BackToWorkStartButton.IsEnabled = false;
+            ViewHistoryButton.IsEnabled = false;
         }
     }
 
@@ -185,11 +210,30 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
                         ? _localize("ImageAnalysis.Install.Active.ComponentStatus")
                         : LocalizeStage(effectiveProgress.Stage)
                     : LocalizeModelStatus(component.Status),
-                DetailText = _format(
-                    component.IsShared ? "ImageAnalysis.Install.Component.Shared" : "ImageAnalysis.Install.Component.Profile",
-                    [LocalizeRole(component.Role), FormatBytes(storedBytes), FormatBytes(component.TotalBytes)])
+                DetailText = BuildComponentDetail(component, storedBytes)
             };
         }).ToList();
+    }
+
+    private string BuildComponentDetail(ImageAnalysisBundleComponentState component, long storedBytes)
+    {
+        if (_bundle?.Id == ImageAnalysisBundleCatalog.HeavyId)
+        {
+            return _format(
+                "ImageAnalysis.Install.Component.HeavyProfile",
+                [
+                    LocalizeRole(component.Role),
+                    FormatBytes(storedBytes),
+                    FormatBytes(component.TotalBytes),
+                    component.RepositoryId,
+                    component.Revision,
+                    component.License
+                ]);
+        }
+
+        return _format(
+            component.IsShared ? "ImageAnalysis.Install.Component.Shared" : "ImageAnalysis.Install.Component.Profile",
+            [LocalizeRole(component.Role), FormatBytes(storedBytes), FormatBytes(component.TotalBytes)]);
     }
 
     private string BuildProgressValue(ManagedModelDownloadProgress progress)
@@ -264,6 +308,9 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
 
     private void CancelOperationButton_Click(object sender, RoutedEventArgs e) =>
         CancelRequested?.Invoke(this, EventArgs.Empty);
+
+    private void ViewHistoryButton_Click(object sender, RoutedEventArgs e) =>
+        ViewHistoryRequested?.Invoke(this, EventArgs.Empty);
 
     private void BackToBundlesButton_Click(object sender, RoutedEventArgs e) =>
         BackToBundlesRequested?.Invoke(this, EventArgs.Empty);

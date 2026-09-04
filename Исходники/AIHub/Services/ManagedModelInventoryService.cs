@@ -352,7 +352,9 @@ public sealed class ManagedModelInventoryService
         candidate.Status = hasPartial
             ? ManagedModelStatuses.Paused
             : exactBytes > 0
-                ? ManagedModelStatuses.Corrupted
+                ? existing?.Status == ManagedModelStatuses.SourceUnavailable
+                    ? ManagedModelStatuses.SourceUnavailable
+                    : ManagedModelStatuses.Corrupted
                 : existing?.Status is ManagedModelStatuses.FilesRemoved or ManagedModelStatuses.SourceUnavailable
                     ? existing.Status
                     : ManagedModelStatuses.NotInstalled;

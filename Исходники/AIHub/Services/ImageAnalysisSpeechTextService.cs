@@ -9,7 +9,8 @@ public static class ImageAnalysisSpeechTextService
     public static bool ShouldDelaySummaryReveal(
         string? speechMode,
         ImageAnalysisReviewSummary? summary) =>
-        ImageAnalysisSpeechModes.Normalize(speechMode) != ImageAnalysisSpeechModes.Off
+        (speechMode == ImageAnalysisSpeechModes.Omni
+            || ImageAnalysisSpeechModes.Normalize(speechMode) != ImageAnalysisSpeechModes.Off)
         && BuildSegments(summary).Count > 0;
 
     public static IReadOnlyList<CoreSpeechSegment> BuildSegments(ImageAnalysisReviewSummary? summary)

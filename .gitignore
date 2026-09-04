@@ -64,3 +64,11 @@ secrets.json
 # OS metadata
 Thumbs.db
 Desktop.ini
+
+# Atlas Scout local data
+.atlas/
+
+# Local rollback snapshots and Python bytecode are not publication artifacts
+_backups/
+__pycache__/
+*.py[cod]

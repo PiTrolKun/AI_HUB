@@ -121,6 +121,12 @@ public sealed class ImageAnalysisBundleComponentState
     public bool IsShared { get; init; }
 
     public string LastError { get; init; } = string.Empty;
+
+    public string RepositoryId { get; init; } = string.Empty;
+
+    public string Revision { get; init; } = string.Empty;
+
+    public string License { get; init; } = string.Empty;
 }
 
 public sealed class ImageAnalysisBundleInstallationSnapshot
@@ -132,6 +138,8 @@ public sealed class ImageAnalysisBundleInstallationSnapshot
     public string ModelsRoot { get; init; } = string.Empty;
 
     public long MissingBytes { get; init; }
+
+    public long AvailableFreeBytes { get; init; }
 
     public long StoredBytes => Components.Sum(component => component.StoredBytes);
 

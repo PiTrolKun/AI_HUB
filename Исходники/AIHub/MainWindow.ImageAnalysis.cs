@@ -18,11 +18,12 @@ public partial class MainWindow
     private CancellationTokenSource? _imageAnalysisBundleOperationCts;
     private readonly ImageAnalysisFileValidationService _imageAnalysisFileValidationService = new();
     private readonly ImageAnalysisSessionStore _imageAnalysisSessionStore = new();
-    private ImageAnalysisLiteraryService? _imageAnalysisLiteraryService;
+    private ISingleImageLiteraryPipeline? _imageAnalysisLiteraryPipeline;
     private ImageAnalysisLiterarySession? _imageAnalysisLiterarySession;
     private CancellationTokenSource? _imageAnalysisLiteraryCts;
     private CancellationTokenSource? _imageAnalysisRuntimePreparationCts;
     private Task? _imageAnalysisRuntimePreparationTask;
+    private bool _imageAnalysisWorkspaceReadOnly;
 
     private void SelectImageAnalysisButton_Click(object sender, RoutedEventArgs e)
     {
@@ -59,8 +60,10 @@ public partial class MainWindow
     private void ShowImageAnalysisBundleConfirmation(ImageAnalysisBundleDefinition bundle)
     {
         _selectedImageAnalysisBundle = bundle;
-        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings);
-        ImageAnalysisBundleConfirmationPage.Configure(bundle, snapshot, L, LF);
+        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings, bundle.Id);
+        var hasHistory = _imageAnalysisSessionStore.LoadAll(_storageSettings)
+            .Any(session => string.Equals(session.BundleId, bundle.Id, StringComparison.Ordinal));
+        ImageAnalysisBundleConfirmationPage.Configure(bundle, snapshot, L, LF, hasHistory);
         HideStandardPages();
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
         ImageAnalysisWorkspacePage.Visibility = Visibility.Collapsed;
@@ -89,6 +92,16 @@ public partial class MainWindow
 
     private void RefreshImageAnalysisLocalization()
     {
+        if (_imageAnalysisLiteraryCts is not null
+            && _imageAnalysisLiterarySession?.BundleId == ImageAnalysisBundleCatalog.HeavyId
+            && !string.Equals(
+                _imageAnalysisLiterarySession.AnalysisLanguageCode,
+                NormalizeSpeechLanguage(_appSettings.LanguageCode),
+                StringComparison.Ordinal))
+        {
+            _restartHeavyAnalysisAfterLanguageChange = true;
+            _imageAnalysisLiteraryCts.Cancel();
+        }
         ImageAnalysisScenarioTitleText.Text = L("ImageAnalysis.Scenario.Title");
         ImageAnalysisScenarioDescriptionText.Text = L("ImageAnalysis.Scenario.Description");
         SelectImageAnalysisButton.Content = L("ImageAnalysis.Scenario.Select");
@@ -105,6 +118,10 @@ public partial class MainWindow
 
         ImageAnalysisWorkspacePage.ApplyLocalization();
         RefreshImageAnalysisSpeechUi();
+        if (ImageAnalysisWorkspacePage.Visibility == Visibility.Visible)
+        {
+            ImageAnalysisWorkspacePage.SetReadOnlyMode(_imageAnalysisWorkspaceReadOnly);
+        }
     }
 
     private bool TryHandleImageAnalysisEscape()
@@ -194,7 +211,8 @@ public partial class MainWindow
             return;
         }
 
-        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings);
+        var bundleId = _selectedImageAnalysisBundle?.Id ?? ImageAnalysisBundleCatalog.MediumId;
+        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings, bundleId);
         if (e.Action == ImageAnalysisBundleActions.Download)
         {
             var names = string.Join(
@@ -210,7 +228,9 @@ public partial class MainWindow
                     names,
                     ComponentCardViewModel.FormatBytes(snapshot.MissingBytes),
                     snapshot.ModelsRoot),
-                L("ImageAnalysis.Install.DownloadTitle"),
+                L(bundleId == ImageAnalysisBundleCatalog.HeavyId
+                    ? "ImageAnalysis.Install.HeavyDownloadTitle"
+                    : "ImageAnalysis.Install.DownloadTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
             if (confirmation != MessageBoxResult.Yes)
@@ -222,8 +242,12 @@ public partial class MainWindow
         {
             var confirmation = WpfMessageBox.Show(
                 this,
-                L("ImageAnalysis.Install.RuntimeConfirm"),
-                L("ImageAnalysis.Install.VerifyTitle"),
+                L(bundleId == ImageAnalysisBundleCatalog.HeavyId
+                    ? "ImageAnalysis.Install.HeavyVerifyConfirm"
+                    : "ImageAnalysis.Install.RuntimeConfirm"),
+                L(bundleId == ImageAnalysisBundleCatalog.HeavyId
+                    ? "ImageAnalysis.Install.HeavyVerifyTitle"
+                    : "ImageAnalysis.Install.VerifyTitle"),
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Information);
             if (confirmation != MessageBoxResult.Yes)
@@ -247,15 +271,30 @@ public partial class MainWindow
                 ? await _imageAnalysisBundleInstallationService.DownloadMissingAsync(
                     _storageSettings,
                     progress,
-                    _imageAnalysisBundleOperationCts.Token)
+                    _imageAnalysisBundleOperationCts.Token,
+                    bundleId)
                 : await _imageAnalysisBundleInstallationService.VerifyAsync(
                     _storageSettings,
                     progress,
-                    _imageAnalysisBundleOperationCts.Token);
+                    _imageAnalysisBundleOperationCts.Token,
+                    bundleId);
             ImageAnalysisBundleConfirmationPage.UpdateSnapshot(updated);
             StatusText.Text = updated.CanStart
-                ? L("Status.ImageAnalysisBundleReady")
+                ? L(bundleId == ImageAnalysisBundleCatalog.HeavyId
+                    ? "Status.ImageAnalysisHeavyBundleReady"
+                    : "Status.ImageAnalysisBundleReady")
                 : L("Status.ImageAnalysisBundleUpdated");
+            if (updated.CanStart
+                && bundleId == ImageAnalysisBundleCatalog.HeavyId
+                && e.Action is ImageAnalysisBundleActions.Download
+                    or ImageAnalysisBundleActions.Verify)
+            {
+                ShowImageAnalysisWorkspace();
+                if (ImageAnalysisWorkspacePage.Visibility == Visibility.Visible)
+                {
+                    BeginImageAnalysisRuntimePreparation();
+                }
+            }
         }
         catch (OperationCanceledException)
         {
@@ -263,7 +302,7 @@ public partial class MainWindow
         }
         catch (Exception)
         {
-            var updated = _imageAnalysisBundleInstallationService.Check(_storageSettings);
+            var updated = _imageAnalysisBundleInstallationService.Check(_storageSettings, bundleId);
             ImageAnalysisBundleConfirmationPage.UpdateSnapshot(updated);
             StatusText.Text = L("Status.ImageAnalysisOperationFailed");
         }
@@ -275,8 +314,11 @@ public partial class MainWindow
 
     private void ImageAnalysisBundleConfirmationPage_RemoveVisionRequested(object? sender, EventArgs e)
     {
-        var card = _imageAnalysisBundleInstallationService.LibraryStore.Load(
-            ManagedModelCatalog.KimiMediumArtifactId);
+        var bundleId = _selectedImageAnalysisBundle?.Id ?? ImageAnalysisBundleCatalog.MediumId;
+        var artifactId = bundleId == ImageAnalysisBundleCatalog.HeavyId
+            ? ManagedModelCatalog.Qwen25OmniHeavyArtifactId
+            : ManagedModelCatalog.KimiMediumArtifactId;
+        var card = _imageAnalysisBundleInstallationService.LibraryStore.Load(artifactId);
         if (card is null)
         {
             return;
@@ -298,9 +340,9 @@ public partial class MainWindow
         }
         try
         {
-            var result = _imageAnalysisBundleInstallationService.RemoveVisionFiles();
+            var result = _imageAnalysisBundleInstallationService.RemoveVisionFiles(bundleId);
             ImageAnalysisBundleConfirmationPage.UpdateSnapshot(
-                _imageAnalysisBundleInstallationService.Check(_storageSettings));
+                _imageAnalysisBundleInstallationService.Check(_storageSettings, bundleId));
             StatusText.Text = LF(
                 "Status.ImageAnalysisVisionRemoved",
                 ComponentCardViewModel.FormatBytes(result.RemovedBytes));
@@ -314,22 +356,33 @@ public partial class MainWindow
     private void ImageAnalysisBundleConfirmationPage_CancelRequested(object? sender, EventArgs e) =>
         _imageAnalysisBundleOperationCts?.Cancel();
 
-    private void ShowImageAnalysisWorkspace()
+    private void ImageAnalysisBundleConfirmationPage_ViewHistoryRequested(object? sender, EventArgs e)
     {
-        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings);
-        if (!snapshot.CanStart)
+        ShowImageAnalysisWorkspace(allowUnavailableReadOnly: true);
+    }
+
+    private void ShowImageAnalysisWorkspace(bool allowUnavailableReadOnly = false)
+    {
+        var bundleId = _selectedImageAnalysisBundle?.Id ?? ImageAnalysisBundleCatalog.MediumId;
+        var snapshot = _imageAnalysisBundleInstallationService.Check(_storageSettings, bundleId);
+        if (!snapshot.CanStart && !allowUnavailableReadOnly)
         {
             ImageAnalysisBundleConfirmationPage.UpdateSnapshot(snapshot);
             return;
         }
-        ImageAnalysisWorkspacePage.Configure(L, LF);
+        _imageAnalysisWorkspaceReadOnly = !snapshot.CanStart;
+        ImageAnalysisWorkspacePage.Configure(bundleId, L, LF);
+        ImageAnalysisWorkspacePage.SetReadOnlyMode(_imageAnalysisWorkspaceReadOnly);
         HideStandardPages();
         ImageAnalysisBundleSelectorPage.Visibility = Visibility.Collapsed;
         ImageAnalysisBundleConfirmationPage.Visibility = Visibility.Collapsed;
         ImageAnalysisWorkspacePage.Visibility = Visibility.Visible;
         ShowImageAnalysisSubscenarioSelection();
         RefreshImageAnalysisSpeechUi();
-        StatusText.Text = L("Status.ImageAnalysisWorkspaceOpened");
+        ImageAnalysisWorkspacePage.SetReadOnlyMode(_imageAnalysisWorkspaceReadOnly);
+        StatusText.Text = L(_imageAnalysisWorkspaceReadOnly
+            ? "Status.ImageAnalysisHistoryReadOnly"
+            : "Status.ImageAnalysisWorkspaceOpened");
     }
 
     private void ImageAnalysisWorkspacePage_BackRequested(object? sender, EventArgs e)

@@ -43,6 +43,33 @@ public sealed class ImageAnalysisSessionStore
         return LoadPath(path);
     }
 
+    public string SaveOmniResponse(
+        ImageAnalysisLiterarySession session,
+        StorageSettings storageSettings,
+        string stage,
+        IReadOnlyList<ImageAnalysisHiddenMessage> conversation,
+        string rawProtocol)
+    {
+        ValidateSessionId(session.SessionId);
+        if (stage is not ("analyze" or "compose" or "revise"))
+            throw new ArgumentOutOfRangeException(nameof(stage));
+        var directory = Path.Combine(GetSessionDirectory(session.SessionId, storageSettings), "OmniResponses");
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{DateTime.UtcNow:yyyyMMddTHHmmssfff}_{stage}_{Guid.NewGuid():N}.json");
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            session.SessionId, stage, capturedAt = DateTimeOffset.Now,
+            session.ModelId, session.ModelRevision, session.RuntimeVersion,
+            promptVersion = ImageAnalysisPipelineIds.OmniHeavyVersion,
+            session.File, session.Settings, conversation, rawProtocol
+        }, JsonOptions);
+        // A unique append-only artifact is independent of parsing and session versions.
+        using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+        file.Write(bytes);
+        file.Flush(flushToDisk: true);
+        return path;
+    }
+
     public IReadOnlyList<ImageAnalysisLiterarySession> LoadAll(StorageSettings storageSettings)
     {
         try
@@ -152,6 +179,19 @@ public sealed class ImageAnalysisSessionStore
                 return null;
             }
             session.Settings ??= new ImageAnalysisLiterarySettings();
+            if (session.SchemaVersion <= 2)
+            {
+                session.BundleId = ImageAnalysisBundleCatalog.MediumId;
+                session.PipelineId = ImageAnalysisPipelineIds.Legacy;
+                session.PipelineVersion = ImageAnalysisPipelineIds.LegacyVersion;
+                session.ContractVersion = ImageAnalysisPipelineIds.ContractVersion;
+                session.RuntimeId = ImageAnalysisRuntimeIds.Legacy;
+                session.SchemaVersion = 3;
+            }
+            session.HiddenConversation ??= [];
+            session.Placement ??= new ImageAnalysisPlacementInfo();
+            session.RuntimeMetrics ??= new ImageAnalysisRuntimeMetrics();
+            session.SpeechResult ??= new ImageAnalysisSpeechResult();
             session.Versions ??= [];
             session.Observations ??= [];
             session.ReviewSummary ??= new ImageAnalysisReviewSummary();

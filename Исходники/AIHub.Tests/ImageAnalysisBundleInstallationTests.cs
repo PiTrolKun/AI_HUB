@@ -48,6 +48,35 @@ public sealed class ImageAnalysisBundleInstallationTests
     }
 
     [TestMethod]
+    public void HeavyCheck_RequiresOnlyPinnedOmniAndReportsSourceAndDisk()
+    {
+        var root = ManagedModelLibraryTests.CreateRoot();
+        try
+        {
+            var modelsRoot = Path.Combine(root, "models");
+            Directory.CreateDirectory(modelsRoot);
+            var store = new ManagedModelLibraryStore(Path.Combine(root, "library"));
+            using var service = new ImageAnalysisBundleInstallationService(store);
+
+            var snapshot = service.Check(
+                CreateSettings(modelsRoot),
+                ImageAnalysisBundleCatalog.HeavyId);
+
+            Assert.AreEqual(ImageAnalysisBundleInstallStates.DownloadRequired, snapshot.State);
+            Assert.HasCount(1, snapshot.Components);
+            Assert.AreEqual(ManagedModelCatalog.Qwen25OmniHeavyArtifactId, snapshot.Components[0].ModelArtifactId);
+            Assert.AreEqual(ManagedModelCatalog.Qwen25OmniRepository, snapshot.Components[0].RepositoryId);
+            Assert.AreEqual(ManagedModelCatalog.Qwen25OmniRevision, snapshot.Components[0].Revision);
+            StringAssert.Contains(snapshot.Components[0].License, "Qwen Research License");
+            Assert.IsTrue(snapshot.AvailableFreeBytes > 0);
+        }
+        finally
+        {
+            ManagedModelLibraryTests.DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
     public void Inventory_RegistersUnknownGgufAsReadOnlyExternalModel()
     {
         var root = ManagedModelLibraryTests.CreateRoot();
@@ -148,6 +177,41 @@ public sealed class ImageAnalysisBundleInstallationTests
 
             Assert.AreEqual(ManagedModelStatuses.SourceUnavailable, reloaded.Status);
             Assert.AreEqual("HTTP 404", reloaded.LastError);
+        }
+        finally
+        {
+            ManagedModelLibraryTests.DeleteRoot(root);
+        }
+    }
+
+    [TestMethod]
+    public void Check_TreatsPreservedFilesAfterNetworkFailureAsResumable()
+    {
+        var root = ManagedModelLibraryTests.CreateRoot();
+        try
+        {
+            var modelsRoot = Path.Combine(root, "models");
+            Directory.CreateDirectory(modelsRoot);
+            var store = new ManagedModelLibraryStore(Path.Combine(root, "library"));
+            var card = ManagedModelCatalog.CreateFlorenceLarge(modelsRoot);
+            var firstFile = card.Files[0];
+            Directory.CreateDirectory(card.InstallDirectory);
+            File.WriteAllBytes(
+                Path.Combine(card.InstallDirectory, firstFile.RelativePath),
+                new byte[checked((int)firstFile.SizeBytes)]);
+            card.Status = ManagedModelStatuses.SourceUnavailable;
+            card.LastError = "Temporary DNS failure";
+            card.StoredBytes = firstFile.SizeBytes;
+            store.Upsert(card);
+            using var service = new ImageAnalysisBundleInstallationService(store);
+
+            var snapshot = service.Check(CreateSettings(modelsRoot));
+            var reloaded = snapshot.Components.Single(item =>
+                item.ModelArtifactId == ManagedModelCatalog.FlorenceLargeArtifactId);
+
+            Assert.AreEqual(ImageAnalysisBundleInstallStates.ResumeAvailable, snapshot.State);
+            Assert.AreEqual(ManagedModelStatuses.SourceUnavailable, reloaded.Status);
+            Assert.AreEqual("Temporary DNS failure", reloaded.LastError);
         }
         finally
         {

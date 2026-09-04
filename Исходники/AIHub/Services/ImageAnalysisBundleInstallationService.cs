@@ -1,4 +1,5 @@
 using AIHub.Models;
+using System.IO;
 using System.Net.Http;
 
 namespace AIHub.Services;
@@ -10,6 +11,11 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
         ManagedModelCatalog.CoreArtifactId,
         ManagedModelCatalog.KimiMediumArtifactId,
         ManagedModelCatalog.FlorenceLargeArtifactId
+    ];
+
+    private static readonly string[] HeavyArtifactIds =
+    [
+        ManagedModelCatalog.Qwen25OmniHeavyArtifactId
     ];
 
     private readonly ManagedModelLibraryStore _store;
@@ -38,11 +44,14 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
         set => _acquisition.MaximumParallelConnections = value;
     }
 
-    public ImageAnalysisBundleInstallationSnapshot Check(StorageSettings settings)
+    public ImageAnalysisBundleInstallationSnapshot Check(
+        StorageSettings settings,
+        string bundleId = ImageAnalysisBundleCatalog.MediumId)
     {
+        var artifactIds = ResolveArtifactIds(bundleId);
         var cards = _inventory.Synchronize(settings)
-            .Where(card => MediumArtifactIds.Contains(card.ModelArtifactId, StringComparer.Ordinal))
-            .OrderBy(card => Array.IndexOf(MediumArtifactIds, card.ModelArtifactId))
+            .Where(card => artifactIds.Contains(card.ModelArtifactId, StringComparer.Ordinal))
+            .OrderBy(card => Array.IndexOf(artifactIds, card.ModelArtifactId))
             .ToList();
         var modelsRoot = settings.Models.Locations
             .Select(location => location.Path?.Trim())
@@ -60,7 +69,8 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
         {
             return CreateSnapshot(ImageAnalysisBundleInstallStates.RuntimeIncompatible, cards, modelsRoot);
         }
-        if (cards.Any(card => card.Status == ManagedModelStatuses.Paused))
+        if (cards.Any(card => card.Status == ManagedModelStatuses.Paused
+                || card.Status == ManagedModelStatuses.SourceUnavailable && card.StoredBytes > 0))
         {
             return CreateSnapshot(ImageAnalysisBundleInstallStates.ResumeAvailable, cards, modelsRoot);
         }
@@ -75,7 +85,7 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
             return CreateSnapshot(ImageAnalysisBundleInstallStates.NeedsVerification, cards, modelsRoot);
         }
         return CreateSnapshot(
-            cards.Count == MediumArtifactIds.Length
+            cards.Count == artifactIds.Length
                 && cards.All(card => card.Status == ManagedModelStatuses.Installed)
                 ? ImageAnalysisBundleInstallStates.Ready
                 : ImageAnalysisBundleInstallStates.Error,
@@ -86,9 +96,10 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
     public async Task<ImageAnalysisBundleInstallationSnapshot> DownloadMissingAsync(
         StorageSettings settings,
         IProgress<ManagedModelDownloadProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string bundleId = ImageAnalysisBundleCatalog.MediumId)
     {
-        var snapshot = Check(settings);
+        var snapshot = Check(settings, bundleId);
         if (snapshot.State == ImageAnalysisBundleInstallStates.StorageNotConfigured)
         {
             return snapshot;
@@ -102,15 +113,16 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
         {
             await _acquisition.DownloadAsync(component.ModelArtifactId, progress, cancellationToken);
         }
-        return Check(settings);
+        return Check(settings, bundleId);
     }
 
     public async Task<ImageAnalysisBundleInstallationSnapshot> VerifyAsync(
         StorageSettings settings,
         IProgress<ManagedModelDownloadProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string bundleId = ImageAnalysisBundleCatalog.MediumId)
     {
-        var snapshot = Check(settings);
+        var snapshot = Check(settings, bundleId);
         foreach (var component in snapshot.Components.Where(component => component.StoredBytes > 0))
         {
             var card = await _acquisition.VerifyAsync(component.ModelArtifactId, progress, cancellationToken);
@@ -124,13 +136,25 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
                     progress);
             }
         }
-        return Check(settings);
+        return Check(settings, bundleId);
     }
 
     public ManagedModelRemovalResult RemoveVisionFiles() =>
         _removal.RemoveFiles(ManagedModelCatalog.KimiMediumArtifactId, includePartialFiles: true);
 
+    public ManagedModelRemovalResult RemoveVisionFiles(string bundleId) =>
+        _removal.RemoveFiles(
+            bundleId == ImageAnalysisBundleCatalog.HeavyId
+                ? ManagedModelCatalog.Qwen25OmniHeavyArtifactId
+                : ManagedModelCatalog.KimiMediumArtifactId,
+            includePartialFiles: true);
+
     public void Dispose() => _acquisition.Dispose();
+
+    private static string[] ResolveArtifactIds(string bundleId) =>
+        bundleId == ImageAnalysisBundleCatalog.HeavyId
+            ? HeavyArtifactIds
+            : MediumArtifactIds;
 
     private static ImageAnalysisBundleInstallationSnapshot CreateSnapshot(
         string state,
@@ -139,6 +163,7 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
         {
             State = state,
             ModelsRoot = modelsRoot,
+            AvailableFreeBytes = GetAvailableFreeBytes(modelsRoot),
             MissingBytes = cards.Sum(card => Math.Max(0, card.TotalBytes - card.StoredBytes)),
             Components = cards.Select(card => new ImageAnalysisBundleComponentState
             {
@@ -149,7 +174,23 @@ public sealed class ImageAnalysisBundleInstallationService : IDisposable
                 TotalBytes = card.TotalBytes,
                 StoredBytes = card.StoredBytes,
                 IsShared = card.Consumers.Count > 1,
-                LastError = card.LastError
+                LastError = card.LastError,
+                RepositoryId = card.RepositoryId,
+                Revision = card.Revision,
+                License = card.License
             }).ToList()
         };
+
+    private static long GetAvailableFreeBytes(string path)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(path));
+            return string.IsNullOrWhiteSpace(root) ? 0 : new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
 }

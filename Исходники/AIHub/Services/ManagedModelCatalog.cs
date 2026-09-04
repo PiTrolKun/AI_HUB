@@ -11,6 +11,7 @@ public static class ManagedModelCatalog
     public const string FlorenceLargeArtifactId = "model-florence-2-large-ft";
     public const string KokoroEnglishArtifactId = "model-kokoro-82m-en-af-heart";
     public const string KokoroRussianArtifactId = "model-kokoro-ru-sveta";
+    public const string Qwen25OmniHeavyArtifactId = "model-qwen2-5-omni-3b";
 
     public const string KimiRepository = "judd2024/chatllm_quantized_kimi-vl";
     public const string KimiRevision = "master";
@@ -22,6 +23,8 @@ public static class ManagedModelCatalog
     public const string KokoroRussianRevision = "27d078fe1c0cab919613a64e906919214385f21d";
     public const string RuAccentRepository = "ruaccent/accentuator";
     public const string RuAccentRevision = "b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855";
+    public const string Qwen25OmniRepository = "Qwen/Qwen2.5-Omni-3B";
+    public const string Qwen25OmniRevision = "f75b40e3da2003cdd6e1829b1f420ca70797c34e";
 
     public static IReadOnlyList<ManagedModelArtifactCard> CreatePredefined(StorageSettings settings)
     {
@@ -34,6 +37,7 @@ public static class ManagedModelCatalog
             CreateCore(modelsRoot),
             CreateKimiMedium(modelsRoot),
             CreateFlorenceLarge(modelsRoot),
+            CreateQwen25OmniHeavy(modelsRoot),
             CreateKokoroEnglish(modelsRoot),
             CreateKokoroRussian(modelsRoot)
         ];
@@ -75,6 +79,55 @@ public static class ManagedModelCatalog
                 CoreModelManager.CoreModelTotalBytes,
                 "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
                 "main_model")
+        ]
+    };
+
+    public static ManagedModelArtifactCard CreateQwen25OmniHeavy(string modelsRoot) => new()
+    {
+        ModelArtifactId = Qwen25OmniHeavyArtifactId,
+        Family = "Qwen2.5-Omni-3B",
+        DisplayName = "Qwen2.5-Omni-3B BF16",
+        Role = ManagedModelRoles.Vision,
+        Provider = "Hugging Face",
+        RepositoryId = Qwen25OmniRepository,
+        Revision = Qwen25OmniRevision,
+        Format = "Safetensors",
+        Architecture = "qwen2_5_omni",
+        ParameterCount = 3_000_000_000,
+        License = "Qwen Research License (non-commercial research/evaluation only)",
+        SourcePage = $"https://huggingface.co/{Qwen25OmniRepository}",
+        IsManaged = true,
+        CanRemoveFiles = true,
+        ModelsRoot = modelsRoot,
+        InstallDirectory = CombineIfRoot(
+            modelsRoot,
+            "Vision",
+            "Qwen2.5-Omni-3B",
+            Qwen25OmniRevision[..12]),
+        Origin = ManagedModelOrigins.PredefinedScenario,
+        RuntimeBackend = "Python Transformers / CUDA (isolated Heavy worker, GPU-only)",
+        Consumers =
+        [
+            Consumer("image-analysis-heavy", "Анализ изображений — Тяжёлый", "scenario_bundle")
+        ],
+        Files =
+        [
+            OmniFile("LICENSE", 7_387, "ae8ef9d3fb476f735d9b9abeaab73b7f778b121c77427cd918ec3da01eefbc44", "license"),
+            OmniFile("added_tokens.json", 579, "e81a2cc3bd867a1217019eed202d1d8a07e1063ece716f22060dda14f6cc07d8", "tokenizer"),
+            OmniFile("chat_template.json", 1_313, "1933f7ca08e6503460e981d9037ddc0b851196abfa3aceea52d6ee0c0fdfd9f0", "chat_template"),
+            OmniFile("config.json", 13_183, "20790f362c37a1718a3e764f597ae33dfc20177399762018dffaabf8321d4dd1", "configuration"),
+            OmniFile("generation_config.json", 74, "b9acf52072249e0e1850541d51ca4c85a30b9d7e23c2f2093ec0fb4139059ac7", "generation_configuration"),
+            OmniFile("merges.txt", 1_671_853, "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5", "tokenizer"),
+            OmniFile("model-00001-of-00003.safetensors", 4_994_850_880, "349972cebff443030e9e96e1e930d7230979c6961cf046fa29fc580e4bcf49a6", "model_weights"),
+            OmniFile("model-00002-of-00003.safetensors", 4_999_787_448, "b29a76dfefb3aa33a5bd0faa19c681d039a44de57223653ea0e933df728c6d8c", "model_weights"),
+            OmniFile("model-00003-of-00003.safetensors", 1_978_024_880, "8f2138170a87ec604b53232491a96d6dcf19e0724aca37e69aace143e508b170", "model_weights"),
+            OmniFile("model.safetensors.index.json", 241_817, "5b7629198e2ef80e37612a491d9bfd71639d2f212632d36d8ab086922e74e129", "model_index"),
+            OmniFile("preprocessor_config.json", 667, "b47055ce61463ce143e9aab741d55c0aa520801a0a5d63be73c5b17cecb6bc69", "processor_configuration"),
+            OmniFile("special_tokens_map.json", 832, "dc241604d085780a33f760f69c47e6622451104c20eee3cd3a12b6e884b43f44", "tokenizer"),
+            OmniFile("spk_dict.pt", 259_544, "6a05609b28f5d42b7b748f0f07592545c8f1f6885b9ae8fff64baf56e86b2a18", "speaker_dictionary"),
+            OmniFile("tokenizer.json", 11_421_870, "8441917e39ae0244e06d704b95b3124795cec478e297f9afac39ba670d7e9d99", "tokenizer"),
+            OmniFile("tokenizer_config.json", 6_469, "569aa7a9171e36dfff80f0a7550ab0c9c09e46ac840fea5030641417394fb0d2", "tokenizer_configuration"),
+            OmniFile("vocab.json", 2_776_833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910", "vocabulary")
         ]
     };
 
@@ -275,6 +328,9 @@ public static class ManagedModelCatalog
 
     private static ManagedModelArtifactFile FlorenceFile(string name, long size, string sha256, string purpose) =>
         File(name, Resolve(FlorenceRepository, FlorenceRevision, name), size, sha256, purpose);
+
+    private static ManagedModelArtifactFile OmniFile(string name, long size, string sha256, string purpose) =>
+        File(name, Resolve(Qwen25OmniRepository, Qwen25OmniRevision, name), size, sha256, purpose);
 
     private static ManagedModelArtifactFile KokoroRussianFile(string name, long size, string sha256) =>
         File(name, Resolve(KokoroRussianRepository, KokoroRussianRevision, name), size, sha256, "language_frontend");

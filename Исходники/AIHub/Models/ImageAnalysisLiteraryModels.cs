@@ -146,13 +146,29 @@ public sealed class ImageAnalysisReviewSummary
 
 public sealed class ImageAnalysisLiterarySession
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
 
     public string SessionId { get; set; } = Guid.NewGuid().ToString("N");
 
     public string ScenarioId { get; set; } = "image_analysis";
 
     public string SubscenarioId { get; set; } = "literary_single_image";
+
+    public string BundleId { get; set; } = "medium";
+
+    public string PipelineId { get; set; } = ImageAnalysisPipelineIds.Legacy;
+
+    public string PipelineVersion { get; set; } = ImageAnalysisPipelineIds.LegacyVersion;
+
+    public string ContractVersion { get; set; } = ImageAnalysisPipelineIds.ContractVersion;
+
+    public string ModelId { get; set; } = string.Empty;
+
+    public string ModelRevision { get; set; } = string.Empty;
+
+    public string RuntimeId { get; set; } = ImageAnalysisRuntimeIds.Legacy;
+
+    public string RuntimeVersion { get; set; } = string.Empty;
 
     public string Status { get; set; } = ImageAnalysisLiteraryStatuses.Draft;
 
@@ -169,6 +185,16 @@ public sealed class ImageAnalysisLiterarySession
     public ImageAnalysisLiterarySettings Settings { get; set; } = new();
 
     public string VisualReport { get; set; } = string.Empty;
+
+    public List<ImageAnalysisHiddenMessage> HiddenConversation { get; set; } = [];
+
+    public string AnalysisLanguageCode { get; set; } = string.Empty;
+
+    public ImageAnalysisPlacementInfo Placement { get; set; } = new();
+
+    public ImageAnalysisRuntimeMetrics RuntimeMetrics { get; set; } = new();
+
+    public ImageAnalysisSpeechResult SpeechResult { get; set; } = new();
 
     public List<string> Observations { get; set; } = [];
 
@@ -204,4 +230,8 @@ public sealed record ImageAnalysisLiteraryProgress(
 public sealed record ImageAnalysisLiteraryResult(
     string VisualReport,
     string Description,
-    ImageAnalysisReviewSummary ReviewSummary);
+    ImageAnalysisReviewSummary ReviewSummary,
+    IReadOnlyList<ImageAnalysisHiddenMessage>? HiddenConversation = null,
+    string RawFinalResponse = "",
+    long VisualPassMilliseconds = 0,
+    long ComposePassMilliseconds = 0);

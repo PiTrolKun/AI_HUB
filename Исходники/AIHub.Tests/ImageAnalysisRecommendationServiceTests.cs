@@ -39,7 +39,7 @@ public sealed class ImageAnalysisRecommendationServiceTests
     [TestMethod]
     public void Evaluate_TreatsExactHeavyThresholdsAsCompatible()
     {
-        var result = Evaluate(64, 24, 16, 50);
+        var result = Evaluate(32, 24, 12, 16);
 
         Assert.AreEqual(ImageAnalysisBundleCatalog.HeavyId, result.Recommendation?.Bundle.Id);
         Assert.IsTrue(result.Recommendation?.IsFullyCompatible);
@@ -58,7 +58,7 @@ public sealed class ImageAnalysisRecommendationServiceTests
     [TestMethod]
     public void Evaluate_ReportsSingleResourceBelowThreshold()
     {
-        var result = Evaluate(64, 23, 16, 50);
+        var result = Evaluate(32, 23, 12, 16);
         var heavy = result.Assessments.Single(assessment =>
             assessment.Bundle.Id == ImageAnalysisBundleCatalog.HeavyId);
         var vram = heavy.Resources.Single(resource =>
@@ -141,12 +141,12 @@ public sealed class ImageAnalysisRecommendationServiceTests
     }
 
     [TestMethod]
-    public void Evaluate_CanRecommendUnavailableHeavyBundle()
+    public void Evaluate_CanRecommendAvailableHeavyBundle()
     {
         var result = Evaluate(128, 24, 32, 100);
 
         Assert.AreEqual(ImageAnalysisBundleCatalog.HeavyId, result.Recommendation?.Bundle.Id);
-        Assert.IsFalse(result.Recommendation?.Bundle.IsAvailable);
+        Assert.IsTrue(result.Recommendation?.Bundle.IsAvailable);
     }
 
     [TestMethod]

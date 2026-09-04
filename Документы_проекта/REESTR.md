@@ -4,6 +4,21 @@
 
 Реальные зависимости, модели и backends перечислены ниже.
 
+### Уточнение Heavy runtime, 0.1.26-dev (2026-09-04)
+
+Новых внешних зависимостей и загрузок нет. В существующем изолированном
+runtime добавлен собственный adapter `Исходники/AIHub/Tools/omni_attention.py`
+(лицензия кода проекта), выбираемый только Heavy через Transformers
+AttentionInterface/AttentionMaskInterface. Системный torch и site-packages
+не редактируются. На проверенном Windows-стеке grouped SDPA MATH заменяется
+эквивалентным repeat-KV с EFFICIENT_ATTENTION; имеется очистка unused cache.
+Qwen2.5-Omni-3B BF16, CUDA-only, Thinker-only и ограничения лицензии модели
+сохраняются. ИИ+ не возвращается в сценарий; CPU-Kokoro не изменялась.
+Новые `OmniResponses` — локальные диагностические артефакты сессии,
+содержащие пользовательский текст/паспорт файла; это не runtime-зависимость
+и не материалы для автоматической публикации. Перед публикацией сырых
+пользовательских логов требуется проверить их состав.
+
 ## Runtime-зависимости
 
 | Название | Назначение | Версия | Лицензия | Источник | Поставка вместе с программой | Ограничения |
@@ -14,6 +29,7 @@
 | RHVoice через Windows SAPI | Альтернативный голос ядра и временный ролевой голос исполнителя «Режима неопределённости» | Engine 1.18.1; Aleksandr 4.2.2; Slt 4.1.2; Elena 4.3; Bdl 4.1 | RHVoice engine: LGPL-2.1-or-later для C API, репозиторий также помечен GPL-2.0; Slt/BDL основаны на CMU voices; лицензии отдельных русских voice-пакетов требуют отдельной проверки | Официальные releases `RHVoice/aleksandr-rus`, `RHVoice/slt-eng`, `RHVoice/elena-rus`, `RHVoice/bdl-eng`; установка скриптом `Инструменты/setup-rhvoice.ps1` | Нет, используется как отдельно установленный системный SAPI-компонент | Ядро: Aleksandr/Slt; исполнитель текущего сценария: Elena/Bdl. Установщики не включать в publish до юридической проверки. SHA-256 Elena `23E130...B643`, Bdl `F9C51B...4847` закреплены полностью в setup-скрипте |
 | Python Transformers runtime | Временный локальный runtime для `BAAI/bge-reranker-v2-m3` и offline smoke-check `Florence-2-large-ft` | Python 3.12 venv в `Runtime/Python/reranker/.venv`; `torch 2.12.0+cpu`, `torchvision 0.27.0+cpu`, `Pillow 12.3.0`, `transformers 4.41.2`, `tokenizers 0.19.1`, `huggingface-hub 0.36.2`, `timm 1.0.28`, `einops 0.8.2`, `safetensors 0.7.0` | Python PSF; PyTorch/Torchvision BSD-style; Pillow HPND; Transformers/Tokenizers/Safetensors Apache-2.0; timm Apache-2.0; einops MIT | Установлено локально через `pip` в runtime-папку проекта | Нет, runtime-папка не публикуется в GitHub | Временное dev-решение; Florence запускается только из закреплённой локальной папки при `HF_HUB_OFFLINE=1` и `TRANSFORMERS_OFFLINE=1`. Реальный offline smoke-test с загрузкой весов, обработкой изображения и генерацией ответа пройден 2026-08-24; перед релизом нужен управляемый runtime |
 | Python Kokoro runtime | CPU-runtime нейросетевой озвучки короткой контрольной сводки сценария `Анализ изображений` | Python 3.12; `kokoro 0.9.4`, `misaki[en] 0.9.4`, `ruaccent 1.5.8.3`, `onnxruntime 1.29.0`; использует уже установленный CPU PyTorch | Kokoro/Misaki/RUAccent — Apache-2.0; ONNX Runtime — MIT; транзитивные пакеты фиксируются отдельно перед поставкой | PyPI; воспроизводимый dev-скрипт `Инструменты/setup-kokoro-runtime.ps1` | Пока нет: подготовлен только локальный dev-runtime | Запускается отдельным offline worker на CPU; не имеет доступа к Matrix-дождю. До пользовательской загрузки голосовых файлов реальный TTS smoke-test и замеры cold/warm start не выполняются; при любой ошибке доступна программная читалка |
+| Python Qwen2.5-Omni Heavy runtime | Изолированный native Windows CUDA-worker для зрения, редактуры и Talker Тяжёлого режима | Python `3.12.10`; `torch 2.11.0+cu130`, `torchvision 0.26.0+cu130`, `torchaudio 2.11.0+cu130`; `transformers 5.16.1`; `accelerate 1.14.0`; `qwen-omni-utils 0.0.9`; `numpy 2.5.2`; `soundfile 0.14.0`; `audioread 3.1.0` | Python PSF; PyTorch/Torchvision/Torchaudio BSD-style; Transformers/Accelerate/qwen-omni-utils Apache-2.0; NumPy BSD-3-Clause; SoundFile BSD-3-Clause; audioread MIT | Official PyTorch cu130 index/PyPI; воспроизводимый скрипт `Инструменты/setup-qwen-omni-runtime.ps1` | Нет: runtime не входит в Git/установщик | Среда создана 2026-08-29. Inference принудительно offline. С 0.1.19 анализ использует официальный Thinker-only и PyTorch SDPA; внешний FlashAttention 2 выбирается автоматически, только если он уже совместимо установлен. Полный Omni загружается отдельно по явному запросу речи. Сквозной анализ и Talker подтверждены, производительность нового профиля ждёт пользовательской проверки |
 
 ## Developer tooling
 
@@ -65,6 +81,7 @@ HUB не считает наличие GGUF и projector доказательс�
 
 | Название | Назначение | Версия/квант | Лицензия | Источник | Размер | Ограничения |
 |---|---|---|---|---|---|---|
+| Qwen2.5-Omni-3B | Последний экспериментальный checkpoint Тяжёлого режима: Thinker-only для зрения/текста и взаимоисключающий полный профиль для встроенной речи | BF16 Safetensors, official revision `f75b40e3da2003cdd6e1829b1f420ca70797c34e`; полные Thinker и Talker | Qwen Research License Agreement; только некоммерческое исследовательское и оценочное использование | Hugging Face `Qwen/Qwen2.5-Omni-3B` | 16 обязательных файлов, 3 shards; `11989065629` байт; для каждого закреплены размер и SHA-256 | Не входит в Git и установщик; AI HUB скачивает только после явного подтверждения. Для Heavy обязано полное размещение на CUDA GPU; CPU/disk offload приводит к отказу прогрева. При неудаче пользователь решил вернуться к архитектуре Среднего режима |
 | Qwen3 8B GGUF | Основное ИИ-ядро AI HUB: быстрый диспетчер сценариев, будущей RAG-памяти и выбора инструментов | Qwen3 8B / GGUF / Q4_K_M / файл `Qwen3-8B-Q4_K_M.gguf` | Apache-2.0 | Hugging Face `Qwen/Qwen3-8B-GGUF`, commit `7c41481f57cb95916b40956ab2f0b139b296d974` | `5027783488` байт, около 5.03 ГБ | Не поставляется внутри установщика; скачивается отдельно пользователем через AI HUB в выбранную папку моделей; после загрузки проверяется SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785` |
 | Qwen3 0.6B GGUF | Тестовый web-download artifact для проверки, что ядро может попросить инструмент скачать маленькую модель | Qwen3 0.6B / GGUF / Q4_K_M / файл `Qwen3-0.6B-Q4_K_M.gguf` | Apache-2.0 | Hugging Face `jc-builds/Qwen3-0.6B-Q4_K_M-GGUF`, repo sha `c3111ad3faedb08c4abf76070a589e256258c62d` | `396705472` байт, около 397 МБ; SHA-256 `ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a` | Не является основным ядром и не включается в установщик; скачана в пользовательскую папку результатов `AI_HUB\Tools\Web\Downloads` для теста инструментов, Git ignored |
 | SmolVLM2 2.2B Instruct GGUF | Внутренний необязательный модуль смыслового описания изображений | GGUF Q4_K_M + мультимодальный проектор Q8_0, ревизия `1bc3c9f74ceafd4c8d4411cc9cf188bba3798f91` | Apache-2.0 | Hugging Face `ggml-org/SmolVLM2-2.2B-Instruct-GGUF` | Модель `1112602656` байт, SHA-256 `0cf76814555b8665149075b74ab6b5c1d428ea1d3d01c1918c12012e8d7c9f58`; проектор `592523200` байт, SHA-256 `ae07ea1facd07dd3230c4483b63e8cda96c6944ad2481f33d531f79e892dd024` | Не входит в установщик и Git; скачивается внутри AI HUB только после подтверждения. Запускается скрытым `llama-server` через адаптер `adapter.image.semantic` и инструмент `session_image_describe`; не заменяет OCR и редактирование изображения |
@@ -109,5 +126,14 @@ BSD-3-Clause; AvalonEdit — MIT. Эти пакеты также не входя
 отдельного решения о поставке.
 
 ## Правило
+
+### Atlas Scout — внешний developer tooling (2026-09-04)
+
+- Runtime `1.0.0-preview.29`, Free, ZaguanLabs; источник <https://atlasscout.dev/docs>.
+- Проприетарная лицензия runtime и комплектный EULA; не включён в AI HUB,
+  его установщик или Git. Поставка с продуктом не разрешалась и не планируется.
+- Назначение: локальная структурная навигация Codex, шесть бесплатных MCP tools.
+  Python — полная поддержка, C# — частичная. Pro/trial не активированы.
+- Проверки и откат: `Диагностика/2026-09-04_Atlas_Scout_Free_настройка.md`.
 
 Перед добавлением любой зависимости нужно обновить этот файл и, если требуется, `THIRD_PARTY_NOTICES.md`.
