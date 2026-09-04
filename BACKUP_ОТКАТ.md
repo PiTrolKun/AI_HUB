@@ -2,6 +2,13 @@
 
 ## 2026-09-04 — закрытие двух Heavy-ТЗ и подготовка исследования Kokoro
 
+- Публикация: `6fe26db7f6a0a7007bb65b4b77c776d902e3dda6`, origin/main.
+  Обычный push успешен, `git ls-remote` подтвердил совпадение hash.
+  Предыдущий опубликованный baseline: `73fa4b2`; общий откат к нему не
+  выполнять без отдельного решения, он уберёт весь накопленный Heavy-этап.
+- Staged diff-check, проверка ссылок и UTF-8 scanner экспорта Git прошли.
+  Сырьё тестов и две посторонние идеи остались локально без изменений.
+
 - Path-safe backup `.gitignore`, обоих ТЗ, ТЗ/README, CONTEXTHUB,
   Диалог_сжато, этого файла, README/ROADMAP проекта:
   `_backups/20260904_heavy_close_and_kokoro_spec`.
