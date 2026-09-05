@@ -1,4 +1,3 @@
-````markdown
 # LOPATA
 
 **Локальная AI-платформа для Windows 11.**
@@ -270,15 +269,6 @@ LOPATA управляет моделями и runtime-компонентами �
 В репозитории зафиксирован .NET SDK `10.0.300`.
 
 Базовая сборка:
-
-```powershell
-git clone https://github.com/PiTrolKun/LOPATA.git
-cd LOPATA
-
-dotnet restore "Исходники/AIHub/AIHub.csproj"
-dotnet build "Исходники/AIHub/AIHub.csproj"
-dotnet run --project "Исходники/AIHub/AIHub.csproj"
-````
 
 Для разработки отдельных AI-сценариев могут потребоваться дополнительные runtime-компоненты и модели.
 
