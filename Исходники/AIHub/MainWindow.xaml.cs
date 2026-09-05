@@ -131,6 +131,7 @@ public partial class MainWindow : Window
         PreviewKeyDown += MainWindow_PreviewKeyDown;
         InitializeLocalization();
         InitializeInterfaceSettings();
+        InitializeComponentLicenses();
         _coreSpeechCoordinator = new CoreSpeechPresentationCoordinator(
             new CoreVoiceEngineRouter(new EspeakCoreVoiceEngine(), new RhVoiceCoreVoiceEngine()));
         _executorSpeechCoordinator = new CoreSpeechPresentationCoordinator(
@@ -162,8 +163,10 @@ public partial class MainWindow : Window
         ApplyTheme();
     }
 
-    private void PrimaryActionButton_Click(object sender, RoutedEventArgs e)
+    private async void PrimaryActionButton_Click(object sender, RoutedEventArgs e)
     {
+        try { await ComponentLicenseGate.EnsureAsync("basic", CancellationToken.None); }
+        catch (OperationCanceledException) { return; }
         if (_appState.HasCompletedSetup)
         {
             var coreModelCheck = _coreModelManager.Check(_storageSettings);
@@ -477,6 +480,7 @@ public partial class MainWindow : Window
 
     private void ApplyLocalization()
     {
+        ComponentLicensesButton.Content = L("licenses.title");
         HeaderProductNameText.Text = L("App.ProductName");
         HeaderSubtitleText.Text = L("App.Subtitle");
         ProfileButton.ToolTip = L("Header.ProfileTooltip");

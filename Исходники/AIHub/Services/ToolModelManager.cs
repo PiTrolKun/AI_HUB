@@ -55,6 +55,7 @@ public sealed class ToolModelManager
         IProgress<CoreModelDownloadProgress> progress,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("bge-reranker-v2-m3-tool", cancellationToken);
         var paths = BuildRerankerPaths(storageSettings)
             ?? throw new InvalidOperationException("Models storage is not configured.");
 

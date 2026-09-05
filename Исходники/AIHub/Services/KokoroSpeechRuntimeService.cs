@@ -366,6 +366,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
         long pendingAllocationBytes,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync(languageCode == "ru"
+            ? ManagedModelCatalog.KokoroRussianArtifactId : ManagedModelCatalog.KokoroEnglishArtifactId, cancellationToken);
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_process is { HasExited: false }
             && string.Equals(_loadedLanguage, languageCode, StringComparison.Ordinal))

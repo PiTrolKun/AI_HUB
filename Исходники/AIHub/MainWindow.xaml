@@ -827,6 +827,8 @@
                            Foreground="{DynamicResource TextPrimaryBrush}"
                            FontSize="{DynamicResource UiPageTitleFontSize}"
                            FontWeight="SemiBold" />
+                <Button x:Name="ComponentLicensesButton" Content="Лицензии компонентов"
+                        HorizontalAlignment="Left" Margin="0,8,0,8" Click="ComponentLicensesButton_Click" />
                 <TextBlock x:Name="SettingsDescriptionText"
                            Text="Здесь будут общие настройки ЛОПАТА. Сейчас доступен выбор языка интерфейса."
                            Foreground="{DynamicResource TextSecondaryBrush}"

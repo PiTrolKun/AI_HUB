@@ -37,6 +37,7 @@ public sealed class ManagedModelAcquisitionService : IDisposable
     {
         var card = _store.Load(modelArtifactId)
             ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
+        await ComponentLicenseGate.EnsureAsync(modelArtifactId, cancellationToken);
         EnsureDownloadable(card);
         var installRoot = Path.GetFullPath(card.InstallDirectory);
         Directory.CreateDirectory(installRoot);
@@ -105,6 +106,7 @@ public sealed class ManagedModelAcquisitionService : IDisposable
     {
         var card = _store.Load(modelArtifactId)
             ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
+        await ComponentLicenseGate.EnsureAsync(modelArtifactId, cancellationToken);
         EnsureDownloadable(card);
         var installRoot = Path.GetFullPath(card.InstallDirectory);
         Directory.CreateDirectory(installRoot);

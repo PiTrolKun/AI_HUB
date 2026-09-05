@@ -1,0 +1,146 @@
+[
+  {
+    "Component": "Kokoro RU",
+    "Url": "https://huggingface.co/zaakirio/kokoro-ru/raw/27d078fe1c0cab919613a64e906919214385f21d/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "905BCB403A9D99141A6EE6EE4E130C2E2F4DACE3832F74A8DB75FD6DC3842C61",
+    "Marker": "license: openrail",
+    "Note": "Author declares OpenRAIL weights and Apache-2.0 code; exact OpenRAIL text absent from pinned tree"
+  },
+  {
+    "Component": "Kimi conversion",
+    "Url": "https://huggingface.co/judd2024/chatllm_quantized_kimi-vl/raw/master/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": "failed",
+    "TextSha256": "",
+    "Marker": "",
+    "Note": "Access failed during preparation; do not infer converter license from upstream; Response status code does not indicate success: 401 (Unauthorized)."
+  },
+  {
+    "Component": "Kimi upstream",
+    "Url": "https://huggingface.co/moonshotai/Kimi-VL-A3B-Thinking-2506/raw/main/LICENSE",
+    "Checked": "2026-09-05",
+    "HttpStatus": "failed",
+    "TextSha256": "",
+    "Marker": "",
+    "Note": "Upstream license only; Response status code does not indicate success: 404 (Not Found)."
+  },
+  {
+    "Component": "Qwen3 core",
+    "Url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/raw/7c41481f57cb95916b40956ab2f0b139b296d974/LICENSE",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "5DE36594C10839788A8C589443A8EF9D8B8D17C65A1B5807206AE037FC36C6BD",
+    "Marker": "                                 Apache License\r",
+    "Note": "Pinned core repository"
+  },
+  {
+    "Component": "Omni 3B",
+    "Url": "https://huggingface.co/Qwen/Qwen2.5-Omni-3B/raw/f75b40e3da2003cdd6e1829b1f420ca70797c34e/LICENSE",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "AE8EF9D3FB476F735D9B9ABEAAB73B7F778B121C77427CD918EC3DA01EEFBC44",
+    "Marker": "Qwen RESEARCH LICENSE AGREEMENT",
+    "Note": "Research/evaluation noncommercial restriction"
+  },
+  {
+    "Component": "Kokoro EN",
+    "Url": "https://huggingface.co/hexgrad/Kokoro-82M/raw/f3ff3571791e39611d31c381e3a41a3af07b4987/LICENSE",
+    "Checked": "2026-09-05",
+    "HttpStatus": "failed",
+    "TextSha256": "",
+    "Marker": "",
+    "Note": "Pinned repository; Response status code does not indicate success: 404 (Not Found)."
+  },
+  {
+    "Component": "Florence",
+    "Url": "https://huggingface.co/microsoft/Florence-2-large-ft/raw/4a12a2b54b7016a48a22037fbd62da90cd566f2a/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "A7CE927349DEE88FBE0CA4C9944D38B88C7025B3731AE15F0A2F1B1C42AA49CC",
+    "Marker": "license: mit",
+    "Note": "Model card metadata"
+  },
+  {
+    "Component": "RUAccent",
+    "Url": "https://huggingface.co/ruaccent/accentuator/raw/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "13DE1B452C87D69D255E0C6B9E7DC6686E672D15746578EA3B20A7D0F4490D7E",
+    "Marker": "license: mit",
+    "Note": "Model card; additional code and dictionaries remain separately identifiable"
+  },
+  {
+    "Component": "SmolVLM2",
+    "Url": "https://huggingface.co/ggml-org/SmolVLM2-2.2B-Instruct-GGUF/raw/1bc3c9f74ceafd4c8d4411cc9cf188bba3798f91/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "8405361492F33BDD9FDAEB0B49F2A12E4E9F268399DAECECCAFC808F9B75CC40",
+    "Marker": "license: apache-2.0",
+    "Note": "GGUF model card"
+  },
+  {
+    "Component": "WPF",
+    "Url": "https://raw.githubusercontent.com/dotnet/wpf/main/LICENSE.TXT",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "AE48DF11A335DC1A615F4F938B69CBA73BCF4485C4F97AF49B38EFB0F216353B",
+    "Marker": "The MIT License (MIT)",
+    "Note": "Upstream MIT; per-file third-party notices still apply"
+  },
+  {
+    "Component": "OpenSSL 1.1.1k",
+    "Url": "https://raw.githubusercontent.com/openssl/openssl/OpenSSL_1_1_1k/LICENSE",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "C32913B33252E71190AF2066F08115C69BC9FDDADF3BF29296E20C835389841C",
+    "Marker": "  LICENSE ISSUES",
+    "Note": "OpenSSL AND SSLeay, not Apache-2.0"
+  },
+  {
+    "Component": "Vulkan Loader",
+    "Url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Loader/v1.4.304/LICENSE.txt",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "43C0A37E6A0FA7FF3C843B3EC5A4FAC84B712558DDAC103FBD4C1649662A9ECE",
+    "Marker": "                                 Apache License",
+    "Note": "Apache-2.0 majority, permissive exceptions"
+  },
+  {
+    "Component": "eSpeak NG",
+    "Url": "https://raw.githubusercontent.com/espeak-ng/espeak-ng/1.52.0/COPYING",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "8CEB4B9EE5ADEDDE47B31E975C1D90C73AD27B6B165A1DCD80C7C545EB65B903",
+    "Marker": "                    GNU GENERAL PUBLIC LICENSE",
+    "Note": "GPLv3 text; source distribution duties must be addressed"
+  },
+  {
+    "Component": "llama.cpp",
+    "Url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/b9442/LICENSE",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "94F29BBED6A22C35B992C5C6EBF0E7C92F13B836B90F36F461C9CF2F0F1D010D",
+    "Marker": "MIT License",
+    "Note": "Backend license excludes separately licensed native DLLs"
+  },
+  {
+    "Component": "Kokoro EN README",
+    "Url": "https://huggingface.co/hexgrad/Kokoro-82M/raw/f3ff3571791e39611d31c381e3a41a3af07b4987/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "91DCABCED89DB6F109B8786642F50402D3EE87450E8189589B6F85520E7F4D78",
+    "Marker": "license: apache-2.0",
+    "Note": "Author declaration in model card; complements missing LICENSE file check"
+  },
+  {
+    "Component": "Kimi upstream README",
+    "Url": "https://huggingface.co/moonshotai/Kimi-VL-A3B-Thinking-2506/raw/main/README.md",
+    "Checked": "2026-09-05",
+    "HttpStatus": 200,
+    "TextSha256": "840D2B966176F9E1742BD3143DCF8CDE33E444734F799E1502CBA9D0C85643BF",
+    "Marker": "license: mit",
+    "Note": "Author declaration in model card; complements missing LICENSE file check"
+  }
+]

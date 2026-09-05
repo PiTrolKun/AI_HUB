@@ -397,6 +397,7 @@ public sealed class LlamaServerRuntimeService : IDisposable
 
     private async Task EnsureStartedAsync(DebugModelInfo model, Action<string> log, CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("basic", cancellationToken);
         await _startupGate.WaitAsync(cancellationToken);
         try
         {

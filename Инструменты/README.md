@@ -1,4 +1,4 @@
-# Инструменты — AI_HUB
+# Инструменты — LOPATA
 
 Будущая папка для вспомогательных скриптов и инструментов разработки.
 
@@ -26,12 +26,12 @@ powershell -ExecutionPolicy Bypass -File .\Инструменты\check-cyrillic
 
 ### `build-installer.ps1`
 
-Собирает тестовый установщик AI_HUB через Inno Setup.
+Собирает тестовый установщик LOPATA через Inno Setup.
 
 Обычный запуск лучше делать двойным кликом по файлу в корне проекта:
 
 ```text
-Собрать_установщик_AI_HUB.cmd
+Собрать_установщик_LOPATA.cmd
 ```
 
 Что делает скрипт:
@@ -40,7 +40,8 @@ powershell -ExecutionPolicy Bypass -File .\Инструменты\check-cyrillic
 - выполняет `dotnet publish` для `win-x64`;
 - собирает self-contained приложение;
 - запускает Inno Setup Compiler;
-- складывает готовый `.exe` в `Тесты/Установщики`.
+- складывает `LOPATA_Setup_<версия>.exe` в `Тесты/Установщики`.
+- новая установка по умолчанию использует `%LOCALAPPDATA%\Programs\LOPATA`; папки пользовательских данных AI_HUB сохранены.
 
 Если Inno Setup не установлен, скрипт покажет команду:
 

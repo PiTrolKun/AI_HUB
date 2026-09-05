@@ -31,6 +31,7 @@ public sealed class SemanticImageToolService
         string languageCode,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync(ModelComponentId, cancellationToken);
         var image = ResolveImage(manifest, fileId);
         var statuses = new ComponentManager().GetStatus(ComponentKinds.Processing)
             .ToDictionary(status => status.Entry.Id, StringComparer.OrdinalIgnoreCase);

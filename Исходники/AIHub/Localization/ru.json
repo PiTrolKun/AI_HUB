@@ -1129,5 +1129,16 @@
   "ImageAnalysis.Workspace.Audio.Play": "Воспроизвести",
   "ImageAnalysis.Workspace.Audio.Pause": "Пауза",
   "ImageAnalysis.Workspace.Audio.Export": "Экспортировать аудио…",
-  "ImageAnalysis.Workspace.ChangeFile": "Изменить файл"
+  "ImageAnalysis.Workspace.ChangeFile": "Изменить файл",
+  "licenses.title": "Лицензии компонентов",
+  "licenses.save_error": "Не удалось сохранить подтверждение. Проверьте доступ к папке настроек и повторите попытку.",
+  "licenses.close": "Закрыть",
+  "licenses.cancel": "Отмена",
+  "licenses.download": "Скачивается отдельно",
+  "licenses.explanation": "Ознакомьтесь с лицензиями и сведениями о компонентах. Соблюдайте применимые условия. Подтверждение не заменяет отсутствующих условий и не предоставляет дополнительных прав.",
+  "licenses.checked": "Проверено:",
+  "licenses.accept": "Ознакомлен, продолжить",
+  "licenses.bundled": "Входит в установку",
+  "licenses.source_only": "Полный текст локально не подготовлен. Сведения и применимые условия доступны по ссылке на источник; полнота проверки не подтверждена.",
+  "licenses.open_source": "Открыть источник"
 }

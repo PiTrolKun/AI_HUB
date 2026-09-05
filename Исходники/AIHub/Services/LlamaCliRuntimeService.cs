@@ -25,6 +25,7 @@ public sealed class LlamaCliRuntimeService
         Action<string> log,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("basic", cancellationToken);
         if (!IsAvailable)
         {
             throw new FileNotFoundException("llama-cli.exe was not found.", ExpectedExecutablePath);

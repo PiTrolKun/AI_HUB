@@ -27,6 +27,7 @@ public sealed class ExecutorModelInstaller : IDisposable
     {
         ArgumentNullException.ThrowIfNull(artifact);
         ArgumentNullException.ThrowIfNull(storageSettings);
+        await ComponentLicenseGate.EnsureAsync(artifact.RepoId, cancellationToken);
         var modelsRoot = storageSettings.Models.Locations
             .Select(value => value.Path?.Trim())
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))

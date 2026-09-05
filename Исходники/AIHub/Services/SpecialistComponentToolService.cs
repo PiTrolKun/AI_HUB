@@ -109,6 +109,7 @@ public sealed class SpecialistComponentToolService
         string fileId,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("basic", cancellationToken);
         var file = ResolveFile(manifest, fileId, SessionFileCategories.Image);
         var executable = ResolveProcessingComponentArtifact("runtime.imagemagick");
         var startInfo = CreateToolStartInfo(executable);
@@ -144,6 +145,7 @@ public sealed class SpecialistComponentToolService
         string language,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("basic", cancellationToken);
         var file = ResolveFile(manifest, fileId, SessionFileCategories.Image);
         var executable = ResolveProcessingComponentArtifact("runtime.tesseract");
         var normalizedLanguage = NormalizeTesseractLanguage(language);
@@ -180,6 +182,7 @@ public sealed class SpecialistComponentToolService
         bool stripMetadata,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("basic", cancellationToken);
         var file = ResolveFile(manifest, fileId, SessionFileCategories.Image);
         var executable = ResolveProcessingComponentArtifact("runtime.imagemagick");
         var normalizedFormat = NormalizeImageFormat(outputFormat);
@@ -240,6 +243,7 @@ public sealed class SpecialistComponentToolService
         string language,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync("basic", cancellationToken);
         var file = ResolveFile(manifest, fileId, SessionFileCategories.Audio);
         var statuses = _componentManager.GetStatus(ComponentKinds.Processing)
             .ToDictionary(status => status.Entry.Id, StringComparer.OrdinalIgnoreCase);

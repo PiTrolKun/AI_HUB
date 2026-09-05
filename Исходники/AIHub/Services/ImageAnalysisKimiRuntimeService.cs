@@ -136,6 +136,7 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
         Action<string> log,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync(ManagedModelCatalog.KimiMediumArtifactId, cancellationToken);
         await _runtimeGate.WaitAsync(cancellationToken);
         try
         {

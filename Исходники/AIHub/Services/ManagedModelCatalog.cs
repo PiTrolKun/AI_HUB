@@ -250,7 +250,7 @@ public static class ManagedModelCatalog
         Format = "PyTorch",
         Architecture = "kokoro-styletts2",
         ParameterCount = 81_810_000,
-        License = "OpenRAIL weights; Apache-2.0 code/RUAccent; GPL-3.0-or-later eSpeak data",
+        License = "OpenRAIL weights (exact terms unavailable); Apache-2.0 code; accentuator declares MIT; GPL-3.0-or-later eSpeak data",
         SourcePage = $"https://huggingface.co/{KokoroRussianRepository}",
         IsManaged = true,
         CanRemoveFiles = true,

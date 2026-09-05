@@ -122,6 +122,7 @@ public sealed class ComponentManager
         CancellationToken cancellationToken)
     {
         var ordered = ComponentCatalog.ResolveDependencies([componentId]);
+        await ComponentLicenseGate.EnsureAsync(ordered.Select(x => x.Id).ToArray(), cancellationToken);
         ComponentStatusSnapshot? result = null;
         for (var index = 0; index < ordered.Count; index++)
         {

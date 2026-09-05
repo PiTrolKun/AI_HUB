@@ -1129,5 +1129,16 @@
   "ImageAnalysis.Workspace.Audio.Play": "Play",
   "ImageAnalysis.Workspace.Audio.Pause": "Pause",
   "ImageAnalysis.Workspace.Audio.Export": "Export audio…",
-  "ImageAnalysis.Workspace.ChangeFile": "Change file"
+  "ImageAnalysis.Workspace.ChangeFile": "Change file",
+  "licenses.title": "Component licenses",
+  "licenses.save_error": "Could not save acknowledgement. Check access to the settings folder and try again.",
+  "licenses.close": "Close",
+  "licenses.cancel": "Cancel",
+  "licenses.download": "Downloaded separately",
+  "licenses.explanation": "Review the component licenses and information. Follow the applicable terms. Acknowledgement does not replace missing terms or grant additional rights.",
+  "licenses.checked": "Checked:",
+  "licenses.accept": "Acknowledge and continue",
+  "licenses.bundled": "Included in installation",
+  "licenses.source_only": "The full text is not available locally. See the source link for information and applicable terms; review completeness is not confirmed.",
+  "licenses.open_source": "Open source page"
 }

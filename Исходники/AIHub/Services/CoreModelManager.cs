@@ -126,6 +126,7 @@ public sealed class CoreModelManager
         IProgress<CoreModelDownloadProgress> progress,
         CancellationToken cancellationToken)
     {
+        await ComponentLicenseGate.EnsureAsync(ManagedModelCatalog.CoreArtifactId, cancellationToken);
         var modelsRoot = GetModelsRoot(storageSettings);
         if (string.IsNullOrWhiteSpace(modelsRoot))
         {

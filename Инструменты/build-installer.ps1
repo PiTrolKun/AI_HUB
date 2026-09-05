@@ -44,7 +44,7 @@ $projectPath = Join-Path $repoRoot 'Исходники\AIHub\AIHub.csproj'
 $versionPath = Join-Path $repoRoot 'VERSION'
 $publishDir = Join-Path $repoRoot 'Runtime\Publish\AIHub-win-x64'
 $installerDir = Join-Path $repoRoot 'Тесты\Установщики'
-$innoScriptPath = Join-Path $repoRoot 'Инструменты\Installer\AI_HUB.iss'
+$innoScriptPath = Join-Path $repoRoot 'Инструменты\Installer\LOPATA.iss'
 $iconPath = Join-Path $repoRoot 'Исходники\AIHub\Assets\AppIcon.ico'
 $backendDir = Join-Path $repoRoot 'Runtime\Backends\llama.cpp\b9442\win-cuda-12.4-x64'
 $chatLlmBackendDir = Join-Path $repoRoot 'Runtime\Backends\chatllm.cpp\v24\win-x64'
@@ -85,12 +85,12 @@ if ([string]::IsNullOrWhiteSpace($version)) {
 New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
 New-Item -ItemType Directory -Path $installerDir -Force | Out-Null
 
-Write-Host "AI_HUB: build test installer."
+Write-Host "LOPATA: build test installer."
 Write-Host "Version: $version"
 Write-Host "Output: $installerDir"
 
 if (-not $SkipPublish) {
-    Write-Step "Publishing AI HUB"
+    Write-Step "Publishing LOPATA"
     dotnet publish $projectPath `
         --configuration Release `
         --runtime win-x64 `
@@ -98,12 +98,29 @@ if (-not $SkipPublish) {
         --output $publishDir `
         -p:PublishSingleFile=false `
         -p:PublishReadyToRun=false
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet publish завершился с ошибкой: $LASTEXITCODE"
+    }
 }
 else {
     Write-Step "Publish skipped"
 }
 
 $exePath = Join-Path $publishDir 'AIHub.exe'
+$licenseCatalog = Join-Path $publishDir 'Licenses\catalog.json'
+foreach ($required in @('catalog.json', 'installer.txt', 'installer-receipt.json')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $publishDir "Licenses\$required"))) {
+        throw "В publish отсутствует лицензионный комплект: $required. Выполните актуальный publish."
+    }
+}
+$licenseEntries = Get-Content -LiteralPath $licenseCatalog -Raw | ConvertFrom-Json
+foreach ($entry in $licenseEntries) {
+    foreach ($text in $entry.Texts) {
+        if (-not (Test-Path -LiteralPath (Join-Path $publishDir "Licenses\$text"))) {
+            throw "В publish отсутствует текст лицензии: $text"
+        }
+    }
+}
 if (-not (Test-Path -LiteralPath $exePath)) {
     throw "После publish не найден AIHub.exe: $exePath"
 }
@@ -118,7 +135,7 @@ if (-not $iscc) {
     Write-Host ""
     Write-Host "  winget install --id JRSoftware.InnoSetup -e"
     Write-Host ""
-    Write-Host "После установки снова запустите Собрать_установщик_AI_HUB.cmd."
+    Write-Host "После установки снова запустите Собрать_установщик_LOPATA.cmd."
     exit 2
 }
 
@@ -136,8 +153,11 @@ $arguments = @(
 )
 
 & $iscc @arguments
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup завершился с ошибкой: $LASTEXITCODE"
+}
 
-$setupPath = Join-Path $installerDir "AI_HUB_Setup_$version.exe"
+$setupPath = Join-Path $installerDir "LOPATA_Setup_$version.exe"
 if (-not (Test-Path -LiteralPath $setupPath)) {
     throw "Сборка завершилась, но ожидаемый установщик не найден: $setupPath"
 }

@@ -63,6 +63,7 @@ public sealed class Qwen25OmniRuntimeService : IDisposable
         CancellationToken cancellationToken,
         bool reuseCurrentPlan = false)
     {
+        await ComponentLicenseGate.EnsureAsync(ManagedModelCatalog.Qwen25OmniHeavyArtifactId, cancellationToken);
         ObjectDisposedException.ThrowIf(_disposed, this);
         var card = ResolveReadyCard();
         progress?.Report(new ImageAnalysisLiteraryProgress(
