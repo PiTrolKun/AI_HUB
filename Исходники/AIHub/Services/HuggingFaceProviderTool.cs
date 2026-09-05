@@ -126,7 +126,7 @@ public sealed class HuggingFaceProviderTool
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"https://huggingface.co/api/models/{repoId}?blobs=true"));
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        request.Headers.UserAgent.ParseAdd("LOPATA/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -207,7 +207,7 @@ public sealed class HuggingFaceProviderTool
         var candidates = new List<HuggingFaceModelCandidate>();
         var searchUri = new Uri($"https://huggingface.co/api/models?search={Uri.EscapeDataString(query)}&limit=10&full=true&config=false");
         using var request = new HttpRequestMessage(HttpMethod.Get, searchUri);
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        request.Headers.UserAgent.ParseAdd("LOPATA/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         using var searchResponse = await _httpClient.SendAsync(request, cancellationToken);
         searchResponse.EnsureSuccessStatusCode();
         var json = await searchResponse.Content.ReadAsStringAsync(cancellationToken);

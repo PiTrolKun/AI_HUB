@@ -27,7 +27,7 @@ public sealed class ImageAnalysisRuntimeCompatibilityService
         IProgress<ManagedModelDownloadProgress>? progress = null)
     {
         var card = _store.Load(modelArtifactId)
-            ?? throw new InvalidOperationException("The model card is not registered in the AI HUB library.");
+            ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
         try
         {
             if (string.Equals(card.ModelArtifactId, ManagedModelCatalog.KimiMediumArtifactId, StringComparison.Ordinal))

@@ -135,7 +135,7 @@ public sealed class ToolModelManager
         var existingBytes = File.Exists(partialPath) ? new FileInfo(partialPath).Length : 0;
 
         using var request = new HttpRequestMessage(HttpMethod.Get, file.Source);
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        request.Headers.UserAgent.ParseAdd("LOPATA/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         if (existingBytes > 0)
         {
             request.Headers.Range = new RangeHeaderValue(existingBytes, null);

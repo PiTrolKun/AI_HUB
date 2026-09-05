@@ -34,7 +34,7 @@ public sealed class ManagedModelRemovalService
     public ManagedModelRemovalResult RemoveFiles(string modelArtifactId, bool includePartialFiles)
     {
         var card = _store.Load(modelArtifactId)
-            ?? throw new InvalidOperationException("The model card is not registered in the AI HUB library.");
+            ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
         EnsureRemovalAllowed(card);
         var root = Path.GetFullPath(card.ModelsRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         var installRoot = Path.GetFullPath(card.InstallDirectory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -72,7 +72,7 @@ public sealed class ManagedModelRemovalService
     {
         if (!card.IsManaged || !card.CanRemoveFiles)
         {
-            throw new InvalidOperationException("AI HUB does not own these model files and cannot remove them.");
+            throw new InvalidOperationException("LOPATA does not own these model files and cannot remove them.");
         }
         if (card.IsPinned)
         {

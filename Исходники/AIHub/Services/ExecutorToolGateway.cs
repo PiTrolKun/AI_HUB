@@ -75,7 +75,7 @@ public sealed class ExecutorToolGateway
                 new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase),
                 string.IsNullOrWhiteSpace(name) ? "unknown_tool" : name,
                 "tool_not_allowed",
-                "The requested tool is not exposed by AI HUB.",
+                "The requested tool is not exposed by LOPATA.",
                 nameof(InvalidOperationException),
                 sessionLog);
         }

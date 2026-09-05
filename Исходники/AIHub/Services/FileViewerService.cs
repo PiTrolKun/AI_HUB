@@ -48,7 +48,7 @@ public sealed class FileViewerService
             WpfMessageBox.Show(
                 owner,
                 localization.T("FileViewer.MissingFile"),
-                "AI HUB",
+                localization.T("App.ProductName"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
@@ -133,7 +133,7 @@ public sealed class FileViewerService
         var result = WpfMessageBox.Show(
             owner,
             localization.T("FileViewer.ExternalMissing"),
-            "AI HUB",
+            localization.T("App.ProductName"),
             MessageBoxButton.YesNoCancel,
             MessageBoxImage.Information);
         if (result == MessageBoxResult.Yes)

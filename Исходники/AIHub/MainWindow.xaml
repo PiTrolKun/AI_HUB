@@ -7,7 +7,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="AI HUB"
+        Title="ЛОПАТА"
         Width="980"
         Height="640"
         MinWidth="860"
@@ -71,6 +71,7 @@
         <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1F1F1F" />
         <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5D6470" />
         <SolidColorBrush x:Key="PanelBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="BrandBackdropBrush" Color="#DBD7D7" />
         <SolidColorBrush x:Key="LineBrush" Color="#DADDE3" />
         <SolidColorBrush x:Key="AccentBrush" Color="#2563EB" />
         <SolidColorBrush x:Key="AccentDarkBrush" Color="#1D4ED8" />
@@ -242,7 +243,7 @@
                     </Border>
                     <StackPanel Margin="12,0,0,0">
                         <TextBlock x:Name="HeaderProductNameText"
-                                   Text="AI_HUB"
+                                   Text="ЛОПАТА"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    FontSize="{DynamicResource UiHeaderTitleFontSize}"
                                    FontWeight="SemiBold" />
@@ -291,6 +292,9 @@
             </Grid>
         </Border>
 
+        <Border Grid.Row="1" Background="{DynamicResource BrandBackdropBrush}"
+                IsHitTestVisible="False"
+                Visibility="{Binding Visibility, ElementName=WelcomePage}" />
         <Grid x:Name="WelcomePage" Grid.Row="1" Margin="56,44,56,36">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.08*" />
@@ -298,7 +302,22 @@
                 <ColumnDefinition Width="0.92*" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel VerticalAlignment="Top">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="1.4*" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Viewbox Stretch="Uniform" Margin="0,0,18,20">
+                    <Border Width="1440" Height="1080" CornerRadius="32"
+                            Background="{DynamicResource BrandBackdropBrush}">
+                        <Image x:Name="HomeBrandImage" Source="Assets/lopata_brand.png"
+                               Stretch="Uniform" Margin="16"
+                               AutomationProperties.Name="ЛОПАТА / LOPATA" />
+                    </Border>
+                </Viewbox>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                <StackPanel VerticalAlignment="Bottom">
                 <TextBlock x:Name="HomeWelcomeTitleText"
                            Text="Добро пожаловать"
                            Foreground="{DynamicResource TextPrimaryBrush}"
@@ -311,14 +330,14 @@
                            FontWeight="SemiBold"
                            Margin="0,14,0,0" />
                 <TextBlock x:Name="HomeDescriptionText"
-                           Text="AI_HUB будет хранить модели, результаты и служебные файлы на выбранных дисках. Сейчас ничего не скачивается и не меняется без вашего подтверждения."
+                           Text="ЛОПАТА будет хранить модели, результаты и служебные файлы на выбранных дисках. Сейчас ничего не скачивается и не меняется без вашего подтверждения."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="{DynamicResource UiFont15}"
                            LineHeight="{DynamicResource UiLineHeight24}"
                            TextWrapping="Wrap"
                            Margin="0,12,18,0" />
 
-                <StackPanel Orientation="Horizontal" Margin="0,34,0,0">
+                <WrapPanel Margin="0,24,0,0">
                     <Button x:Name="PrimaryActionButton"
                             Content="Начать настройку"
                             Style="{StaticResource PrimaryButtonStyle}"
@@ -329,8 +348,10 @@
                             MinWidth="124"
                             Margin="12,0,0,0"
                             Click="ReconfigureButton_Click" />
-                </StackPanel>
+                </WrapPanel>
             </StackPanel>
+                </ScrollViewer>
+            </Grid>
 
             <Border Grid.Column="2"
                     Background="{DynamicResource PanelBrush}"
@@ -468,7 +489,7 @@
 
             <StackPanel>
                 <TextBlock x:Name="SetupTitleText"
-                           Text="Настройка AI HUB"
+                           Text="Настройка ЛОПАТА"
                            Foreground="{DynamicResource TextPrimaryBrush}"
                            FontSize="{DynamicResource UiFont32}"
                            FontWeight="SemiBold" />
@@ -807,7 +828,7 @@
                            FontSize="{DynamicResource UiPageTitleFontSize}"
                            FontWeight="SemiBold" />
                 <TextBlock x:Name="SettingsDescriptionText"
-                           Text="Здесь будут общие настройки AI HUB. Сейчас доступен выбор языка интерфейса."
+                           Text="Здесь будут общие настройки ЛОПАТА. Сейчас доступен выбор языка интерфейса."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="{DynamicResource UiBodyFontSize}"
                            LineHeight="{DynamicResource UiLineHeight24}"
@@ -870,7 +891,7 @@
                                    FontSize="{DynamicResource UiSectionFontSize}"
                                    FontWeight="SemiBold" />
                         <TextBlock x:Name="SettingsInterfaceHelpText"
-                                   Text="AI HUB автоматически подстраивает компоновку, а здесь можно выбрать личный размер текста и поведение окна при запуске."
+                                   Text="ЛОПАТА автоматически подстраивает компоновку, а здесь можно выбрать личный размер текста и поведение окна при запуске."
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    FontSize="{DynamicResource UiSmallFontSize}"
                                    TextWrapping="Wrap"
@@ -908,7 +929,7 @@
                         </Grid>
 
                         <TextBlock x:Name="InterfaceTextScalePreviewText"
-                                   Text="Пример текста: AI HUB подстроит интерфейс под выбранный размер."
+                                   Text="Пример текста: ЛОПАТА подстроит интерфейс под выбранный размер."
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    TextWrapping="Wrap"
                                    Margin="150,10,0,0" />
@@ -1410,7 +1431,7 @@
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    TextWrapping="Wrap" />
                         <CheckBox x:Name="PreferInternalViewersCheckBox"
-                                  Content="Открывать поддерживаемые файлы внутри AI HUB"
+                                  Content="Открывать поддерживаемые файлы внутри ЛОПАТА"
                                   Foreground="{DynamicResource TextPrimaryBrush}"
                                   Margin="0,12,0,0"
                                   Checked="PreferInternalViewersCheckBox_Changed"
@@ -1573,7 +1594,7 @@
                            FontSize="{DynamicResource UiFont32}"
                            FontWeight="SemiBold" />
                 <TextBlock x:Name="ProfileDescriptionText"
-                           Text="Профиль хранится локально и помогает AI HUB точнее обращаться к вам, учитывать местоположение и подбирать стиль работы."
+                           Text="Профиль хранится локально и помогает ЛОПАТА точнее обращаться к вам, учитывать местоположение и подбирать стиль работы."
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            FontSize="{DynamicResource UiFont15}"
                            LineHeight="{DynamicResource UiLineHeight24}"
@@ -1702,7 +1723,7 @@
                                        FontSize="{DynamicResource UiFont18}"
                                        FontWeight="SemiBold" />
                             <TextBlock x:Name="ProfileAnswerPreferencesHelpText"
-                                       Text="Выберите, как AI HUB должен чаще строить ответы. Можно отметить несколько вариантов."
+                                       Text="Выберите, как ЛОПАТА должен чаще строить ответы. Можно отметить несколько вариантов."
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="{DynamicResource UiFont13}"
                                        TextWrapping="Wrap"
@@ -1847,7 +1868,7 @@
                                FontSize="{DynamicResource UiFont26}"
                                FontWeight="SemiBold" />
                     <TextBlock x:Name="ProfileReminderDescriptionText"
-                               Text="Профиль помогает AI HUB точнее обращаться к вам, учитывать местоположение и подбирать стиль ответов и инструменты. Можно заполнить сейчас или продолжить без профиля."
+                               Text="Профиль помогает ЛОПАТА точнее обращаться к вам, учитывать местоположение и подбирать стиль ответов и инструменты. Можно заполнить сейчас или продолжить без профиля."
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                FontSize="{DynamicResource UiFont15}"
                                LineHeight="{DynamicResource UiLineHeight24}"
@@ -1977,7 +1998,7 @@
                                        FontSize="{DynamicResource UiCardTitleFontSize}"
                                        FontWeight="SemiBold" />
                             <TextBlock x:Name="ReasoningModeDescriptionText"
-                                       Text="Экспериментально проверить возможности AI HUB: собрать вводные, подобрать координатора и доступные инструменты."
+                                       Text="Экспериментально проверить возможности ЛОПАТА: собрать вводные, подобрать координатора и доступные инструменты."
                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                        FontSize="{DynamicResource UiBodyFontSize}"
                                        LineHeight="{DynamicResource UiLineHeight22}"

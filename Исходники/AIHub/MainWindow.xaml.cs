@@ -117,7 +117,7 @@ public partial class MainWindow : Window
         _executorWorkflowService.CheckpointChanged += ExecutorWorkflowService_CheckpointChanged;
         _choiceScenarioOrchestrator = new ChoiceScenarioOrchestrator(_choiceScenarioService);
         InitializeComponent();
-        Title = $"AI HUB {GetAppVersion()}";
+        Title = $"{ProductBrand.WindowsName} {GetAppVersion()}";
         _profileBlinkTimer.Interval = TimeSpan.FromMilliseconds(760);
         _profileBlinkTimer.Tick += ProfileBlinkTimer_Tick;
         _isDarkTheme = IsWindowsAppThemeDark();
@@ -198,6 +198,7 @@ public partial class MainWindow : Window
         SetBrush("WindowBackgroundBrush", _isDarkTheme ? "#111827" : "#F3F3F3");
         SetBrush("HeaderBackgroundBrush", _isDarkTheme ? "#0B1220" : "#FFFFFF");
         SetBrush("PanelBrush", _isDarkTheme ? "#172033" : "#FFFFFF");
+        SetBrush("BrandBackdropBrush", _isDarkTheme ? "#00000000" : "#DBD7D7");
         SetBrush("LineBrush", _isDarkTheme ? "#2D374B" : "#DADDE3");
         SetBrush("TextPrimaryBrush", _isDarkTheme ? "#F8FAFC" : "#1F1F1F");
         SetBrush("TextSecondaryBrush", _isDarkTheme ? "#AAB4C4" : "#5D6470");
@@ -5028,7 +5029,7 @@ public partial class MainWindow : Window
                 Filter = L("Executor.DocxFilter"),
                 AddExtension = true,
                 DefaultExt = ".docx",
-                FileName = $"AI_HUB_result_{DateTime.Now:yyyyMMdd_HHmm}.docx",
+                FileName = $"{L("App.ProductName")}_result_{DateTime.Now:yyyyMMdd_HHmm}.docx",
                 OverwritePrompt = true
             };
             if (saveDialog.ShowDialog(this) != true)

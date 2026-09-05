@@ -15,9 +15,9 @@ public sealed class CapabilityInventoryService
         var items = new List<CapabilityInventoryItem>
         {
             CreateCoreItem(storageSettings),
-            CreateStaticTool("web_search", "AI HUB Web Search", true, "DuckDuckGo Lite + diagnostics"),
-            CreateStaticTool("web_read", "AI HUB Web Page Reader", true, "HTML text extractor"),
-            CreateStaticTool("web_download", "AI HUB Web Download", true, "Direct URL downloader"),
+            CreateStaticTool("web_search", "LOPATA Web Search", true, "DuckDuckGo Lite + diagnostics"),
+            CreateStaticTool("web_read", "LOPATA Web Page Reader", true, "HTML text extractor"),
+            CreateStaticTool("web_download", "LOPATA Web Download", true, "Direct URL downloader"),
             CreateStaticTool("hf_provider", "Hugging Face API provider", true, "Model search through Hugging Face API"),
             CreateBackendItem()
         };
@@ -48,7 +48,7 @@ public sealed class CapabilityInventoryService
                 "component_capability",
                 capability,
                 true,
-                "Verified package plus trusted callable AI HUB adapter.")));
+                "Verified package plus trusted callable LOPATA adapter.")));
 
         return new CapabilityInventoryResponse
         {
@@ -132,7 +132,7 @@ public sealed class CapabilityInventoryService
             IsInstalled = true,
             IsRunnable = runnable,
             Format = "tool",
-            Source = "AI HUB",
+            Source = "LOPATA",
             Details = details
         };
     }

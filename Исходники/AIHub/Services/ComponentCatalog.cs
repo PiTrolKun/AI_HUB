@@ -449,7 +449,7 @@ public static class ComponentCatalog
             Description = description,
             DeliveryKind = ComponentDeliveryKinds.BuiltIn,
             License = license,
-            Source = "AI HUB application package",
+            Source = "LOPATA application package",
             Capabilities = capabilities,
             Extensions = extensions ?? []
         };

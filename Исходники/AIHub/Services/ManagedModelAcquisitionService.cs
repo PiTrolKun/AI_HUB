@@ -36,7 +36,7 @@ public sealed class ManagedModelAcquisitionService : IDisposable
         CancellationToken cancellationToken)
     {
         var card = _store.Load(modelArtifactId)
-            ?? throw new InvalidOperationException("The model card is not registered in the AI HUB library.");
+            ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
         EnsureDownloadable(card);
         var installRoot = Path.GetFullPath(card.InstallDirectory);
         Directory.CreateDirectory(installRoot);
@@ -104,7 +104,7 @@ public sealed class ManagedModelAcquisitionService : IDisposable
         CancellationToken cancellationToken)
     {
         var card = _store.Load(modelArtifactId)
-            ?? throw new InvalidOperationException("The model card is not registered in the AI HUB library.");
+            ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
         EnsureDownloadable(card);
         var installRoot = Path.GetFullPath(card.InstallDirectory);
         Directory.CreateDirectory(installRoot);
@@ -161,7 +161,7 @@ public sealed class ManagedModelAcquisitionService : IDisposable
         CancellationToken cancellationToken)
     {
         var card = _store.Load(modelArtifactId)
-            ?? throw new InvalidOperationException("The model card is not registered in the AI HUB library.");
+            ?? throw new InvalidOperationException("The model card is not registered in the LOPATA library.");
         EnsureManagedPath(card);
         var installRoot = Path.GetFullPath(card.InstallDirectory);
         var verifiedBytes = 0L;

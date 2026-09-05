@@ -537,7 +537,7 @@ public partial class MainWindow
             Filter = L("ImageAnalysis.Export.Filter"),
             DefaultExt = ".docx",
             AddExtension = true,
-            FileName = $"AI_HUB_Описание_{DateTime.Now:yyyyMMdd_HHmm}.docx",
+            FileName = $"{L("App.ProductName")}_Описание_{DateTime.Now:yyyyMMdd_HHmm}.docx",
             InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
         };
         if (dialog.ShowDialog(this) != true)

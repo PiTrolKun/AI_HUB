@@ -31,7 +31,7 @@ public sealed partial class WebPageReaderTool
     {
         var normalizedUrl = NormalizeHttpUrl(url);
         using var request = new HttpRequestMessage(HttpMethod.Get, normalizedUrl);
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        request.Headers.UserAgent.ParseAdd("LOPATA/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);

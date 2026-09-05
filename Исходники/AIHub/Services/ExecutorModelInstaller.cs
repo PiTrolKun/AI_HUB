@@ -67,7 +67,7 @@ public sealed class ExecutorModelInstaller : IDisposable
         SaveManifest(manifestPath, CreateManifest(artifact, "partial", existingBytes));
 
         using var request = new HttpRequestMessage(HttpMethod.Get, artifact.DownloadUrl);
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        request.Headers.UserAgent.ParseAdd("LOPATA/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         if (existingBytes > 0)
         {
             request.Headers.Range = new RangeHeaderValue(existingBytes, null);
@@ -241,7 +241,7 @@ public sealed class ExecutorModelInstaller : IDisposable
     private async Task<string> ReadRemoteArchitectureAsync(string source, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, source);
-        request.Headers.UserAgent.ParseAdd("AI_HUB/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+        request.Headers.UserAgent.ParseAdd("LOPATA/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         request.Headers.Range = new RangeHeaderValue(0, GgufHeaderProbeBytes - 1);
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();

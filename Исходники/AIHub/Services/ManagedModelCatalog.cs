@@ -68,7 +68,7 @@ public static class ManagedModelCatalog
         RuntimeBackend = LlamaBackendPaths.DisplayName,
         Consumers =
         [
-            Consumer("ai-hub-core", "Ядро AI HUB", "system"),
+            Consumer("ai-hub-core", "Ядро ЛОПАТА", "system"),
             Consumer("image-analysis-medium", "Анализ изображений — Средний", "scenario_bundle")
         ],
         Files =

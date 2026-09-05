@@ -78,7 +78,7 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
         progress?.Report(new ImageAnalysisLiteraryProgress(
             ManagedModelRoles.Core,
             "writing",
-            "The AI HUB core is creating the literary description."));
+            "The LOPATA core is creating the literary description."));
         var coreModel = ResolveCoreModel(storageSettings);
         var coreResultText = await _coreRuntime.GenerateTextAsync(
             coreModel,
@@ -93,7 +93,7 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
         var description = parsed.Description;
         if (string.IsNullOrWhiteSpace(description))
         {
-            throw new InvalidDataException("The AI HUB core returned an empty literary description.");
+            throw new InvalidDataException("The LOPATA core returned an empty literary description.");
         }
         return new ImageAnalysisLiteraryResult(visualReport.Trim(), description, parsed.Summary);
     }
@@ -119,7 +119,7 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
         progress?.Report(new ImageAnalysisLiteraryProgress(
             ManagedModelRoles.Core,
             "revising",
-            "The AI HUB core is preparing a new version."));
+            "The LOPATA core is preparing a new version."));
         var coreModel = ResolveCoreModel(storageSettings);
         var revised = await _coreRuntime.GenerateTextAsync(
             coreModel,
@@ -137,7 +137,7 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
         revised = NormalizeModelText(revised);
         if (string.IsNullOrWhiteSpace(revised))
         {
-            throw new InvalidDataException("The AI HUB core returned an empty revised description.");
+            throw new InvalidDataException("The LOPATA core returned an empty revised description.");
         }
         return revised;
     }
@@ -202,7 +202,7 @@ public sealed class ImageAnalysisLiteraryService : IDisposable
             || string.IsNullOrWhiteSpace(check.ModelPath)
             || !File.Exists(check.ModelPath))
         {
-            throw new InvalidOperationException("The AI HUB core model is not installed and verified.");
+            throw new InvalidOperationException("The LOPATA core model is not installed and verified.");
         }
         var info = new FileInfo(check.ModelPath);
         return new DebugModelInfo

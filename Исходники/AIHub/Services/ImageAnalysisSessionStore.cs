@@ -234,7 +234,7 @@ public sealed class ImageAnalysisSessionStore
         var isEnglish = session.Settings.LanguageCode.StartsWith("en", StringComparison.OrdinalIgnoreCase);
         var title = isEnglish ? "Literary image description" : "Литературное описание изображения";
         var sourceLabel = isEnglish ? "Source file" : "Исходный файл";
-        var sessionLabel = isEnglish ? "AI HUB session" : "Сессия AI HUB";
+        var sessionLabel = isEnglish ? "LOPATA session" : "Сессия ЛОПАТА";
         var versionLabel = isEnglish ? "Text version" : "Версия текста";
         return $"# {title}{Environment.NewLine}{Environment.NewLine}"
             + version.Text.Trim()

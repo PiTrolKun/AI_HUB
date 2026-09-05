@@ -468,7 +468,7 @@ public sealed class Qwen25OmniRuntimeService : IDisposable
     private ManagedModelArtifactCard ResolveReadyCard()
     {
         var card = _libraryStore.Load(ManagedModelCatalog.Qwen25OmniHeavyArtifactId)
-            ?? throw new InvalidOperationException("Qwen2.5-Omni is not registered in the AI HUB model library.");
+            ?? throw new InvalidOperationException("Qwen2.5-Omni is not registered in the LOPATA model library.");
         if (card.Status != ManagedModelStatuses.Installed)
         {
             throw new InvalidOperationException("Qwen2.5-Omni is not fully downloaded and verified.");

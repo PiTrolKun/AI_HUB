@@ -274,7 +274,7 @@ public sealed class ImageAnalysisKimiRuntimeService : IDisposable
     private string ResolveReadyModelPath()
     {
         var card = _libraryStore.Load(ManagedModelCatalog.KimiMediumArtifactId)
-            ?? throw new InvalidOperationException("The visual analyst is not registered in the AI HUB model library.");
+            ?? throw new InvalidOperationException("The visual analyst is not registered in the LOPATA model library.");
         if (card.Status != ManagedModelStatuses.Installed)
         {
             throw new InvalidOperationException("The visual analyst is not verified and ready for image analysis.");

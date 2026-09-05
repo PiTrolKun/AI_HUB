@@ -99,7 +99,7 @@ public sealed class CapabilityResolverService
                         ? CapabilityBindingStatuses.AdapterMissing
                         : CapabilityBindingStatuses.ExternalCliFound,
                     Details = discoveredCli.Adapter is null
-                        ? $"A compatible command-line runtime '{discoveredCli.Discovery.CommandName}' exists, but AI HUB has no trusted adapter for it."
+                        ? $"A compatible command-line runtime '{discoveredCli.Discovery.CommandName}' exists, but LOPATA has no trusted adapter for it."
                         : $"A compatible command-line runtime '{discoveredCli.Discovery.CommandName}' was found and requires adapter health-check.",
                     AdapterAvailable = discoveredCli.Adapter is not null
                 };
@@ -112,7 +112,7 @@ public sealed class CapabilityResolverService
                 Required = request.Required,
                 Purpose = request.Purpose,
                 Status = CapabilityBindingStatuses.UnknownCapability,
-                Details = "No provider exists in the trusted AI HUB catalog. External discovery may be requested."
+                Details = "No provider exists in the trusted LOPATA catalog. External discovery may be requested."
             };
         }
 
@@ -151,8 +151,8 @@ public sealed class CapabilityResolverService
                 adapter,
                 CapabilityBindingStatuses.AdapterMissing,
                 provider.IsAvailable
-                    ? "The package is installed, but AI HUB has no trusted callable adapter for this capability yet."
-                    : "A provider exists in the catalog, but AI HUB has no trusted callable adapter; downloading the package alone would not make the route executable.");
+                    ? "The package is installed, but LOPATA has no trusted callable adapter for this capability yet."
+                    : "A provider exists in the catalog, but LOPATA has no trusted callable adapter; downloading the package alone would not make the route executable.");
         }
 
         if (!provider.IsAvailable)

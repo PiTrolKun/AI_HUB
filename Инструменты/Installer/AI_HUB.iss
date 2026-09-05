@@ -22,8 +22,8 @@
 #error SetupIconFile is required. Pass /DSetupIconFile=...
 #endif
 
-#define AppName "AI HUB"
-#define AppPublisher "AI_HUB"
+#define AppName "LOPATA"
+#define AppPublisher "LOPATA"
 #define AppExeName "AIHub.exe"
 
 [Setup]
@@ -31,11 +31,11 @@ AppId={{85E9F5C5-2B18-43B1-84E2-A99B25E9B9E8}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-AppPublisherURL=https://github.com/PiTrolKun/AI_HUB
-AppSupportURL=https://github.com/PiTrolKun/AI_HUB
-AppUpdatesURL=https://github.com/PiTrolKun/AI_HUB
+AppPublisherURL=https://github.com/PiTrolKun/LOPATA
+AppSupportURL=https://github.com/PiTrolKun/LOPATA
+AppUpdatesURL=https://github.com/PiTrolKun/LOPATA
 DefaultDirName={localappdata}\Programs\AI HUB
-DefaultGroupName=AI HUB
+DefaultGroupName=LOPATA
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
@@ -60,8 +60,8 @@ Source: "{#BackendDir}\*"; DestDir: "{localappdata}\AI_HUB\Runtime\Backends\llam
 Source: "{#ChatLlmBackendDir}\*"; DestDir: "{localappdata}\AI_HUB\Runtime\Backends\chatllm.cpp\v24\win-x64"; Excludes: "*.log"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\AI HUB"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
-Name: "{autodesktop}\AI HUB"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\ЛОПАТА"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\ЛОПАТА"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Запустить AI HUB"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Запустить ЛОПАТА"; Flags: nowait postinstall skipifsilent

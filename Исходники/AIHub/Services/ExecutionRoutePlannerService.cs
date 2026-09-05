@@ -108,7 +108,7 @@ public sealed class ExecutionRoutePlannerService
                 && binding.Status == CapabilityBindingStatuses.AdapterMissing))
         {
             plan.Warnings.Add(
-                "A provider exists, but AI HUB has no trusted callable adapter for one or more required route stages.");
+                "A provider exists, but LOPATA has no trusted callable adapter for one or more required route stages.");
         }
 
         if (plan.Resolution.Bindings.Any(binding =>

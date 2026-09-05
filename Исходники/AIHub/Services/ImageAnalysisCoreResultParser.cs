@@ -20,7 +20,7 @@ public static class ImageAnalysisCoreResultParser
 
         if (LooksLikeStructuredEnvelope(normalized))
         {
-            throw new InvalidDataException("The AI HUB core returned an incomplete structured result.");
+            throw new InvalidDataException("The LOPATA core returned an incomplete structured result.");
         }
 
         return (normalized.Trim(), new ImageAnalysisReviewSummary());

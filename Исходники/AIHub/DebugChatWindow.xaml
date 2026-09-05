@@ -1,7 +1,7 @@
 <Window x:Class="AIHub.DebugChatWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AI HUB — Debug Model Tester"
+        Title="LOPATA — Debug Model Tester"
         Width="1040"
         Height="720"
         MinWidth="860"

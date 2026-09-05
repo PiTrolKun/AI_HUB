@@ -30,7 +30,7 @@ public sealed class HuggingFaceCatalogCollector : IDisposable
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
         if (!_httpClient.DefaultRequestHeaders.UserAgent.Any())
         {
-            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("AI_HUB-catalog-parser/0.1 (+https://github.com/PiTrolKun/AI_HUB)");
+            _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("LOPATA-catalog-parser/0.1 (+https://github.com/PiTrolKun/LOPATA)");
         }
     }
 

@@ -86,8 +86,8 @@ public static class ComponentSemanticPassportCatalog
                 "Запланированный runtime генерации изображений. Пока отключён до отдельной безопасной интеграции.",
                 "Planned image-generation runtime. It remains disabled until a separate safe integration is implemented."),
             ["viewer.webview2"] = new(
-                "Открывает HTML, SVG и локальные веб-представления внутри AI HUB. Используется только интерфейсом.",
-                "Opens HTML, SVG and local web-based presentations inside AI HUB. It is used only by the interface."),
+                "Открывает HTML, SVG и локальные веб-представления внутри ЛОПАТА. Используется только интерфейсом.",
+                "Opens HTML, SVG and local web-based presentations inside LOPATA. It is used only by the interface."),
             ["viewer.pdfjs"] = new(
                 "Показывает PDF постранично, с поиском и выделением текста. Используется только интерфейсом.",
                 "Displays PDF pages with search and selectable text. It is used only by the interface."),
@@ -95,8 +95,8 @@ public static class ComponentSemanticPassportCatalog
                 "Открывает EPUB с навигацией и оглавлением. Используется только интерфейсом.",
                 "Opens EPUB books with navigation and a table of contents. It is used only by the interface."),
             ["viewer.libvlc"] = new(
-                "Воспроизводит локальные аудио- и видеофайлы внутри AI HUB. Используется только интерфейсом.",
-                "Plays local audio and video inside AI HUB. It is used only by the interface."),
+                "Воспроизводит локальные аудио- и видеофайлы внутри ЛОПАТА. Используется только интерфейсом.",
+                "Plays local audio and video inside LOPATA. It is used only by the interface."),
             ["viewer.openseadragon"] = new(
                 "Показывает очень большие изображения с плавным масштабированием и перемещением. Используется только интерфейсом.",
                 "Displays very large images with smooth zoom and pan. It is used only by the interface."),
