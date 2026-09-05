@@ -181,7 +181,8 @@ public sealed record KokoroSpeechResult(
     string ErrorType = "",
     string StandardErrorTail = "",
     double AverageCpuPercent = 0,
-    double PeakCpuPercent = 0);
+    double PeakCpuPercent = 0,
+    string AudioPath = "");
 
 public sealed record KokoroSpeechMetric(
     DateTimeOffset CreatedAt,

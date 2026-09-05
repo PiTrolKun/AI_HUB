@@ -70,6 +70,7 @@ public partial class MainWindow
                 canReplayHeavy,
                 status,
                 isBusy);
+            RefreshSessionAudioUi();
             return;
         }
         _appSettings.ImageAnalysisSpeech ??= new ImageAnalysisSpeechSettings();
@@ -91,6 +92,7 @@ public partial class MainWindow
             _ => string.Empty
         };
         ImageAnalysisWorkspacePage.SetSpeechState(settings, installed, canReplay, status, isBusy);
+        RefreshSessionAudioUi();
     }
 
     private async void ImageAnalysisWorkspacePage_SpeechModeRequested(
@@ -267,8 +269,12 @@ public partial class MainWindow
         _appSettingsStore.Save(_appSettings);
     }
 
-    private async void ImageAnalysisWorkspacePage_ReplaySpeechRequested(object? sender, EventArgs e) =>
+    private async void ImageAnalysisWorkspacePage_ReplaySpeechRequested(object? sender, EventArgs e)
+    {
+        var mode = IsHeavyImageAnalysis ? GetHeavyImageAnalysisSpeechSettings().Mode : _appSettings.ImageAnalysisSpeech?.Mode;
+        if (mode == ImageAnalysisSpeechModes.Kokoro) { _sessionAudioPlayer?.Toggle(); return; }
         await SpeakCurrentImageAnalysisSummaryAsync(automatic: false);
+    }
 
     private Task BeginImageAnalysisSpeechWarmup()
     {
@@ -401,6 +407,7 @@ public partial class MainWindow
         }
 
         CancelImageAnalysisSpeech();
+        if (mode == ImageAnalysisSpeechModes.Kokoro) _sessionAudioPlayer?.Clear();
         var owner = new CancellationTokenSource();
         _imageAnalysisSpeechCts = owner;
         var cancellationToken = owner.Token;
@@ -557,7 +564,13 @@ public partial class MainWindow
             heavySettings?.KokoroVolume ?? _appSettings.ImageAnalysisSpeech?.KokoroVolume ?? 100,
             heavySettings?.KokoroRatePercent ?? _appSettings.ImageAnalysisSpeech?.KokoroRatePercent ?? 100,
             progress,
-            cancellationToken);
+            cancellationToken, generateOnly: true);
+        if (result.Completed && !string.IsNullOrWhiteSpace(result.AudioPath))
+        {
+            if (cancellationToken.IsCancellationRequested) { System.IO.File.Delete(result.AudioPath); return false; }
+            GetSessionAudioPlayer().Open(result.AudioPath);
+            playbackStarted();
+        }
         LogImageAnalysisRuntime(
             $"Kokoro speech: {result.Code}; language={NormalizeSpeechLanguage(_appSettings.LanguageCode)}; " +
             $"requestedEngine=kokoro; generation={result.GenerationMilliseconds} ms; " +
@@ -823,6 +836,7 @@ public partial class MainWindow
 
     private void CancelImageAnalysisSpeech()
     {
+        _sessionAudioPlayer?.Pause();
         _imageAnalysisSpeechCts?.Cancel();
         _imageAnalysisProgrammaticSpeechCoordinator.Cancel();
         _imageAnalysisKokoroSpeechService?.StopPlayback();
@@ -837,6 +851,7 @@ public partial class MainWindow
 
     private void StopImageAnalysisSpeechSession()
     {
+        _sessionAudioPlayer?.Clear();
         CancelImageAnalysisSpeech();
         _imageAnalysisSpeechWarmupCts?.Cancel();
         _imageAnalysisSpeechWarmupCts?.Dispose();

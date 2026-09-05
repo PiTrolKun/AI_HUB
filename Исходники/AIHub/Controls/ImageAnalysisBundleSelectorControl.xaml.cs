@@ -102,25 +102,51 @@ public partial class ImageAnalysisBundleSelectorControl : UserControl
         var actionText = bundle.IsAvailable
             ? _localize("ImageAnalysis.Bundle.Continue")
             : _localize("ImageAnalysis.Bundle.ShowExplanation");
+        var isGamma = bundle.Id == ImageAnalysisBundleCatalog.HeavyId;
+        var adviceKey = assessment?.HasCompleteHardwareData != true
+            ? "ImageAnalysis.Bundle.Advice.Unknown"
+            : assessment.IsFullyCompatible
+                ? "ImageAnalysis.Bundle.Advice.Suitable"
+                : "ImageAnalysis.Bundle.Advice.Limited";
 
         return new ImageAnalysisBundleCardViewModel
         {
             Definition = bundle,
             Title = _localize(bundle.TitleKey),
-            Purpose = _localize(bundle.PurposeKey),
+            Symbol = bundle.Id switch
+            {
+                ImageAnalysisBundleCatalog.LightId => "α",
+                ImageAnalysisBundleCatalog.MediumId => "β",
+                ImageAnalysisBundleCatalog.HeavyId => "γ",
+                _ => string.Empty
+            },
+            Purpose = _localize(isGamma ? adviceKey : bundle.PurposeKey),
             Status = _localize(bundle.StatusKey),
-            ModelsHeader = _localize("ImageAnalysis.Bundle.ModelsHeader"),
-            RecommendationLabel = _localize("ImageAnalysis.Bundle.Recommended"),
+            ShowStatus = !bundle.IsAvailable,
+            ModelsHeader = _localize(isGamma ? "ImageAnalysis.Bundle.UsedModels" : "ImageAnalysis.Bundle.ModelsHeader"),
+            RecommendationLabel = _localize(isGamma && assessment?.IsFullyCompatible != true
+                ? "ImageAnalysis.Bundle.ProgramAdvice" : "ImageAnalysis.Bundle.Recommended"),
+            ShowRecommendationLabel = isGamma || isRecommended,
             ActionText = actionText,
             AutomationName = $"{_localize(bundle.TitleKey)}. {actionText}",
-            Components = bundle.Components.Select(component => new ImageAnalysisBundleComponentViewModel
+            Components = isGamma ?
+            [
+                new() { Role = _localize("ImageAnalysis.Bundle.AnalysisRole"), Model = "Qwen2.5-Omni-3B", ShowPlacement = false },
+                new() { Role = _localize("ImageAnalysis.Bundle.OptionalSpeechRole"), Model = "Kokoro", ShowPlacement = false }
+            ] : bundle.Components.Select(component => new ImageAnalysisBundleComponentViewModel
             {
                 Role = _localize(component.RoleKey),
                 Model = component.ModelName,
                 Placement = _localize(component.PlacementKey)
             }).ToList(),
-            RequirementsText = BuildRequirementsText(bundle.Requirements),
-            HardwareText = BuildHardwareText(assessment),
+            RequirementsText = isGamma
+                ? string.Join(Environment.NewLine + Environment.NewLine,
+                    _localize("ImageAnalysis.Bundle.Gamma.Gpu"),
+                    _localize("ImageAnalysis.Bundle.Gamma.Vram"),
+                    _localize("ImageAnalysis.Bundle.Gamma.Ram"))
+                : BuildRequirementsText(bundle.Requirements),
+            HardwareText = isGamma ? string.Empty : BuildHardwareText(assessment),
+            ShowHardware = !isGamma,
             IsRecommended = isRecommended,
             AnimateRecommendation = isRecommended && SystemParameters.ClientAreaAnimation
         };
@@ -232,6 +258,14 @@ public sealed class ImageAnalysisBundleCardViewModel
 
     public string Title { get; init; } = string.Empty;
 
+    public string Symbol { get; init; } = string.Empty;
+
+    public bool ShowStatus { get; init; }
+
+    public bool ShowRecommendationLabel { get; init; }
+
+    public bool ShowHardware { get; init; }
+
     public string Purpose { get; init; } = string.Empty;
 
     public string Status { get; init; } = string.Empty;
@@ -257,6 +291,8 @@ public sealed class ImageAnalysisBundleCardViewModel
 
 public sealed class ImageAnalysisBundleComponentViewModel
 {
+    public bool ShowPlacement { get; init; } = true;
+
     public string Role { get; init; } = string.Empty;
 
     public string Model { get; init; } = string.Empty;

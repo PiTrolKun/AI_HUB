@@ -323,18 +323,14 @@ public partial class MainWindow
         {
             return;
         }
-        var files = string.Join(Environment.NewLine, card.Files.Select(file => $"• {file.RelativePath}"));
-        var confirmation = WpfMessageBox.Show(
+        var confirmation = new AIHub.Controls.ModelRemovalConfirmationDialog(
             this,
-            LF(
-                "ImageAnalysis.Install.RemoveVisionConfirm",
-                card.DisplayName,
-                files,
-                ComponentCardViewModel.FormatBytes(card.StoredBytes)),
             L("ImageAnalysis.Install.RemoveVisionTitle"),
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (confirmation != MessageBoxResult.Yes)
+            LF("ImageAnalysis.Install.RemoveModelConfirm", card.DisplayName,
+                ComponentCardViewModel.FormatBytes(card.StoredBytes)),
+            L("Common.Cancel"),
+            L("ImageAnalysis.Install.ConfirmRemove"));
+        if (confirmation.ShowDialog() != true)
         {
             return;
         }

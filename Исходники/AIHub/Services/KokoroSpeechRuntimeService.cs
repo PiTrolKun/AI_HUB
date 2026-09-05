@@ -133,7 +133,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
         int volumePercent,
         int ratePercent,
         IProgress<KokoroSpeechProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool generateOnly = false)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -142,6 +143,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         string? audioPath = null;
+        bool retainAudio = false;
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -230,27 +232,31 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
             var cpuMilliseconds = Math.Max(
                 0,
                 (process.TotalProcessorTime - cpuBefore).TotalMilliseconds);
-            long firstAudioMilliseconds;
-            using (var player = new SoundPlayer(audioPath))
+            long firstAudioMilliseconds = started.ElapsedMilliseconds;
+            if (!generateOnly)
             {
-                player.Load();
-                lock (_playbackSync)
+                using (var player = new SoundPlayer(audioPath))
                 {
-                    _activePlayer = player;
-                }
-                firstAudioMilliseconds = started.ElapsedMilliseconds;
-                progress?.Report(new KokoroSpeechProgress(KokoroSpeechStages.Playing));
-                using var registration = cancellationToken.Register(StopPlayback);
-                await Task.Run(player.PlaySync, cancellationToken).ConfigureAwait(false);
-                lock (_playbackSync)
-                {
-                    if (ReferenceEquals(_activePlayer, player))
+                    player.Load();
+                    lock (_playbackSync)
                     {
-                        _activePlayer = null;
+                        _activePlayer = player;
+                    }
+                    firstAudioMilliseconds = started.ElapsedMilliseconds;
+                    progress?.Report(new KokoroSpeechProgress(KokoroSpeechStages.Playing));
+                    using var registration = cancellationToken.Register(StopPlayback);
+                    await Task.Run(player.PlaySync, cancellationToken).ConfigureAwait(false);
+                    lock (_playbackSync)
+                    {
+                        if (ReferenceEquals(_activePlayer, player))
+                        {
+                            _activePlayer = null;
+                        }
                     }
                 }
-            }
 
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             process.Refresh();
             var result = new KokoroSpeechResult(
                 true,
@@ -260,7 +266,8 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
                 SafePeakWorkingSet(),
                 cpuMilliseconds,
                 AverageCpuPercent: cpuSample.AveragePercent,
-                PeakCpuPercent: cpuSample.PeakPercent);
+                PeakCpuPercent: cpuSample.PeakPercent,
+                AudioPath: generateOnly ? audioPath : string.Empty);
             AppendMetric(new KokoroSpeechMetric(
                 DateTimeOffset.Now,
                 normalizedLanguage,
@@ -275,6 +282,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
                 string.Empty,
                 AverageCpuPercent: result.AverageCpuPercent,
                 PeakCpuPercent: result.PeakCpuPercent));
+            retainAudio = generateOnly;
             return result;
         }
         catch (OperationCanceledException)
@@ -312,7 +320,7 @@ public sealed class KokoroSpeechRuntimeService : IDisposable
         }
         finally
         {
-            if (!string.IsNullOrWhiteSpace(audioPath))
+            if (!retainAudio && !string.IsNullOrWhiteSpace(audioPath))
             {
                 TryDelete(audioPath);
             }

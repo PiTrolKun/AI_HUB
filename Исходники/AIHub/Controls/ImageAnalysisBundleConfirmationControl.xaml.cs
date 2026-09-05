@@ -111,12 +111,12 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
         }
         var bundleTitle = _localize(_bundle.TitleKey);
         var isHeavy = _bundle.Id == ImageAnalysisBundleCatalog.HeavyId;
-        TitleText.Text = _format("ImageAnalysis.Confirmation.Title", [bundleTitle]);
+        TitleText.Text = _format("ImageAnalysis.Confirmation.Title", [bundleTitle.ToUpper(CultureInfo.CurrentUICulture)]);
+        ModeSymbolText.Text = _bundle.Id switch { "light" => "α", "medium" => "β", "heavy" => "γ", _ => string.Empty };
+        DescriptionText.Visibility = isHeavy ? Visibility.Collapsed : Visibility.Visible;
         DescriptionText.Text = _localize(isHeavy
             ? "ImageAnalysis.Heavy.StartNotice"
             : "ImageAnalysis.Install.Description");
-        HeavyStartHintText.Text = _localize("ImageAnalysis.Heavy.StartHint");
-        HeavyStartHintBorder.Visibility = isHeavy ? Visibility.Visible : Visibility.Collapsed;
         StateTitleText.Text = isHeavy && _snapshot.State == ImageAnalysisBundleInstallStates.Ready
             ? _localize("ImageAnalysis.Install.State.heavy_ready.Title")
             : _localize($"ImageAnalysis.Install.State.{_snapshot.State}.Title");
@@ -137,7 +137,8 @@ public partial class ImageAnalysisBundleConfirmationControl : UserControl
         ViewHistoryButton.Visibility = isHeavy && !_snapshot.CanStart && _hasHistory
             ? Visibility.Visible
             : Visibility.Collapsed;
-        RemoveVisionButton.Content = _localize("ImageAnalysis.Install.RemoveVision");
+        RemoveVisionButton.ToolTip = _localize("ImageAnalysis.Install.RemoveVision");
+        System.Windows.Automation.AutomationProperties.SetName(RemoveVisionButton, _localize("ImageAnalysis.Install.RemoveVision"));
         RemoveVisionButton.IsEnabled = _snapshot.CanRemoveVision;
         RemoveVisionButton.Visibility = _snapshot.CanRemoveVision ? Visibility.Visible : Visibility.Collapsed;
         CancelOperationButton.Content = _localize("Common.Cancel");

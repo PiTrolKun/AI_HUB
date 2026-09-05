@@ -393,10 +393,13 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         VoiceRateSlider.IsEnabled = !isBusy;
         KokoroDownloadButton.IsEnabled = !isBusy;
         ReplaySpeechButton.IsEnabled = !isBusy;
+        ReplaySpeechButton.ContextMenu = null;
+        ReplaySpeechButton.Content = _localize("ImageAnalysis.Workspace.Voice.ReplayShort");
         VoiceStatusText.Text = status;
         VoiceStatusText.Visibility = string.IsNullOrWhiteSpace(status)
             ? Visibility.Collapsed
             : Visibility.Visible;
+        RefreshAudioPlaybackPresentation();
     }
 
     public void SetHeavySpeechState(
@@ -484,10 +487,13 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         VoiceRateSlider.IsEnabled = !isBusy;
         KokoroDownloadButton.IsEnabled = !isBusy;
         ReplaySpeechButton.IsEnabled = !isBusy;
+        ReplaySpeechButton.ContextMenu = null;
+        ReplaySpeechButton.Content = _localize("ImageAnalysis.Workspace.Voice.ReplayShort");
         VoiceStatusText.Text = status;
         VoiceStatusText.Visibility = string.IsNullOrWhiteSpace(status)
             ? Visibility.Collapsed
             : Visibility.Visible;
+        RefreshAudioPlaybackPresentation();
     }
 
     public void ApplyLocalization()
@@ -495,10 +501,10 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         ActivityLegendPanel.Visibility = _bundleId == "heavy"
             ? Visibility.Collapsed
             : Visibility.Visible;
-        HeavyDiagnosticsExpander.Visibility = _bundleId == "heavy"
+        DiagnosticsButton.Visibility = _bundleId == "heavy"
             ? Visibility.Visible
             : Visibility.Collapsed;
-        HeavyDiagnosticsExpander.Header = _localize("ImageAnalysis.Workspace.HeavyDiagnostics.Title");
+        DiagnosticsButton.ToolTip = _localize("ImageAnalysis.Workspace.HeavyDiagnostics.Title");
         TitleText.Text = _localize("ImageAnalysis.Workspace.Title");
         DescriptionText.Text = _localize("ImageAnalysis.Workspace.Description");
         SubscenarioStepTitleText.Text = _localize("ImageAnalysis.Workspace.Step.Subscenario");
@@ -526,7 +532,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         HistoryEmptyText.Text = _localize("ImageAnalysis.Workspace.History.Empty");
         ImagePanelTitleText.Text = _localize("ImageAnalysis.Workspace.Image.Title");
         ImagePanelDescriptionText.Text = _localize("ImageAnalysis.Workspace.Image.Description");
-        SelectImageButton.Content = _localize("ImageAnalysis.Workspace.SelectImage");
+        UpdateFileSelectionPresentation();
         SelectImageEmptyButton.Content = _localize("ImageAnalysis.Workspace.SelectImage");
         ContinueToSettingsButton.Content = _localize("ImageAnalysis.Workspace.Image.Continue");
         SettingsPanelTitleText.Text = _localize("ImageAnalysis.Workspace.Settings.Title");
@@ -610,8 +616,19 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
         AutomationProperties.SetName(button, name);
     }
 
+    private bool _hasSelectedFile;
+
+    private void UpdateFileSelectionPresentation()
+    {
+        SelectImageButton.Content = _localize(_hasSelectedFile
+            ? "ImageAnalysis.Workspace.ChangeFile" : "ImageAnalysis.Workspace.SelectImage");
+        ImagePanelDescriptionText.Visibility = _hasSelectedFile ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     private void ApplyFile(ImageAnalysisFilePassport? passport)
     {
+        _hasSelectedFile = passport is not null;
+        UpdateFileSelectionPresentation();
         if (passport is null)
         {
             SelectedImageCard.Visibility = Visibility.Collapsed;
@@ -678,8 +695,8 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     private void RenderHeavyDiagnostics(ImageAnalysisLiterarySession? session)
     {
         var isHeavy = _bundleId == "heavy";
-        HeavyDiagnosticsExpander.Visibility = isHeavy ? Visibility.Visible : Visibility.Collapsed;
-        HeavyDiagnosticsExpander.Header = _localize("ImageAnalysis.Workspace.HeavyDiagnostics.Title");
+        DiagnosticsButton.Visibility = isHeavy ? Visibility.Visible : Visibility.Collapsed;
+        DiagnosticsButton.ToolTip = _localize("ImageAnalysis.Workspace.HeavyDiagnostics.Title");
         if (!isHeavy)
         {
             HeavyDiagnosticsTextBox.Text = string.Empty;
@@ -882,6 +899,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
                 Padding = new Thickness(10, 8, 10, 8),
                 Style = TryFindResource("SecondaryButtonStyle") as Style
             };
+            button.Content = new TextBlock { Text = button.Content?.ToString(), TextWrapping = TextWrapping.Wrap };
             button.Click += HistoryButton_Click;
             HistoryItemsPanel.Children.Add(button);
         }
@@ -1073,7 +1091,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     {
         var compact = e.NewSize.Width < 1250;
         RootLayout.Margin = compact ? new Thickness(12, 10, 12, 12) : new Thickness(24, 14, 24, 16);
-        ActivityColumn.Width = new GridLength(compact ? 185 : 220);
+        ActivityColumn.Width = new GridLength(compact ? 95 : 120);
         CenterColumn.Width = new GridLength(1, GridUnitType.Star);
         ResultColumn.Width = new GridLength(compact ? 275 : 330);
     }
@@ -1088,8 +1106,7 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
     private void CompleteButton_Click(object sender, RoutedEventArgs e) => CompleteRequested?.Invoke(this, EventArgs.Empty);
     private void NewAnalysisButton_Click(object sender, RoutedEventArgs e) => NewAnalysisRequested?.Invoke(this, EventArgs.Empty);
     private void HomeButton_Click(object sender, RoutedEventArgs e) => HomeRequested?.Invoke(this, EventArgs.Empty);
-    private void HistoryToggleButton_Click(object sender, RoutedEventArgs e) =>
-        SetHistoryExpanded(!_historyExpanded);
+    private void HistoryToggleButton_Click(object sender, RoutedEventArgs e) => ShowSavedWorks();
 
     private void SpeechModeRadioButton_Checked(object sender, RoutedEventArgs e)
     {
@@ -1156,7 +1173,11 @@ public partial class ImageAnalysisWorkspaceControl : UserControl
 
     private void HistoryButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is WpfButton { Tag: string sessionId }) ResumeRequested?.Invoke(this, new ImageAnalysisSessionRequestedEventArgs(sessionId));
+        if (sender is WpfButton { Tag: string sessionId })
+        {
+            if (_savedWorksWindow is not null) { _selectedSavedWork = sessionId; _savedWorksWindow.Close(); }
+            else ResumeRequested?.Invoke(this, new ImageAnalysisSessionRequestedEventArgs(sessionId));
+        }
     }
 
     private void VersionComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -153,23 +153,24 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <DockPanel>
+                                <StackPanel HorizontalAlignment="Center" Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding Symbol}"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               FontSize="{DynamicResource UiFont21}"
+                                               TextAlignment="Center"
+                                               Margin="0,0,0,4" />
                                     <TextBlock Text="{Binding Title}"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
                                                FontSize="{DynamicResource UiFont21}"
+                                               TextAlignment="Center"
                                                FontWeight="SemiBold" />
-                                    <Border DockPanel.Dock="Right"
-                                            Background="{DynamicResource StepBadgeBrush}"
-                                            CornerRadius="5"
-                                            Padding="7,3"
-                                            Margin="8,0,0,0">
-                                        <TextBlock Text="{Binding Status}"
-                                                   Foreground="{DynamicResource AccentBrush}"
-                                                   FontSize="{DynamicResource UiFont11}"
-                                                   FontWeight="SemiBold"
-                                                   TextWrapping="Wrap" />
-                                    </Border>
-                                </DockPanel>
+                                    <TextBlock Text="{Binding Status}"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
+                                               FontSize="{DynamicResource UiFont11}"
+                                               TextAlignment="Center"
+                                               Margin="0,4,0,0"
+                                               Visibility="{Binding ShowStatus, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                </StackPanel>
 
                                 <TextBlock Grid.Row="1"
                                            Text="{Binding RecommendationLabel}"
@@ -177,7 +178,7 @@
                                            FontSize="{DynamicResource UiFont12}"
                                            FontWeight="Bold"
                                            Margin="0,7,0,0"
-                                           Visibility="{Binding IsRecommended, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                           Visibility="{Binding ShowRecommendationLabel, Converter={StaticResource BooleanToVisibilityConverter}}" />
 
                                 <TextBlock Grid.Row="2"
                                            Text="{Binding Purpose}"
@@ -207,6 +208,7 @@
                                                     <Run Text="{Binding Model}" />
                                                 </TextBlock>
                                                 <TextBlock Text="{Binding Placement}"
+                                                           Visibility="{Binding ShowPlacement, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                                            FontSize="{DynamicResource UiFont10}"
                                                            TextWrapping="Wrap" />
@@ -225,6 +227,7 @@
 
                                 <TextBlock Grid.Row="6"
                                            Text="{Binding HardwareText}"
+                                           Visibility="{Binding ShowHardware, Converter={StaticResource BooleanToVisibilityConverter}}"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
                                            FontSize="{DynamicResource UiFont10_5}"
                                            LineHeight="{DynamicResource UiLineHeight16}"

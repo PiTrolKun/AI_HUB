@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -9,14 +10,16 @@ namespace AIHub.Controls;
 
 public sealed class MatrixRainControl : FrameworkElement
 {
-    private const int MaxQueuedCharacters = 4096;
+    private const double BoundaryMargin = 48;
+    private readonly Stopwatch _clock = new();
+    private double _previousSeconds;
     private readonly ConcurrentQueue<char> _characters = new();
     private readonly List<MatrixGlyph> _glyphs = [];
     private readonly DispatcherTimer _timer;
     private readonly Random _random = new();
     private MediaColor _accentColor = MediaColor.FromRgb(42, 210, 108);
     private bool _active;
-    private int _quietFrames;
+    private double _quietSeconds;
 
     public MatrixRainControl()
     {
@@ -32,12 +35,14 @@ public sealed class MatrixRainControl : FrameworkElement
     {
         _accentColor = accentColor ?? MediaColor.FromRgb(42, 210, 108);
         _active = true;
-        _quietFrames = 0;
+        _quietSeconds = 0;
         _glyphs.Clear();
         while (_characters.TryDequeue(out _))
         {
         }
 
+        _previousSeconds = 0;
+        _clock.Restart();
         _timer.Start();
         InvalidateVisual();
     }
@@ -49,96 +54,95 @@ public sealed class MatrixRainControl : FrameworkElement
             _characters.Enqueue(character);
         }
 
-        while (_characters.Count > MaxQueuedCharacters && _characters.TryDequeue(out _))
-        {
-        }
+
     }
 
     public void Stop()
     {
         _active = false;
         _timer.Stop();
+        _clock.Stop();
         _glyphs.Clear();
+        while (_characters.TryDequeue(out _)) { }
         InvalidateVisual();
     }
 
     protected override void OnRender(DrawingContext drawingContext)
     {
         base.OnRender(drawingContext);
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         foreach (var glyph in _glyphs)
         {
-            var life = Math.Clamp(glyph.Life, 0, 1);
-            var intensity = glyph.Head ? 0.86 : 0.34 + 0.6 * life;
-            var brush = new SolidColorBrush(MediaColor.FromRgb(
-                BlendChannel(_accentColor.R, intensity, glyph.Head),
-                BlendChannel(_accentColor.G, intensity, glyph.Head),
-                BlendChannel(_accentColor.B, intensity, glyph.Head)));
-            var text = new FormattedText(
-                glyph.Character.ToString(),
-                CultureInfo.InvariantCulture,
-                System.Windows.FlowDirection.LeftToRight,
-                new Typeface("Consolas"),
-                glyph.FontSize,
-                brush,
-                VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            drawingContext.DrawText(text, new System.Windows.Point(glyph.X, glyph.Y));
+            if (glyph.Y < -24 || glyph.Y > ActualHeight || glyph.X < -24 || glyph.X > ActualWidth) continue;
+            var end = EndY(glyph);
+            var progress = Math.Clamp((glyph.Y - glyph.StartY) / Math.Max(1, end - glyph.StartY), 0, 1);
+            var opacity = glyph.FromStream ? 0.9 - progress * 0.35
+                : 0.7 * Math.Clamp((1 - progress) / 0.25, 0, 1);
+            if (glyph.Text is null || glyph.TextDpi != dpi)
+            {
+                var brush = new SolidColorBrush(_accentColor);
+                glyph.Brush = brush;
+                glyph.Text = new FormattedText(glyph.Character.ToString(), CultureInfo.InvariantCulture,
+                    System.Windows.FlowDirection.LeftToRight, new Typeface("Consolas"), glyph.FontSize, brush, dpi);
+                glyph.TextDpi = dpi;
+            }
+            glyph.Brush!.Opacity = opacity;
+            drawingContext.DrawText(glyph.Text, new System.Windows.Point(glyph.X, glyph.Y));
         }
     }
 
     private void Advance()
     {
-        if (!_active || ActualWidth <= 1 || ActualHeight <= 1)
-        {
-            return;
-        }
+        var now = _clock.Elapsed.TotalSeconds;
+        var seconds = Math.Max(0, now - _previousSeconds);
+        _previousSeconds = now;
+        Step(seconds);
+    }
 
-        for (var index = _glyphs.Count - 1; index >= 0; index--)
+    private double EndY(MatrixGlyph glyph) => glyph.FromStream
+        ? ActualHeight + BoundaryMargin
+        : (ActualHeight + BoundaryMargin) * glyph.PathFraction;
+
+    private void Step(double seconds)
+    {
+        if (!_active || ActualWidth <= 1 || ActualHeight <= 1) return;
+        // Compact in place so dense bursts do not require shifting the list per expired glyph.
+        var retained = 0;
+        for (var index = 0; index < _glyphs.Count; index++)
         {
             var glyph = _glyphs[index];
-            glyph.Y += glyph.Speed;
-            glyph.Life -= 0.017;
-            glyph.Head = false;
-            if (glyph.Y > ActualHeight || glyph.Life <= 0)
-            {
-                _glyphs.RemoveAt(index);
-            }
+            glyph.Y += glyph.Speed * seconds;
+            if (glyph.Y <= EndY(glyph)) _glyphs[retained++] = glyph;
         }
+        if (retained < _glyphs.Count) _glyphs.RemoveRange(retained, _glyphs.Count - retained);
 
-        var emitted = 0;
-        while (emitted < 18 && _characters.TryDequeue(out var character))
+        var emitted = false;
+        while (_characters.TryDequeue(out var character))
         {
             AddGlyph(character, fromStream: true);
-            emitted++;
+            emitted = true;
         }
-
-        if (emitted == 0)
+        if (emitted) _quietSeconds = 0;
+        else
         {
-            _quietFrames++;
-            if (_quietFrames % 3 == 0)
+            _quietSeconds += seconds;
+            if (_quietSeconds >= 0.1)
             {
+                _quietSeconds %= 0.1;
                 AddGlyph(RandomAmbientCharacter(), fromStream: false);
             }
         }
-        else
-        {
-            _quietFrames = 0;
-        }
-
         InvalidateVisual();
     }
 
     private void AddGlyph(char character, bool fromStream)
     {
-        var columnWidth = 17d;
-        var columns = Math.Max(1, (int)(ActualWidth / columnWidth));
-        var column = _random.Next(columns);
-        var x = column * columnWidth + _random.NextDouble() * 3;
-        var speed = fromStream ? 4.5 + _random.NextDouble() * 5 : 2.5 + _random.NextDouble() * 3;
-        _glyphs.Add(new MatrixGlyph(character, x, -20 - _random.NextDouble() * 60, speed, fromStream ? 1 : 0.72, 14 + _random.Next(0, 4), true));
-        if (_glyphs.Count > 320)
-        {
-            _glyphs.RemoveRange(0, _glyphs.Count - 320);
-        }
+        const double columnWidth = 17;
+        var columns = Math.Max(1, (int)((ActualWidth + 2 * BoundaryMargin) / columnWidth));
+        var x = _random.Next(columns) * columnWidth - BoundaryMargin + _random.NextDouble() * 3;
+        var speed = fromStream ? 136 + _random.NextDouble() * 152 : 76 + _random.NextDouble() * 91;
+        _glyphs.Add(new MatrixGlyph(character, x, -24 - _random.NextDouble() * BoundaryMargin,
+            speed, fromStream, fromStream ? 1 : 0.15 + _random.NextDouble() * 0.85, 14 + _random.Next(0, 4)));
     }
 
     private char RandomAmbientCharacter()
@@ -147,27 +151,19 @@ public sealed class MatrixRainControl : FrameworkElement
         return alphabet[_random.Next(alphabet.Length)];
     }
 
-    private static byte BlendChannel(byte channel, double intensity, bool head)
-    {
-        var value = channel * intensity + (head ? 255 * 0.14 : 0);
-        return (byte)Math.Clamp(value, 0, 255);
-    }
-
-    private sealed class MatrixGlyph(
-        char character,
-        double x,
-        double y,
-        double speed,
-        double life,
-        double fontSize,
-        bool head)
+    private sealed class MatrixGlyph(char character, double x, double y, double speed,
+        bool fromStream, double pathFraction, double fontSize)
     {
         public char Character { get; } = character;
         public double X { get; } = x;
+        public double StartY { get; } = y;
         public double Y { get; set; } = y;
         public double Speed { get; } = speed;
-        public double Life { get; set; } = life;
+        public bool FromStream { get; } = fromStream;
+        public double PathFraction { get; } = pathFraction;
         public double FontSize { get; } = fontSize;
-        public bool Head { get; set; } = head;
+        public FormattedText? Text { get; set; }
+        public SolidColorBrush? Brush { get; set; }
+        public double TextDpi { get; set; }
     }
 }

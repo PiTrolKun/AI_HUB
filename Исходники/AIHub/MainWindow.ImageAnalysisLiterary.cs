@@ -22,6 +22,7 @@ public partial class MainWindow
 
     private void ShowImageAnalysisSubscenarioSelection()
     {
+        _sessionAudioPlayer?.Clear();
         CancelImageAnalysisSpeech();
         SaveCurrentImageAnalysisSession();
         _imageAnalysisLiterarySession = null;
@@ -600,6 +601,8 @@ public partial class MainWindow
                     _storageSettings,
                     CancellationToken.None);
             }
+            CancelImageAnalysisSpeech();
+            _sessionAudioPlayer?.Clear();
             session.Status = ImageAnalysisLiteraryStatuses.Completed;
             session.CompletedAt = DateTimeOffset.Now;
             session.CurrentStep = ImageAnalysisLiterarySteps.Result;
@@ -663,6 +666,8 @@ public partial class MainWindow
             ShowImageAnalysisSubscenarioSelection();
             return;
         }
+        CancelImageAnalysisSpeech();
+        _sessionAudioPlayer?.Clear();
         _imageAnalysisLiterarySession = session;
         if (session.CurrentStep == ImageAnalysisLiterarySteps.Subscenario)
         {

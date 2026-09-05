@@ -86,9 +86,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0">
-            <TextBlock x:Name="TitleText" FontSize="{DynamicResource UiFont30}" FontWeight="SemiBold" TextWrapping="Wrap" />
-            <TextBlock x:Name="DescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont14}" TextWrapping="Wrap" Margin="0,5,0,0" />
+        <StackPanel Grid.Row="0" HorizontalAlignment="Center" Margin="0,0,0,12">
+            <TextBlock x:Name="TitleText" TextAlignment="Center" FontSize="{DynamicResource UiFont30}" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock x:Name="DescriptionText" TextAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont14}" TextWrapping="Wrap" Margin="0,5,0,0" />
         </StackPanel>
 
         <Border x:Name="SelectedImageCard" Grid.Row="1" Visibility="Collapsed" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9" Margin="0,11,0,0" Padding="10">
@@ -115,17 +115,21 @@
             <Border x:Name="ActivityPanel" Grid.Column="0" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9" Padding="13" Margin="0,0,11,0" MinHeight="0">
                 <Grid>
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                    <TextBlock x:Name="ActivityTitleText" FontWeight="SemiBold" />
+                    <TextBlock x:Name="ActivityTitleText" Visibility="Collapsed" FontWeight="SemiBold" />
                     <Grid Grid.Row="1" Margin="0,9,0,0" ClipToBounds="False">
                         <Border Width="1" Background="{DynamicResource LineBrush}" HorizontalAlignment="Left" Margin="24,0,0,0" />
                         <ScrollViewer x:Name="EventScrollViewer" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly"><StackPanel x:Name="EventItemsPanel" /></ScrollViewer>
-                        <TextBlock x:Name="EventsEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center" Margin="10" />
+                        <TextBlock x:Name="EventsEmptyText" Opacity="0" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center" Margin="10" />
                     </Grid>
                     <StackPanel x:Name="ActivityLegendPanel" Grid.Row="2" Margin="0,9,0,0">
                         <StackPanel Orientation="Horizontal"><Ellipse Width="8" Height="8" Fill="#2AD26C" Margin="0,0,7,0" /><TextBlock x:Name="CoreLegendText" FontSize="{DynamicResource UiFont11}" /></StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,0"><Ellipse Width="8" Height="8" Fill="#3B82F6" Margin="0,0,7,0" /><TextBlock x:Name="VisionLegendText" FontSize="{DynamicResource UiFont11}" /></StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,5,0,0"><Ellipse Width="8" Height="8" Fill="#EF4444" Margin="0,0,7,0" /><TextBlock x:Name="LocalizerLegendText" FontSize="{DynamicResource UiFont11}" /></StackPanel>
                     </StackPanel>
+                    <Button x:Name="DiagnosticsButton" Grid.Row="2" Width="38" MinWidth="0" Height="38" Padding="0"
+                            HorizontalAlignment="Center" Style="{DynamicResource SecondaryButtonStyle}" Click="DiagnosticsButton_Click">
+                        <TextBlock FontFamily="Segoe MDL2 Assets" Text="&#xE9D9;" FontSize="18" />
+                    </Button>
                     <Expander x:Name="HeavyDiagnosticsExpander"
                               Grid.Row="2"
                               Margin="0,9,0,0"
@@ -152,35 +156,13 @@
 
             <Border x:Name="CenterPanel" Grid.Column="1" Background="{DynamicResource PanelBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="9" Padding="18" Margin="0,0,11,0" MinHeight="0">
                 <Grid>
-                    <StackPanel x:Name="SubscenarioPanel">
+                    <Grid x:Name="SubscenarioPanel">
+                        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <StackPanel>
                         <TextBlock x:Name="SubscenarioTitleText" FontSize="{DynamicResource UiFont24}" FontWeight="SemiBold" /><TextBlock x:Name="SubscenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                        <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,14,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="SingleScenarioTitleText" FontSize="{DynamicResource UiFont18}" FontWeight="SemiBold" /><TextBlock x:Name="SingleScenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,16,0" /></StackPanel><Button Grid.Column="1" x:Name="SingleScenarioButton" MinWidth="160" Height="40" Style="{DynamicResource PrimaryButtonStyle}" Click="SingleScenarioButton_Click" /></Grid></Border>
-                        <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,10,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="MultipleScenarioTitleText" FontSize="{DynamicResource UiFont18}" FontWeight="SemiBold" /><TextBlock x:Name="MultipleScenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,16,0" /></StackPanel><Button Grid.Column="1" x:Name="MultipleScenarioButton" MinWidth="160" Height="40" Style="{DynamicResource SecondaryButtonStyle}" IsEnabled="False" /></Grid></Border>
-                        <Button x:Name="HistoryToggleButton"
-                                Style="{DynamicResource SecondaryButtonStyle}"
-                                HorizontalContentAlignment="Stretch"
-                                Margin="0,15,0,0"
-                                Padding="11,8"
-                                Click="HistoryToggleButton_Click">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Name="HistoryTitleText" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <Viewbox Grid.Column="1" Width="18" Height="10" Margin="12,0,2,0" VerticalAlignment="Center">
-                                    <Path x:Name="HistoryChevronPath"
-                                          Data="M1,1 Q9,9 17,1"
-                                          Stroke="{DynamicResource TextSecondaryBrush}"
-                                          StrokeThickness="2"
-                                          StrokeStartLineCap="Round"
-                                          StrokeEndLineCap="Round"
-                                          RenderTransformOrigin="0.5,0.5">
-                                        <Path.RenderTransform><RotateTransform Angle="0" /></Path.RenderTransform>
-                                    </Path>
-                                </Viewbox>
-                            </Grid>
-                        </Button>
+                        <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,14,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="SingleScenarioTitleText" TextWrapping="Wrap" Margin="0,0,12,0" FontSize="{DynamicResource UiFont18}" FontWeight="SemiBold" /><TextBlock x:Name="SingleScenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,16,0" /></StackPanel><Button Grid.Column="1" x:Name="SingleScenarioButton" MinWidth="160" Height="40" Style="{DynamicResource PrimaryButtonStyle}" Click="SingleScenarioButton_Click" /></Grid></Border>
+                        <Border Background="{DynamicResource SecondaryButtonBackgroundBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,10,0,0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><StackPanel><TextBlock x:Name="MultipleScenarioTitleText" TextWrapping="Wrap" Margin="0,0,12,0" FontSize="{DynamicResource UiFont18}" FontWeight="SemiBold" /><TextBlock x:Name="MultipleScenarioDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,5,16,0" /></StackPanel><Button Grid.Column="1" x:Name="MultipleScenarioButton" MinWidth="160" Height="40" Style="{DynamicResource SecondaryButtonStyle}" IsEnabled="False" /></Grid></Border>
+
                         <Border x:Name="HistoryContentBorder"
                                 Visibility="Collapsed"
                                 Opacity="0"
@@ -198,6 +180,32 @@
                             </ScrollViewer>
                         </Border>
                     </StackPanel>
+                        <Button x:Name="HistoryToggleButton" Grid.Row="1"
+                                Style="{DynamicResource SecondaryButtonStyle}"
+                                HorizontalContentAlignment="Stretch"
+                                Margin="0,15,0,0"
+                                Padding="11,8"
+                                Click="HistoryToggleButton_Click">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="HistoryTitleText" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <Viewbox Visibility="Collapsed" Grid.Column="1" Width="18" Height="10" Margin="12,0,2,0" VerticalAlignment="Center">
+                                    <Path x:Name="HistoryChevronPath"
+                                          Data="M1,1 Q9,9 17,1"
+                                          Stroke="{DynamicResource TextSecondaryBrush}"
+                                          StrokeThickness="2"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <Path.RenderTransform><RotateTransform Angle="0" /></Path.RenderTransform>
+                                    </Path>
+                                </Viewbox>
+                            </Grid>
+                        </Button>
+                    </Grid>
 
                     <StackPanel x:Name="ImagePanel" Visibility="Collapsed">
                         <TextBlock x:Name="ImagePanelTitleText" FontSize="{DynamicResource UiFont24}" FontWeight="SemiBold" /><TextBlock x:Name="ImagePanelDescriptionText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
@@ -260,7 +268,7 @@
                                         </Canvas>
                                     </Viewbox>
                                 </Border>
-                                <TextBlock Grid.Column="1" x:Name="VoiceModeTitleText" FontSize="{DynamicResource UiFont11}" Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <TextBlock Grid.Column="1" x:Name="VoiceModeTitleText" HorizontalAlignment="Center" FontSize="{DynamicResource UiFont11}" Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center" VerticalAlignment="Center" Margin="8,0,0,0" />
                                 <UniformGrid x:Name="SpeechModeGrid" Grid.Row="1" Grid.ColumnSpan="2" Columns="3" Margin="0,7,0,0">
                                     <RadioButton x:Name="SpeechOffRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" />
                                     <RadioButton x:Name="SpeechOmniRadioButton" GroupName="ImageAnalysisSpeechMode" Style="{StaticResource VoiceModeRadioStyle}" Checked="SpeechModeRadioButton_Checked" Visibility="Collapsed" />
@@ -322,8 +330,8 @@
                     <Grid Grid.Row="1" Margin="14,12,14,12" MinHeight="0">
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                         <TextBlock x:Name="ResultPanelTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont16}" />
-                        <TextBlock Grid.Row="1" x:Name="ResultPanelHintText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
-                        <StackPanel Grid.Row="2" Margin="0,12,0,0"><TextBlock x:Name="FindingsEmptyText" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" /><StackPanel x:Name="FindingsItemsPanel" /><StackPanel x:Name="UncertaintiesPanel" Margin="0,10,0,0" Visibility="Collapsed"><TextBlock x:Name="UncertaintiesTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont12}" /><StackPanel x:Name="UncertaintyItemsPanel" Margin="0,5,0,0" /></StackPanel></StackPanel>
+                        <TextBlock Grid.Row="1" x:Name="ResultPanelHintText" Visibility="Collapsed" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <StackPanel Grid.Row="2" Margin="0,12,0,0"><TextBlock x:Name="FindingsEmptyText" Opacity="0" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" /><StackPanel x:Name="FindingsItemsPanel" /><StackPanel x:Name="UncertaintiesPanel" Margin="0,10,0,0" Visibility="Collapsed"><TextBlock x:Name="UncertaintiesTitleText" FontWeight="SemiBold" FontSize="{DynamicResource UiFont12}" /><StackPanel x:Name="UncertaintyItemsPanel" Margin="0,5,0,0" /></StackPanel></StackPanel>
                         <TextBlock Grid.Row="3" x:Name="ReviewSummaryFooterText" Foreground="{DynamicResource TextSecondaryBrush}" FontSize="{DynamicResource UiFont11}" TextWrapping="Wrap" Margin="0,10,0,0" />
                     </Grid>
                 </Grid>
